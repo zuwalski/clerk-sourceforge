@@ -59,10 +59,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FUNCTION_REF_DONE";
 	case OP_CALL:
 		return "OP_CALL";
-	case OP_PARAMS:
-		return "OP_PARAMS";
-//	case OP_NEW:
-//		return "OP_NEW";
+	case OP_NEW:
+		return "OP_NEW";
 	case OP_APP_ROOT:
 		return "OP_APP_ROOT";
 	case OP_MOVE_WRITER:
@@ -77,24 +75,22 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MOVE_READER_FUN";
 	case OP_READER_TO_WRITER:
 		return "OP_READER_TO_WRITER";
-	case OP_WRITER_TO_READER:
-		return "OP_WRITER_TO_READER";
-//	case OP_WRITER_POP:
-//		return "OP_WRITER_POP";
-	case OP_READER_POP:
-		return "OP_READER_POP";
-//	case OP_STR_POP:
-//		return "OP_STR_POP";
+	case OP_READER_OUT:
+		return "OP_READER_OUT";
 	case OP_POP_READER:
 		return "OP_POP_READER";
 	case OP_POP_WRITER:
 		return "OP_POP_WRITER";
 	case OP_DEF_VAR:
 		return "OP_DEF_VAR";
+	case OP_DEF_VAR_REF:
+		return "OP_DEF_VAR_REF";
 	case OP_VAR_FREE:
 		return "OP_VAR_FREE";
 	case OP_LOAD_VAR:
 		return "OP_LOAD_VAR";
+	case OP_VAR_REF:
+		return "OP_VAR_REF";
 	case OP_VAR_READ:
 		return "OP_VAR_READ";
 	case OP_VAR_WRITE:
@@ -182,14 +178,10 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			return;
 		case OP_NOOP:
 		case OP_PUBLIC_FUN:
-		case OP_PARAMS:
-//		case OP_NEW:
 		case OP_APP_ROOT:
 		case OP_READER_TO_WRITER:
-		case OP_WRITER_TO_READER:
-//		case OP_WRITER_POP:
-		case OP_READER_POP:
-//		case OP_STR_POP:
+		case OP_NEW:
+		case OP_READER_OUT:
 		case OP_POP_READER:
 		case OP_POP_WRITER:
 		case OP_FUNCTION_REF_DONE:
@@ -222,14 +214,14 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_PARAM_READ:
 		case OP_PARAM_WRITE:
 		case OP_SET_PARAM:
-			tmpuint = *((uint*)bptr);	// size
-			len -= sizeof(uint);
-			bptr += sizeof(uint);
+			tmpushort = *((ushort*)bptr);	// size
+			len -= sizeof(ushort);
+			bptr += sizeof(ushort);
 
 			printf("%s %s\n",_rt_opc_name(opc),bptr);
 
-			bptr += tmpuint;
-			len -= tmpuint;
+			bptr += tmpushort;
+			len -= tmpushort;
 			break;
 		case OP_FUNCTION_REF:
 			tmpuint = *((uint*)bptr);
@@ -239,8 +231,10 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			printf("%s %d\n",_rt_opc_name(opc),tmpuint);
 			break;
 		case OP_DEF_VAR:
+		case OP_DEF_VAR_REF:
 		case OP_VAR_FREE:
 		case OP_LOAD_VAR:
+		case OP_VAR_REF:
 		case OP_VAR_READ:
 		case OP_VAR_WRITE:
 			tmpushort = *((ushort*)bptr);
@@ -302,6 +296,41 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 	return 0;
 }
 
+/*
+	OP_NOOP,
+	OP_STR,
+	OP_PUBLIC_FUN,
+	OP_FUNCTION_END,
+	OP_FUNCTION_REF,
+	OP_TRIGGER_REF,
+	OP_FUNCTION_REF_DONE,
+	OP_PARAMS,
+	OP_CALL,
+	OP_APP_ROOT,
+	OP_MOVE_WRITER,
+	OP_DUB_MOVE_WRITER,
+	OP_MOVE_READER,
+	OP_DUB_MOVE_READER,
+	OP_MOVE_READER_FUN,
+	OP_READER_TO_WRITER,
+	OP_WRITER_TO_READER,
+	OP_READER_OUT,
+	OP_POP_READER,
+	OP_POP_WRITER,
+	OP_DEF_VAR_REF,
+	OP_DEF_VAR,
+	OP_VAR_FREE,
+	OP_LOAD_VAR,
+	OP_VAR_REF,
+	OP_VAR_READ,
+	OP_VAR_WRITE,
+	OP_LOAD_PARAM,
+	OP_PARAM_READ,
+	OP_PARAM_WRITE,
+	OP_SET_PARAM,
+
+*/
+
 int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 {
 	st_ptr* writer = 0;
@@ -341,14 +370,6 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		switch(*pc++)
 		{
 		case OP_FUNCTION_END:
-			if(sp > 0)
-			{
-				writer = (st_ptr*)stack[sp--].pg;
-				if(writer == 0)
-					rt_do_read(0,app,stack[sp]);	// output
-				else
-					;	// copy stack[sp] -> writer
-			}
 			tk_mfree(codemem);
 			return 0;
 		case OP_NOOP:
@@ -357,33 +378,30 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 			stack[++sp] = *app;
 			break;
 		case OP_READER_TO_WRITER:	// swap sp/w
-			writer = &stack[sp];
+			if(stack[sp].key)
+				writer = &stack[sp];
+			else
+				writer = (st_ptr*)stack[sp].pg;
 			break;
-		case OP_WRITER_TO_READER:	// function start with "new" -> clear by function-end
-			sp++;
-			stack[++sp].pg = (page_wrap*)writer;
-			if(writer == 0)
-			{
-				st_empty(t,&stack[sp - 1]);	// create "receiver"
-				writer = &stack[sp - 1];
-			}
+		case OP_NEW:
+			st_empty(t,&stack[++sp]);
 			break;
 		case OP_POP_WRITER:
-			writer = (st_ptr*)stack[sp--].pg;
+			if(stack[sp].key)
+				*writer = stack[sp--];
+			else
+				writer = (st_ptr*)stack[sp--].pg;
 			break;
 		case OP_POP_READER:
 			sp--;
 			break;
-		case OP_READER_POP:	// copy/output to writer
+		case OP_READER_OUT:	// copy/output to writer
 			if(writer)	// copy / lazy
 			{
 			}
 			else
 				rt_do_read(0,app,stack[sp]);	// output
 			sp--;
-			break;
-		case OP_PARAMS:
-			st_empty(t,&stack[++sp]);
 			break;
 		case OP_FUNCTION_REF_DONE:
 			break;
@@ -395,11 +413,11 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 				return(__LINE__);
 			break;
 		case OP_DUB_MOVE_WRITER:
-			stack[++sp] = *writer;
+			stack[++sp] = stack[sp];
 		case OP_MOVE_WRITER:
 			tmpushort = *((ushort*)pc);
 			pc += sizeof(ushort);
-			st_insert(t,writer,pc,tmpushort);
+			st_insert(t,&stack[sp],pc,tmpushort);
 			pc += tmpushort;
 			break;
 		case OP_DUB_MOVE_READER:

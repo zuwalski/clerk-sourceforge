@@ -506,12 +506,17 @@ static int _cle_var(_parser_state* parser, st_ptr* code, uint level, uchar newva
 		vs = vs->prev;
 	}
 
+	_cle_whitespace(parser,&c);
+
 	if(newvar)
 	{
 		if(vs) err(__LINE__);	// re-def
 
 		_cle_vpush(parser,len,level,parser->top);
-		_cle_emitIs(parser,code,OP_DEF_VAR,parser->fs->vs->id);
+		if(c == '=')
+			_cle_emitIs(parser,code,OP_DEF_VAR_REF,parser->fs->vs->id);
+		else
+			_cle_emitIs(parser,code,OP_DEF_VAR,parser->fs->vs->id);
 
 		parser->top = op;
 	}
@@ -519,6 +524,12 @@ static int _cle_var(_parser_state* parser, st_ptr* code, uint level, uchar newva
 	{
 		switch(pathval_rw)
 		{
+		case 3:
+			if(c == '=')
+			{
+				_cle_emitIs(parser,code,OP_VAR_REF,parser->fs->vs->id);
+				break;
+			}
 		case 0:
 			_cle_emitIs(parser,code,OP_LOAD_VAR,parser->fs->vs->id);
 			break;
@@ -527,6 +538,7 @@ static int _cle_var(_parser_state* parser, st_ptr* code, uint level, uchar newva
 			break;
 		case 2:
 			_cle_emitIs(parser,code,OP_VAR_WRITE,parser->fs->vs->id);
+			break;
 		}
 	}
 	else
@@ -542,6 +554,7 @@ static int _cle_var(_parser_state* parser, st_ptr* code, uint level, uchar newva
 			switch(pathval_rw)
 			{
 			case 0:
+			case 3:
 				_cle_emitS(parser,code,parser->opbuf + parser->top,len,OP_LOAD_PARAM);
 				break;
 			case 1:
@@ -582,7 +595,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 
 	int c = getc(parser->f);
 	ushort stringidx;
-	uchar tmp;
+	uchar tmp,isRef = 0;
 
 	if(expr && parser->fs)		// called from function header (parameter set)
 	{
@@ -619,8 +632,8 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				switch(stack->opc)
 				{
 				case OEQL:
+					_cle_emit0(parser,&code,OP_POP_WRITER);
 				case ONEW:
-					_cle_emit0(parser,&code,OP_POP_WRITER);	//	OP_WRITER_POP);
 					break;
 				default:
 					err(__LINE__);
@@ -632,12 +645,13 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			{
 				if(expr && parser->fs)	// set param done
 				{
-					_cle_emit0(parser,&code,OP_READER_POP);
+					_cle_emit0(parser,&code,OP_READER_OUT);
 					parser->fs->stringidx = stringidx;
 					return c;
 				}
-				else
-					err(__LINE__);
+
+				err(__LINE__);
+				state = ST_INIT;
 			}
 			else if(stack->opc == OCALL)
 				_cle_emitS(parser,&code,parser->opbuf + stack->bufidx,stack->length,OP_CALL);
@@ -670,36 +684,29 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			}
 			break;
 		case '\\':
-			tmp = 0;
 			switch(state)
 			{
+			case ALPHA_0:
+			case VAR_0:
+				_cle_emit0(parser,&code,OP_READER_OUT);
+				if(type != 0 && type != 2) err(__LINE__);
+				type = 2;
 			case ST_INIT:
-				tmp = OP_APP_ROOT;
 				state = APP_0;
-				break;
-			case ST_EQ:
-				tmp = OP_APP_ROOT;
-				state = APP_EQ;
 				break;
 			case ALPHA_EQ:
 			case VAR_EQ:
-				_cle_emit0(parser,&code,OP_READER_POP);
-				tmp = OP_APP_ROOT;
+				_cle_emit0(parser,&code,OP_READER_OUT);
+				if(type != 0 && type != 2) err(__LINE__);
+				type = 2;
+			case ST_EQ:
 				state = APP_EQ;
-				type = 2;
-				break;
-			case ALPHA_0:
-			case VAR_0:
-				_cle_emit0(parser,&code,OP_READER_POP);
-				tmp = OP_APP_ROOT;
-				state = APP_0;
-				type = 2;
 				break;
 			default:
 				err(__LINE__);
 				state = ST_INIT;
 			}
-			_cle_emit0(parser,&code,tmp);
+			_cle_emit0(parser,&code,OP_APP_ROOT);
 			break;
 		case '{':
 			level++;
@@ -710,8 +717,6 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				state = CURL_0;
 				break;
 			case ST_NEW:
-				state = CURL_NEW;
-				break;
 			case ALPHA_NEW:
 			case VAR_NEW:
 				state = CURL_NEW;
@@ -729,7 +734,6 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				break;
 			case CURL_NEW:
 				_cle_emit0(parser,&code,OP_POP_WRITER);
-//			case ST_NEW:
 				break;
 			default:
 				err(__LINE__);
@@ -752,6 +756,35 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				}
 			}
 			break;
+		case '=':
+			if(type > 1) err(__LINE__);
+			tmp = 0;
+			switch(state)
+			{
+			case ALPHA_0:
+				tmp = OP_READER_TO_WRITER;
+				state = level? CURL_0 : ST_INIT;
+				break;
+			case VAR_0:
+				if(isRef == 0)
+					tmp = OP_READER_TO_WRITER;
+			case ST_VAR_DEF:
+				state = level? CURL_0 : ST_INIT;
+				break;
+			case ALPHA_NEW:
+			case VAR_NEW:
+				tmp = OP_READER_TO_WRITER;
+				state = CURL_NEW;
+				break;
+			default:
+				err(__LINE__);
+			}
+			_cle_emit0(parser,&code,tmp);
+			_cle_oppush(parser,&stack,state,type,level,0,OEQL,0,0);
+			state = ST_EQ;
+			isRef = 0;
+			type = 0;
+			break;
 		case ',':
 		case ';':
 			tmp = 0;
@@ -759,7 +792,8 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			{
 			case ALPHA_0:
 			case VAR_0:
-				tmp = OP_READER_POP;
+			case STR_0:
+				tmp = OP_READER_OUT;
 				state = level? CURL_0 : ST_INIT;
 				break;
 			case ALPHA_NEW:
@@ -767,19 +801,14 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				tmp = OP_POP_WRITER;
 				state = CURL_NEW;	// ST_NEW
 				break;
-			case STR_0:
-				tmp = OP_READER_POP;	//OP_STR_POP;
-				state = level? CURL_0 : ST_INIT;
-				break;
 			case ALPHA_EQ:
 			case VAR_EQ:
-				tmp = OP_READER_POP;	// (ins)
-				break;
 			case STR_EQ:
-				tmp = OP_READER_POP;	//OP_STR_POP;
+				tmp = OP_READER_OUT;	// (ins)
 				break;
 			case ST_VAR_DEF:
 				if(c == ',') err(__LINE__);
+				tmp = OP_POP_WRITER;
 				state = ST_INIT;
 				break;
 			default:
@@ -793,10 +822,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				switch(stack->opc)
 				{
 				case OEQL:
-//					if(stack->state == CURL_NEW || stack->state == ST_NEW)
-						_cle_emit0(parser,&code,OP_POP_WRITER);
-//					else
-//						_cle_emit0(parser,&code,OP_WRITER_POP);
+					_cle_emit0(parser,&code,OP_POP_WRITER);
 				case ONEW:
 					state = stack->state;
 					type = stack->type;
@@ -811,6 +837,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			if(c == ',' && expr && parser->fs)	// set param done
 			{
 				parser->fs->stringidx = stringidx;
+				if(level) err(__LINE__);
 				return c;
 			}
 			break;
@@ -819,6 +846,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			{
 				int app = 0;
 				tmp = 0;
+				if(type != 0 && type != 2) err(__LINE__);
 				switch(state)
 				{
 				case ST_INIT:
@@ -829,12 +857,12 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					break;
 				case ALPHA_0:
 				case VAR_0:
-					tmp = OP_READER_POP;
+					tmp = OP_READER_OUT;
 					state = STR_0;
 					break;
 				case ALPHA_EQ:
 				case VAR_EQ:
-					tmp = OP_READER_POP;
+					tmp = OP_READER_OUT;
 					state = STR_EQ;
 					break;
 				case STR_0:
@@ -860,68 +888,37 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				type = 2;
 			}
 			continue;
-		case '=':
-			if(type > 1) err(__LINE__);
-			switch(state)
-			{
-			case ALPHA_0:
-			case VAR_0:
-				_cle_emit0(parser,&code,OP_READER_TO_WRITER);
-				state = level? CURL_0 : ST_INIT;
-				break;
-			case ST_VAR_DEF:
-				state = ST_INIT;
-				break;
-			case ALPHA_NEW:
-			case VAR_NEW:
-//				_cle_emit0(parser,&code,OP_READER_TO_WRITER);
-				state = CURL_NEW;	//ST_NEW;
-				break;
-			default:
-				err(__LINE__);
-			}
-			_cle_oppush(parser,&stack,state,type,level,0,OEQL,0,0);
-			state = ST_EQ;
-			type = 0;
-			break;
 		case '$':
 			{
-				uchar pathval_rw = 0;	// 0 - load, 1 - read with, 2 - write with
+				uchar pathval_rw = 0;	// 0 - load, 1 - read with, 2 - write with, 3 - ref
 				switch(state)
 				{
 				case ST_INIT:
+				case CURL_0:
+					pathval_rw = 3;
 					state = VAR_0;
-					break;
-				case ST_EQ:
-					state = VAR_EQ;
 					break;
 				case ALPHA_0:
 				case VAR_0:
-					_cle_emit0(parser,&code,OP_READER_POP);
-					state = VAR_0;
 					if(type != 0 && type != 2) err(__LINE__);
 					type = 2;
-					break;
 				case STR_0:
-					_cle_emit0(parser,&code,OP_READER_POP);	//OP_STR_POP);
+					_cle_emit0(parser,&code,OP_READER_OUT);	//OP_STR_POP);
 					state = VAR_0;
-					break;
-				case ALPHA_EQ:
-				case VAR_EQ:
-					_cle_emit0(parser,&code,OP_READER_POP);
-					state = VAR_EQ;
-					if(type != 0 && type != 2) err(__LINE__);
-					type = 2;
-					break;
-				case STR_EQ:
-					_cle_emit0(parser,&code,OP_READER_POP);	//OP_STR_POP);
-					state = VAR_EQ;
 					break;
 				case DOT_0:
-				case CURL_0:
 				case APP_0:
 					state = VAR_0;
 					pathval_rw = 1;
+					break;
+				case ALPHA_EQ:
+				case VAR_EQ:
+					if(type != 0 && type != 2) err(__LINE__);
+					type = 2;
+				case STR_EQ:
+					_cle_emit0(parser,&code,OP_READER_OUT);	//OP_STR_POP);
+				case ST_EQ:
+					state = VAR_EQ;
 					break;
 				case DOT_EQ:
 				case APP_EQ:
@@ -940,7 +937,10 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				}
 
 				if(parser->fs)
+				{
 					c = _cle_var(parser,&code,0,0,pathval_rw);
+					isRef = (c == '=');
+				}
 				else err(__LINE__);
 			}
 			continue;
@@ -985,21 +985,26 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					}
 					break;
 				case 2:		// begin
-					state = ST_INIT;
 					err(__LINE__);
+					state = ST_INIT;
 					break;
 				case 3:		// end
 					if(state != ST_INIT) err(__LINE__);
 
-					if(stack)
+					while(stack)
 					{
-						//if(stack->opc == ONEW)
-						//	_cle_emit0(parser,&code,OP_READER_POP);
-						//else
-						//	err(__LINE__);
-
-						while(stack)
-							_cle_oppop(parser,&stack);
+						switch(stack->opc)
+						{
+						case OEQL:
+							_cle_emit0(parser,&code,OP_POP_WRITER);
+							break;
+						case ONEW:
+							_cle_emit0(parser,&code,OP_READER_OUT);
+							break;
+						default:
+							err(__LINE__);
+						}
+						_cle_oppop(parser,&stack);
 					}
 
 					if(parser->fs)
@@ -1016,10 +1021,8 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					switch(state)
 					{
 					case ST_INIT:
-						_cle_emit0(parser,&code,OP_WRITER_TO_READER);
-						break;
+						_cle_emit0(parser,&code,OP_NEW);
 					case ST_EQ:
-//						_cle_emit0(parser,&code,OP_NEW);
 						break;
 					default:
 						err(__LINE__);
@@ -1028,7 +1031,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					type = 1;
 					break;
 				case 5:		// var $name
-					if(state != ST_INIT) err(__LINE__);
+					if(state != ST_INIT && state != CURL_0) err(__LINE__);
 					if(expr) err(__LINE__);
 
 					_cle_whitespace(parser,&c);
@@ -1036,13 +1039,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					if(c != '$') err(__LINE__);
 					c = _cle_var(parser,&code,level,1,0);
 
-					_cle_whitespace(parser,&c);
-
-					state = ST_VAR_DEF;
-					if(c == ';')
-						_cle_emit0(parser,&code,OP_POP_WRITER);	//OP_WRITER_POP);
-					else if(c != '=')
-						state = ST_NEW;
+					state = (c == '=' || c == ';')? ST_VAR_DEF : ST_NEW;
 					continue;
 				case 6:		// if
 					break;
@@ -1058,20 +1055,16 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					tmp = 0;
 					switch(state)
 					{
+					case ALPHA_0:
+					case VAR_0:
+						if(type != 0 && type != 2) err(__LINE__);
+						type = 2;
+					case STR_0:
+						_cle_emit0(parser,&code,OP_READER_OUT);	//OP_STR_POP);
 					case ST_INIT:
 						tmp = OP_MOVE_READER_FUN;
 						state = ALPHA_0;
 						break;
-					case STR_0:
-						_cle_emit0(parser,&code,OP_READER_POP);	//OP_STR_POP);
-						tmp = OP_MOVE_READER;
-						state = ALPHA_0;
-						break;
-					case ALPHA_0:
-					case VAR_0:
-						_cle_emit0(parser,&code,OP_READER_POP);
-						if(type != 0 && type != 2) err(__LINE__);
-						type = 2;
 					case CURL_0:
 						tmp = OP_DUB_MOVE_READER;
 						state = ALPHA_0;
@@ -1081,20 +1074,16 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 						tmp = OP_MOVE_READER;
 						state = ALPHA_0;
 						break;
+					case ALPHA_EQ:
+					case VAR_EQ:
+						if(type != 0 && type != 2) err(__LINE__);
+						type = 2;
+					case STR_EQ:
+						_cle_emit0(parser,&code,OP_READER_OUT);
 					case ST_EQ:
 						tmp = OP_MOVE_READER_FUN;
 						state = ALPHA_EQ;
 						break;
-					case STR_EQ:
-						_cle_emit0(parser,&code,OP_READER_POP);	//OP_STR_POP);
-						tmp = OP_MOVE_READER;
-						state = ALPHA_EQ;
-						break;
-					case ALPHA_EQ:
-					case VAR_EQ:
-						_cle_emit0(parser,&code,OP_READER_POP);
-						if(type != 0 && type != 2) err(__LINE__);
-						type = 2;
 					case DOT_EQ:
 					case APP_EQ:
 						tmp = OP_MOVE_READER;
@@ -1105,7 +1094,6 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 						tmp = OP_DUB_MOVE_WRITER;
 						state = ALPHA_NEW;
 						break;
-//					case ST_NEW:
 					case DOT_NEW:
 						tmp = OP_MOVE_WRITER;
 						state = ALPHA_NEW;
@@ -1117,10 +1105,10 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 
 					if(c == '(')	// function call?
 					{
-						if(tmp != OP_MOVE_READER && tmp != OP_MOVE_READER_FUN) err(__LINE__);
+						if(state != ALPHA_0 && state != ALPHA_EQ) err(__LINE__);
 
 						_cle_oppush(parser,&stack,state,type,level,op - parser->top,OCALL,0,0);
-						_cle_emit0(parser,&code,OP_PARAMS);
+						_cle_emit0(parser,&code,OP_NEW);
 						parser->top = op;
 						state = ST_NEW;
 
