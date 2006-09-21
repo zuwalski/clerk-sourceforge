@@ -79,28 +79,28 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_READER_OUT";
 	case OP_READER_CLEAR:
 		return "OP_READER_CLEAR";
+	case OP_VAR_OUT:
+		return "OP_VAR_OUT";
 	case OP_POP:
 		return "OP_POP";
 	case OP_DEF_VAR:
 		return "OP_DEF_VAR";
 	case OP_DEF_VAR_REF:
 		return "OP_DEF_VAR_REF";
-	case OP_VAR_FREE:
-		return "OP_VAR_FREE";
 	case OP_LOAD_VAR:
 		return "OP_LOAD_VAR";
 	case OP_VAR_REF:
 		return "OP_VAR_REF";
+	case OP_VAR_CLEAR:
+		return "OP_VAR_CLEAR";
+	case OP_VAR_POP:
+		return "OP_VAR_POP";
 	case OP_VAR_READ:
 		return "OP_VAR_READ";
 	case OP_VAR_WRITE:
 		return "OP_VAR_WRITE";
 	case OP_LOAD_PARAM:
 		return "OP_LOAD_PARAM";
-	case OP_PARAM_READ:
-		return "OP_PARAM_READ";
-	case OP_PARAM_WRITE:
-		return "OP_PARAM_WRITE";
 	case OP_SET_PARAM:
 		return "OP_SET_PARAM";
 	default:
@@ -165,7 +165,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 	bptr = bptr2 = st_get_all(root,&len);
 
 	tmpushort = *((ushort*)(bptr + len - sizeof(ushort)));
-	printf("\nCode (stack size: %d):\n",(int)tmpushort);
+	printf("\nCode (code size: %d, stack size: %d):\n",len,(int)tmpushort);
 
 	while(len > 0)
 	{
@@ -185,6 +185,9 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_NEW:
 		case OP_READER_OUT:
 		case OP_READER_CLEAR:
+		case OP_VAR_CLEAR:
+		case OP_VAR_OUT:
+		case OP_VAR_POP:
 		case OP_POP:
 		case OP_FUNCTION_REF_DONE:
 			printf("%s\n",_rt_opc_name(opc));
@@ -213,8 +216,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_DUB_MOVE_WRITER:
 		case OP_MOVE_READER_FUN:
 		case OP_LOAD_PARAM:
-		case OP_PARAM_READ:
-		case OP_PARAM_WRITE:
 		case OP_SET_PARAM:
 			tmpushort = *((ushort*)bptr);	// size
 			len -= sizeof(ushort);
@@ -234,7 +235,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			break;
 		case OP_DEF_VAR:
 		case OP_DEF_VAR_REF:
-		case OP_VAR_FREE:
 		case OP_LOAD_VAR:
 		case OP_VAR_REF:
 		case OP_VAR_READ:
@@ -298,41 +298,6 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 	return 0;
 }
 
-/*
-	OP_NOOP,
-	OP_STR,
-	OP_PUBLIC_FUN,
-	OP_FUNCTION_END,
-	OP_FUNCTION_REF,
-	OP_TRIGGER_REF,
-	OP_FUNCTION_REF_DONE,
-	OP_PARAMS,
-	OP_CALL,
-	OP_APP_ROOT,
-	OP_MOVE_WRITER,
-	OP_DUB_MOVE_WRITER,
-	OP_MOVE_READER,
-	OP_DUB_MOVE_READER,
-	OP_MOVE_READER_FUN,
-	OP_READER_TO_WRITER,
-	OP_WRITER_TO_READER,
-	OP_READER_OUT,
-	OP_POP_READER,
-	OP_POP_WRITER,
-	OP_DEF_VAR_REF,
-	OP_DEF_VAR,
-	OP_VAR_FREE,
-	OP_LOAD_VAR,
-	OP_VAR_REF,
-	OP_VAR_READ,
-	OP_VAR_WRITE,
-	OP_LOAD_PARAM,
-	OP_PARAM_READ,
-	OP_PARAM_WRITE,
-	OP_SET_PARAM,
-
-*/
-
 static int _rt_setup_funcall(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 {
 	st_ptr* writer;
@@ -363,7 +328,8 @@ static int _rt_setup_funcall(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st
 
 	st_move(&tmpptr,"B",HEAD_SIZE);	// body
 
-	pc = codemem = st_get_all(&tmpptr,&tmpuint);	// load function-code
+	codemem = st_get_all(&tmpptr,&tmpuint);	// load function-code
+	pc = codemem = tk_realloc(codemem,tmpuint);
 	// entry-function MUST be public
 	if(*pc++ != OP_PUBLIC_FUN)
 		return(__LINE__);
@@ -389,7 +355,7 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	st_ptr* stack;
 	st_ptr strings,tmpptr;
 	st_ptr outstack[100];
-	char *pc,*codemem;
+	char *pc,*codemem,*tmpcharptr;
 	uint funidx,tmpuint,outsp = 0,sp = 1;
 	ushort tmpushort;
 	char head[HEAD_SIZE];
@@ -434,17 +400,17 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		{
 		case OP_FUNCTION_END:
 			// output sp_0
-			tk_mfree(codemem);
 			return 0;
 		case OP_NOOP:
 			break;
 		case OP_APP_ROOT:
 			stack[++sp] = *app;
 			break;
-		case OP_READER_TO_WRITER:
-			stack[sp++].pg = (page_wrap*)writer;
-			writer = &stack[sp - 1];
-			stack[sp++] = *writer;
+		case OP_READER_TO_WRITER:	// save writer behind new target - update writer
+			tmpptr = stack[sp];
+			stack[sp].pg = (page_wrap*)writer;
+			stack[++sp] = tmpptr;
+			writer = &stack[sp];
 			break;
 		case OP_NEW:
 			st_empty(t,&stack[++sp]);
@@ -452,22 +418,13 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		case OP_POP:
 			sp--;
 			break;
+		case OP_VAR_OUT:
 		case OP_READER_OUT:
-			_rt_eval(t,writer,&stack[sp]);
+			_rt_eval(t,writer,&stack[sp--]);
 			break;
+		case OP_VAR_CLEAR:
 		case OP_READER_CLEAR:	// match OP_READER_TO_WRITER
-			_rt_eval(t,writer,&stack[sp]);
-
-			// eval writer content
-			{
-				st_ptr eval_ptr;
-				int ret;
-				do
-				{
-					ret = st_get(&tmpptr,(char*)&eval_ptr,sizeof(st_ptr));
-				}
-				while(ret > 0);
-			}
+			_rt_eval(t,writer,&stack[sp--]);
 			writer = (st_ptr*)stack[sp--].pg;	// restore writer
 			break;
 		case OP_FUNCTION_REF_DONE:
@@ -505,9 +462,6 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 			pc += tmpushort;
 			break;
 		case OP_CALL:
-		case OP_LOAD_PARAM:
-		case OP_PARAM_READ:
-		case OP_PARAM_WRITE:
 		case OP_SET_PARAM:
 			tmpushort = *((ushort*)pc);
 			pc += sizeof(ushort);
@@ -517,18 +471,62 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		case OP_FUNCTION_REF:
 			tmpuint = *((uint*)pc);
 			pc += sizeof(uint);
+
+
+			break;
+		case OP_LOAD_PARAM:
+			tmpushort = *((ushort*)pc);
+			pc += sizeof(ushort);
+			tmpptr = *param;
+			if(st_move(&tmpptr,pc,tmpushort))
+				;
+			stack[++sp] = tmpptr;
+			pc += tmpushort;
 			break;
 		case OP_DEF_VAR:
-		case OP_VAR_FREE:
+			tmpushort = *((ushort*)pc);
+			pc += sizeof(ushort);
+			st_empty(t,&stack[++sp]);
+			stack[++sp] = stack[sp];
+			break;
+		case OP_DEF_VAR_REF:
+			st_empty(t,&stack[++sp]);
+			stack[++sp].pg = (page_wrap*)writer;
+			writer = &stack[sp - 1];
+			stack[++sp] = *writer;
+			break;
+		case OP_VAR_POP:
+			sp -= 2;
+			break;
+		case OP_VAR_REF:
+			tmpushort = *((ushort*)pc);
+			pc += sizeof(ushort);
+			stack[++sp].pg = (page_wrap*)writer;
+			stack[++sp] = stack[tmpushort];
+			writer = &stack[tmpushort];
+			break;
 		case OP_LOAD_VAR:
+			tmpushort = *((ushort*)pc);
+			pc += sizeof(ushort);
+			stack[++sp] = stack[tmpushort];
+			break;
 		case OP_VAR_READ:
+			tmpushort = *((ushort*)pc);
+			pc += sizeof(ushort);
+			tmpcharptr = st_get_all(&stack[tmpushort],&tmpuint);
+			if(st_move(&stack[sp],tmpcharptr,tmpuint))
+				;
+			tk_mfree(tmpcharptr);
+			break;
 		case OP_VAR_WRITE:
 			tmpushort = *((ushort*)pc);
 			pc += sizeof(ushort);
+			tmpcharptr = st_get_all(&stack[tmpushort],&tmpuint);
+			stack[++sp] = stack[sp];
+			st_insert(t,&stack[sp],tmpcharptr,tmpuint);
+			tk_mfree(tmpcharptr);
 			break;
-		//case OP_PUBLIC_FUN:
 		default:
-			tk_mfree(codemem);
 			return(__LINE__);
 		}
 	}

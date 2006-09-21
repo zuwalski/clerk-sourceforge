@@ -125,9 +125,11 @@ static void err(int line)
 
 static void _cle_check_buffer(_parser_state* parser, uint top)
 {
-	if(parser->bsize <= top)
+	if(top >= parser->bsize)
 	{
-		parser->bsize += BUFFER_GROW;
+		uint diff = top - parser->bsize;
+
+		parser->bsize += BUFFER_GROW > diff? BUFFER_GROW : diff;
 		parser->opbuf = (char*)tk_realloc(parser->opbuf,parser->bsize);
 	}
 }
@@ -525,13 +527,18 @@ static int _cle_var(_parser_state* parser, st_ptr* code, struct _rt_stack* rt_st
 	if(newvar)
 	{
 		if(vs) err(__LINE__);	// re-def
-		_cle_put_stack(rt_stack,1);
 
 		_cle_vpush(parser,len,level,parser->top,rt_stack->stop);
 		if(c == '=')
-			_cle_emitIs(parser,code,OP_DEF_VAR_REF,rt_stack->stop);
+		{
+			_cle_emit0(parser,code,OP_DEF_VAR_REF);
+			_cle_put_stack(rt_stack,3);
+		}
 		else
-			_cle_emitIs(parser,code,OP_DEF_VAR,rt_stack->stop);
+		{
+			_cle_emit0(parser,code,OP_DEF_VAR);
+			_cle_put_stack(rt_stack,2);
+		}
 
 		parser->top = op;
 	}
@@ -543,7 +550,7 @@ static int _cle_var(_parser_state* parser, st_ptr* code, struct _rt_stack* rt_st
 			if(c == '=')
 			{
 				_cle_emitIs(parser,code,OP_VAR_REF,parser->fs->vs->id);
-				_cle_put_stack(rt_stack,1);
+				_cle_put_stack(rt_stack,2);
 				break;
 			}
 		case 0:
@@ -552,7 +559,6 @@ static int _cle_var(_parser_state* parser, st_ptr* code, struct _rt_stack* rt_st
 			break;
 		case 1:
 			_cle_emitIs(parser,code,OP_VAR_READ,parser->fs->vs->id);
-			_cle_put_stack(rt_stack,1);
 			break;
 		case 2:
 			_cle_emitIs(parser,code,OP_VAR_WRITE,parser->fs->vs->id);
@@ -561,34 +567,7 @@ static int _cle_var(_parser_state* parser, st_ptr* code, struct _rt_stack* rt_st
 		}
 	}
 	else
-	{
-		st_ptr ptr;
-		// check parameters
-		ptr = parser->fs->code;
-		if(st_move(&ptr,"A\0P",4)) err(__LINE__);
-
-		if(st_exsist(&ptr,parser->opbuf + parser->top,len))
-		{
-			//its a parameter
-			switch(pathval_rw)
-			{
-			case 0:
-			case 3:
-				_cle_emitS(parser,code,parser->opbuf + parser->top,len,OP_LOAD_PARAM);
-				_cle_put_stack(rt_stack,1);
-				break;
-			case 1:
-				_cle_emitS(parser,code,parser->opbuf + parser->top,len,OP_PARAM_READ);
-				_cle_put_stack(rt_stack,1);
-				break;
-			case 2:
-				_cle_emitS(parser,code,parser->opbuf + parser->top,len,OP_PARAM_WRITE);
-				_cle_put_stack(rt_stack,1);
-			}
-		}
-		else
-			err(__LINE__);	// var not found
-	}
+		err(__LINE__);	// var not found
 
 	return c;
 }
@@ -631,7 +610,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 	}
 	else
 	{
-		strings = code;
+		cur_string = strings = code;
 		st_insert(parser->t,&strings,"S",2);	// begin string-space
 		st_delete(parser->t,&strings,0,0);		// remove any old strings
 
@@ -642,6 +621,27 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 
 		if(expr || parser->fs->publicfun)
 			_cle_emit0(parser,&code,OP_PUBLIC_FUN);
+
+		// first load all parameters into vars
+		if(!st_move(&cur_string,"A\0P",4))
+		{
+			it_ptr it;
+			it_create(&it,&cur_string);
+			while(it_next(0,&it))
+			{
+				_cle_emitS(parser,&code,it.kdata,it.kused,OP_LOAD_PARAM);
+
+				_cle_check_buffer(parser,parser->top + it.kused);
+				memcpy(parser->opbuf + parser->top,it.kdata,it.kused);
+
+				_cle_vpush(parser,it.kused,0,parser->top,rt_stack.stop);
+				parser->top += it.kused;
+				rt_stack.stop++;
+			}
+
+			it_dispose(&it);
+			rt_stack.smax = rt_stack.stop;
+		}
 	}
 
 	while(1)
@@ -715,7 +715,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			{
 			case ALPHA_0:
 			case VAR_0:
-				_cle_emit0(parser,&code,OP_READER_OUT);
+				_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 				rt_stack.stop--;
 				if(type != 0 && type != 2) err(__LINE__);
 				type = 2;
@@ -724,7 +724,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				break;
 			case ALPHA_EQ:
 			case VAR_EQ:
-				_cle_emit0(parser,&code,OP_READER_OUT);
+				_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 				rt_stack.stop--;
 				if(type != 0 && type != 2) err(__LINE__);
 				type = 2;
@@ -781,7 +781,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				{
 					while(parser->fs->vs->level > level)
 					{
-						_cle_emitIs(parser,&code,OP_VAR_FREE,parser->fs->vs->id);
+						_cle_emitIs(parser,&code,OP_POP,parser->fs->vs->id);
 						rt_stack.stop--;
 						_cle_vpop(parser);
 					}
@@ -795,14 +795,14 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			{
 			case ALPHA_0:
 				tmp = OP_READER_TO_WRITER;
-				_cle_put_stack(&rt_stack,2);
+				_cle_put_stack(&rt_stack,1);
 				state = level? CURL_0 : ST_INIT;
 				break;
 			case VAR_0:
 				if(isRef == 0)
 				{
 					tmp = OP_READER_TO_WRITER;
-					_cle_put_stack(&rt_stack,2);
+					_cle_put_stack(&rt_stack,1);
 				}
 			case ST_VAR_DEF:
 				state = level? CURL_0 : ST_INIT;
@@ -810,7 +810,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			case ALPHA_NEW:
 			case VAR_NEW:
 				tmp = OP_READER_TO_WRITER;
-				_cle_put_stack(&rt_stack,2);
+				_cle_put_stack(&rt_stack,1);
 				state = CURL_NEW;
 				break;
 			default:
@@ -819,7 +819,6 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			_cle_emit0(parser,&code,tmp);
 			_cle_oppush(parser,&stack,state,type,level,0,OEQL,0,0);
 			state = ST_EQ;
-			isRef = 0;
 			type = 0;
 			break;
 		case ',':
@@ -827,11 +826,11 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			tmp = 0;
 			switch(state)
 			{
-			case ALPHA_0:
 			case VAR_0:
+			case ALPHA_0:
 			case STR_0:
 				tmp = OP_READER_CLEAR;
-				rt_stack.stop -= 3;
+				rt_stack.stop -= 2;
 				state = level? CURL_0 : ST_INIT;
 				break;
 			case ALPHA_NEW:
@@ -844,18 +843,18 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 			case VAR_EQ:
 			case STR_EQ:
 				tmp = OP_READER_CLEAR;
-				rt_stack.stop -= 3;
+				rt_stack.stop -= 2;
 				break;
 			case ST_VAR_DEF:
 				if(c == ',') err(__LINE__);
-				tmp = OP_READER_CLEAR;
-				rt_stack.stop -= 3;
 				state = ST_INIT;
 				break;
 			default:
 				err(__LINE__);
 				state = ST_INIT;
 			}
+			if(isRef && tmp == OP_READER_CLEAR)
+				tmp = OP_VAR_CLEAR;
 			_cle_emit0(parser,&code,tmp);
 
 			while(stack && stack->level >= level && stack->opc != OCALL)
@@ -882,6 +881,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				if(level) err(__LINE__);
 				return c;
 			}
+			isRef = 0;
 			break;
 		case '\'':
 		case '"':
@@ -899,13 +899,13 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					break;
 				case ALPHA_0:
 				case VAR_0:
-					tmp = OP_READER_OUT;
+					tmp = isRef? OP_VAR_OUT : OP_READER_OUT;
 					rt_stack.stop--;
 					state = STR_0;
 					break;
 				case ALPHA_EQ:
 				case VAR_EQ:
-					tmp = OP_READER_OUT;
+					tmp = isRef? OP_VAR_OUT : OP_READER_OUT;
 					rt_stack.stop--;
 					state = STR_EQ;
 					break;
@@ -949,7 +949,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					if(type != 0 && type != 2) err(__LINE__);
 					type = 2;
 				case STR_0:
-					_cle_emit0(parser,&code,OP_READER_OUT);
+					_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 					rt_stack.stop--;
 					state = VAR_0;
 					break;
@@ -963,7 +963,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 					if(type != 0 && type != 2) err(__LINE__);
 					type = 2;
 				case STR_EQ:
-					_cle_emit0(parser,&code,OP_READER_OUT);
+					_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 					rt_stack.stop--;
 				case ST_EQ:
 					state = VAR_EQ;
@@ -987,7 +987,8 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 				if(parser->fs)
 				{
 					c = _cle_var(parser,&code,&rt_stack,0,0,pathval_rw);
-					isRef = (c == '=');
+					if(pathval_rw == 3 && c == '=')
+						isRef = 1;
 				}
 				else err(__LINE__);
 			}
@@ -1084,8 +1085,19 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 
 					if(c != '$') err(__LINE__);
 					c = _cle_var(parser,&code,&rt_stack,level,1,0);
-
-					state = (c == '=' || c == ';')? ST_VAR_DEF : ST_NEW;
+					switch(c)
+					{
+					case '=':
+						isRef = 1;
+						state = ST_VAR_DEF;
+						break;
+					case ';':
+						_cle_emit0(parser,&code,OP_VAR_POP);
+						state = ST_VAR_DEF;
+						break;
+					default:
+						state = ST_NEW;
+					}
 					continue;
 				case 6:		// if
 					break;
@@ -1106,7 +1118,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 						if(type != 0 && type != 2) err(__LINE__);
 						type = 2;
 					case STR_0:
-						_cle_emit0(parser,&code,OP_READER_OUT);	//OP_STR_POP);
+						_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 						rt_stack.stop--;
 					case ST_INIT:
 						tmp = OP_MOVE_READER_FUN;
@@ -1128,7 +1140,7 @@ static int _cle_function_body(_parser_state* parser, st_ptr* expr)
 						if(type != 0 && type != 2) err(__LINE__);
 						type = 2;
 					case STR_EQ:
-						_cle_emit0(parser,&code,OP_READER_OUT);
+						_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
 						rt_stack.stop--;
 					case ST_EQ:
 						tmp = OP_MOVE_READER_FUN;

@@ -644,9 +644,6 @@ char* st_get_all(st_ptr* pt, uint* length)
 		// no next key! or trying to read past split?
 		if(nxt == 0 || nxt->offset < me->length)
 		{
-			if(boffset < rlength)
-				buffer = tk_realloc(buffer,boffset);
-
 			*length = boffset;
 			return buffer;
 		}
