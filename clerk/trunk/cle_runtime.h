@@ -8,6 +8,9 @@
 #define ERROR_MAX 20
 #define MAX_READ_LEVEL 10
 
+// !!!! match sizeof(struct key) in cle_struct.h
+#define SIZE_OF_KEY 8
+
 #define HEAD_SIZE 2
 #define HEAD_FUNCTION "\0F"
 #define HEAD_TRIGGER "\0T"
@@ -37,8 +40,8 @@ enum cle_opcode
 	OP_MOVE_READER_FUN,
 	OP_READER_TO_WRITER,
 	OP_READER_OUT,
-	OP_POP_READER,
-	OP_POP_WRITER,
+	OP_READER_CLEAR,
+	OP_POP,
 	OP_DEF_VAR_REF,
 	OP_DEF_VAR,
 	OP_VAR_FREE,
