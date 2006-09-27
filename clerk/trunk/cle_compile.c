@@ -1160,6 +1160,7 @@ static struct _cmp_state
 	st_ptr* app;
 	st_ptr* ref;
 	char* opbuf;
+	st_ptr root;
 	st_ptr code;
 	st_ptr anno;
 	st_ptr strs;
@@ -1196,21 +1197,23 @@ static uint _cmp_name(struct _cmp_state* cst, int* c)
 		*c = getc(cst->f);
 	}
 
-	if(op == cst->top) err(__LINE__);
+	if(op == cst->top) return 0;
 
 	_cmp_check_buffer(cst,op);
 	cst->opbuf[op++] = '\0';
 	return op;
 }
 
+// setup call-site and funspace
 static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 {
-	st_ptr tmpptr;
+	st_ptr tmpptr,params;
 	uint op,funidx;
 	int c = getc(cst->f);
 
 	// get function name
 	op = _cmp_name(cst,&c);
+	if(!op) return(__LINE__);
 
 	// goto/insert name and check for fun-ref
 	st_insert(cst->t,cst->ref,cst->opbuf + cst->top,op - cst->top);
@@ -1229,7 +1232,7 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 			|| st_get(&tmpptr,cst->opbuf + op,sizeof(uint)) > 0)
 			funidx = 0;
 		else
-			funidx = *(int*)(cst->opbuf + op + HEAD_SIZE);
+			funidx = *(uint*)(cst->opbuf + op + HEAD_SIZE);
 
 		// next...
 		++funidx;
@@ -1241,36 +1244,50 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 
 		// write fun-ref
 		memcpy(cst->opbuf + op,HEAD_FUNCTION,HEAD_SIZE);
-		*(int*)(cst->opbuf + op + HEAD_SIZE) = funidx;
+		*(uint*)(cst->opbuf + op + HEAD_SIZE) = funidx;
 		st_update(cst->t,cst->ref,cst->opbuf + op,HEAD_SIZE + sizeof(uint));
 	}
 	else
 		// get old fun ref
-		funidx = *(int*)(cst->opbuf + op + HEAD_SIZE);
+		funidx = *(uint*)(cst->opbuf + op + HEAD_SIZE);
 
 	// goto funspace
 	cst->funidx = funidx;
-	cst->code = *cst->app;
-	st_insert(cst->t,&cst->code,funspace,FUNSPACE_SIZE);
-	st_insert(cst->t,&cst->code,cst->opbuf + op + HEAD_SIZE,sizeof(uint));
+	cst->root = *cst->app;
+	st_insert(cst->t,&cst->root,funspace,FUNSPACE_SIZE);
+	st_insert(cst->t,&cst->root,cst->opbuf + op + HEAD_SIZE,sizeof(uint));
+
+	// code
+	cst->code = cst->root;
+	st_insert(cst->t,&cst->anno,"B",2);
+
+	// write public/private opcode
 
 	// annotation
-	cst->anno = cst->code;
+	cst->anno = cst->root;
 	st_insert(cst->t,&cst->anno,"A",2);
-
-
 
 	// get parameters
 	_cmp_whitespace(cst,&c);
 	if(c != '(') return(__LINE__);
+
+	params = cst->anno;
+	st_insert(cst->t,&params,"P",2);
+	st_delete(cst->t,&params,0,0);	// clear any old
 
 	c = getc(cst->f);
 	while(c != ')')
 	{
 		if(c == '$')
 		{
-			op = _cmp_name(cst,&c);	// param
-			tmpptr = cst->anno;
+			op = _cmp_name(cst,&c);	// param: $name
+			if(!op) return(__LINE__);
+
+			// save param-name in annotation
+			tmpptr = params;
+			st_insert(cst->t,&tmpptr,cst->opbuf + cst->top,op - cst->top);
+
+			// create as var and pre-load it in fun
 		}
 		if(c <= 0) return(__LINE__);
 
@@ -1303,12 +1320,11 @@ int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun)
 	cst.ref = ref;
 
 	// create header:
-	// setup call-site and funspace
 	ret = _cmp_header(&cst,public_fun);
 	if(ret) return ret;
 
-	// create annotation
-	ret = cle_write(f,t,0,&cst.code,0,1);
+	// create annotations
+	ret = cle_write(f,t,0,&cst.anno,0,1);
 	if(ret) return ret;
 
 	ret = _cmp_init_body(&cst);
