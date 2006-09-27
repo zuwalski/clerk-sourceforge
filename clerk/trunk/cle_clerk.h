@@ -88,7 +88,8 @@ void* tk_realloc(void* mem, uint size);
 void tk_mfree(void* mem);
 
 /* IO system */
-int cle_trans(FILE* f, task* t, st_ptr* root);
+
+int cle_trans(FILE* f, task* t, st_ptr* app);
 
 /* test */
 

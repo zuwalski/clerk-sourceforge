@@ -4,6 +4,20 @@
 
 const char* funspace = "funs";
 
+static struct _rt_continuation
+{
+	st_ptr	*app,
+			*root,
+			*param;
+
+	st_ptr* writer;
+	st_ptr* stack;
+	char *codemem,*pc;
+	st_ptr strings;
+	uint funidx, call_state, sp;
+};
+
+
 static void _cle_indent(uint indent, const char* str)
 {
 	while(indent-- > 0)
@@ -75,6 +89,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MOVE_READER_FUN";
 	case OP_READER_TO_WRITER:
 		return "OP_READER_TO_WRITER";
+	case OP_WRITER_TO_READER:
+		return "OP_WRITER_TO_READER";
 	case OP_READER_OUT:
 		return "OP_READER_OUT";
 	case OP_READER_CLEAR:
@@ -182,6 +198,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_PUBLIC_FUN:
 		case OP_APP_ROOT:
 		case OP_READER_TO_WRITER:
+		case OP_WRITER_TO_READER:
 		case OP_NEW:
 		case OP_READER_OUT:
 		case OP_READER_CLEAR:
@@ -298,50 +315,65 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 	return 0;
 }
 
-static int _rt_setup_funcall(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
+static struct _rt_continuation* _rt_create_continuation(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param, uchar entry_fun)
 {
-	st_ptr* writer;
-	st_ptr* stack;
-	st_ptr strings,tmpptr;
-	st_ptr outstack[100];
-	char *pc,*codemem;
-	uint funidx,tmpuint,outsp = 0,sp = 1;
+	struct _rt_continuation* cont;
+	st_ptr tmpptr;
+	uint   tmpuint;
 	ushort tmpushort;
-	char head[HEAD_SIZE];
+	char   head[HEAD_SIZE];
+
+	cont = (struct _rt_continuation*)tk_malloc(sizeof(struct _rt_continuation));
+
+	cont->app = app;
+	cont->root = root;
+	cont->param = param;
 
 	tmpptr = *fun;
 	if(st_get(&tmpptr,head,HEAD_SIZE) != -1 || head[0] != 0 || head[1] != 'F')
-		return(__LINE__);
+		return 0;
 
-	if(st_get(&tmpptr,(char*)&funidx,sizeof(uint)) > 0)
-		return(__LINE__);
+	if(st_get(&tmpptr,(char*)&cont->funidx,sizeof(uint)) > 0)
+		return 0;
 
 	tmpptr = *app;
 	if(st_move(&tmpptr,funspace,FUNSPACE_SIZE))
-		return(__LINE__);
+		return 0;
 
-	if(st_move(&tmpptr,(cdat)&funidx,sizeof(uint)))
-		return(__LINE__);
+	if(st_move(&tmpptr,(cdat)&cont->funidx,sizeof(uint)))
+		return 0;
 
-	strings = tmpptr;
-	st_move(&strings,"S",HEAD_SIZE);	// root string-space
+	cont->strings = tmpptr;
+	st_move(&cont->strings,"S",HEAD_SIZE);	// root string-space
 
 	st_move(&tmpptr,"B",HEAD_SIZE);	// body
 
-	codemem = st_get_all(&tmpptr,&tmpuint);	// load function-code
-	pc = codemem = tk_realloc(codemem,tmpuint);
+	cont->codemem = st_get_all(&tmpptr,&tmpuint);	// load function-code
+	cont->pc = cont->codemem = tk_realloc(cont->codemem,tmpuint);
+
 	// entry-function MUST be public
-	if(*pc++ != OP_PUBLIC_FUN)
-		return(__LINE__);
+	if(*cont->pc == OP_PUBLIC_FUN)
+		cont->pc++;
+	else if(entry_fun)
+		return 0;
 
 	// alloc stack-space for function
-	tmpushort = *((ushort*)(codemem + tmpuint - sizeof(ushort)));
-	stack = tk_malloc(tmpushort * sizeof(st_ptr));
+	tmpushort = *((ushort*)(cont->codemem + tmpuint - sizeof(ushort)));
+	cont->stack = tk_malloc(tmpushort * sizeof(st_ptr));
 
-	// setup default output
-	stack[0].pg = 0;
-	st_empty(t,&stack[1]);
-	writer = &stack[1];
+	cont->sp = 0;
+
+	return cont;
+}
+
+static void _rt_dispose_continuation(task* t, struct _rt_continuation* cont)
+{
+	struct _rt_continuation* tmp;
+
+	if(cont == 0)
+		return;
+
+	tk_mfree(cont);
 }
 
 static int _rt_eval(task* t, st_ptr* dest, st_ptr* source)
@@ -405,6 +437,8 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 			break;
 		case OP_APP_ROOT:
 			stack[++sp] = *app;
+			break;
+		case OP_WRITER_TO_READER:
 			break;
 		case OP_READER_TO_WRITER:	// save writer behind new target - update writer
 			tmpptr = stack[sp];
@@ -479,13 +513,11 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 			pc += sizeof(ushort);
 			tmpptr = *param;
 			if(st_move(&tmpptr,pc,tmpushort))
-				;
+				st_empty(t,&tmpptr);
 			stack[++sp] = tmpptr;
 			pc += tmpushort;
 			break;
 		case OP_DEF_VAR:
-			tmpushort = *((ushort*)pc);
-			pc += sizeof(ushort);
 			st_empty(t,&stack[++sp]);
 			stack[++sp] = stack[sp];
 			break;
