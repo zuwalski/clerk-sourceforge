@@ -10,6 +10,7 @@
 #define HEAD_SIZE 2
 #define HEAD_FUNCTION "\0F"
 #define HEAD_TRIGGER "\0T"
+#define HEAD_EXPR "\0E"
 #define HEAD_INT "\0I"
 #define HEAD_STR "\0S"
 
@@ -64,6 +65,8 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root);
 int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar infun);
 /* "test ""test"" 'test'" | 'test ''test'' "test"' */
 int cle_string(FILE* f, task* t, st_ptr* out, int c, int* nxtchar, uchar append);
+
+void cle_num(task* t, st_ptr* out, int num);
 
 /* compiler functions */
 int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun);

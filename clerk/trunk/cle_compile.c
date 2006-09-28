@@ -3,7 +3,7 @@
 #include "cle_runtime.h"
 #include "cle_struct.h"
 
-#define BUFFER_GROW 128
+#define BUFFER_GROW 256
 
 static enum parser_states
 {
@@ -26,6 +26,19 @@ static enum parser_states
 	VAR_NEW,
 	CURL_NEW,
 	ST_VAR_DEF
+};
+
+static enum opc
+{
+	OPARN,	// (
+	OPARN_END,	// )
+	OLOADPARAM,
+	OCALL,	// ( - begin call
+	ONEW,	// new
+	OEQL,	// =
+	OAPP,
+	OPOP,	//}
+	ONUMOP	// + - * / %
 };
 
 static const char* keywords[] = {
@@ -58,15 +71,6 @@ static struct _fun_stack
 	uchar publicfun;
 };
 
-static enum opc
-{
-	OPARN,	// (
-	OSQR,	// [
-	OCALL,	// ( - begin call
-	ONEW,	// new
-	OEQL,	// =
-	ONUMOP	// + - * / %
-};
 
 static struct _op_stack
 {
@@ -1166,9 +1170,47 @@ static struct _cmp_state
 	st_ptr strs;
 
 	uint funidx;
+
 	uint bsize;
 	uint top;
+
+	// code-size
+	uint code_size;
+
+	// {}
+	uint level;
+
+	// top-var
+	uint top_var;
+
+	// top-opc
+	uint top_opc;
+
+	// prg-stack
+	uint s_top;
+	uint s_max;
 };
+
+static struct _cmp_var
+{
+	uint prev;
+	uint name;
+	uint type;
+	uint level;
+};
+#define PEEK_VAR(v) ((struct _cmp_var*)(cst->opbuf + v))
+
+static struct _cmp_op
+{
+	uint prev;
+	uint atcode;
+	uint name;
+	uint leng;
+	uint prec;
+	enum opc opc;
+	uint imm;
+};
+#define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + o))
 
 static void _cmp_check_buffer(struct _cmp_state* cst, uint top)
 {
@@ -1204,6 +1246,532 @@ static uint _cmp_name(struct _cmp_state* cst, int* c)
 	return op;
 }
 
+static void _cmp_emit0(struct _cmp_state* cst, uchar opc)
+{
+	if(opc)
+	{
+		st_append(cst->t,&cst->code,&opc,1);
+		cst->code_size++;
+	}
+}
+
+static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort len)
+{
+	if(opc)
+	{
+		st_append(cst->t,&cst->code,&opc,1);
+		st_append(cst->t,&cst->code,(cdat)&len,sizeof(ushort));
+		st_append(cst->t,&cst->code,param,len);
+		cst->code_size += len + 1 + sizeof(ushort);
+	}
+}
+
+static void _cmp_stack(struct _cmp_state* cst, int diff)
+{
+	cst->s_top += diff;
+	if(cst->s_top > cst->s_max)
+		cst->s_max = cst->s_top;
+}
+
+static void _cmp_def_var(struct _cmp_state* cst, uint op)
+{
+	struct _cmp_var* var;
+	uint top,begin = op;
+	if(begin & 3)
+		begin += 4 - (cst->top & 3);
+	top = begin + sizeof(struct _cmp_var);
+
+	_cmp_check_buffer(cst,top);
+
+	var = PEEK_VAR(begin);
+
+	var->prev = cst->top_var;
+	var->name = cst->top;
+	var->type = 0;
+	var->level = cst->level;
+
+	_cmp_stack(cst,1);
+
+	cst->top_var = begin;
+	cst->top = top;
+}
+
+// operator to instruction-stack
+static void _cmp_push_op(struct _cmp_state* cst, enum opc opc, uint imm, uint prec, uint op)
+{
+	struct _cmp_op* cop;
+	uint top,begin = op;
+	if(begin & 3)
+		begin += 4 - (cst->top & 3);
+	top = begin + sizeof(struct _cmp_op);
+
+	_cmp_check_buffer(cst,top);
+
+	cop = PEEK_OP(begin);
+
+	cop->prev = cst->top_opc;
+	cop->atcode = cst->code_size;
+	cop->name = cst->top;
+	cop->leng = op - cst->top;
+	cop->prec = prec;
+	cop->opc = opc;
+	cop->imm = imm;
+
+	cst->top_opc = begin;
+	cst->top = top;
+}
+
+// emit from instruction-stack
+static int _cmp_emit_expr(struct _cmp_state* cst)
+{
+	return 0;
+}
+
+// parse body to instruction-stack
+static int _cmp_body(struct _cmp_state* cst, uchar mode)
+{
+	enum parser_states state = (mode? ST_EQ : ST_INIT);
+	int c = getc(cst->f);
+	uint type = 0;
+
+	while(1)
+	{
+		switch(c)
+		{
+		case '(':
+			_cmp_push_op(cst,OPARN,0,0,0);
+			break;
+		case ')':
+			_cmp_push_op(cst,OPARN_END,0,0,0);
+			break;
+		case '.':
+			switch(state)
+			{
+			case ALPHA_0:
+			case VAR_0:
+				state = DOT_0;
+				break;
+			case ALPHA_NEW:
+			case VAR_NEW:
+				state = DOT_NEW;
+				break;
+			case ALPHA_EQ:
+			case VAR_EQ:
+				state = DOT_EQ;
+				break;
+			default:
+				err(__LINE__);
+				state = DOT_0;	// recover
+			}
+			break;
+		case '\\':
+			switch(state)
+			{
+			case ALPHA_0:
+			case VAR_0:
+				if(type != 0 && type != 2) err(__LINE__);
+				type = 2;
+			case ST_INIT:
+				state = APP_0;
+				break;
+			case ALPHA_EQ:
+			case VAR_EQ:
+				if(type != 0 && type != 2) err(__LINE__);
+				type = 2;
+			case ST_EQ:
+				state = APP_EQ;
+				break;
+			default:
+				err(__LINE__);
+				state = ST_INIT;
+			}
+			_cmp_push_op(cst,OAPP,0,0,0);
+			break;
+		case '{':
+			cst->level++;
+			switch(state)
+			{
+			case ALPHA_0:
+			case VAR_0:
+				state = CURL_0;
+				break;
+			case ST_NEW:
+			case ALPHA_NEW:
+			case VAR_NEW:
+				state = CURL_NEW;
+				break;
+			default:
+				err(__LINE__);
+				state = ST_INIT;
+			}
+			break;
+		case '}':
+			switch(state)
+			{
+			case CURL_0:
+			case CURL_NEW:
+				break;
+			default:
+				err(__LINE__);
+				state = ST_INIT;
+			}
+
+			if(cst->level == 0) err(__LINE__);
+			else
+			{
+				cst->level--;
+				_cmp_push_op(cst,OPOP,cst->level,0,0);
+			}
+			break;
+		case '=':
+			if(type > 1) err(__LINE__);
+			switch(state)
+			{
+			case ALPHA_0:
+				state = level? CURL_0 : ST_INIT;
+				break;
+			case VAR_0:
+			case ST_VAR_DEF:
+				state = level? CURL_0 : ST_INIT;
+				break;
+			case ALPHA_NEW:
+			case VAR_NEW:
+				state = CURL_NEW;
+				break;
+			default:
+				err(__LINE__);
+			}
+			_cmp_push_op(cst,OEQL,state,0,0);
+			state = ST_EQ;
+			type = 0;
+			break;
+		case ',':
+		case ';':
+			switch(state)
+			{
+			case VAR_0:
+			case ALPHA_0:
+			case STR_0:
+				state = level? CURL_0 : ST_INIT;
+				break;
+			case ALPHA_NEW:
+			case VAR_NEW:
+				state = CURL_NEW;
+				break;
+			case ALPHA_EQ:
+			case VAR_EQ:
+			case STR_EQ:
+				break;
+			case ST_VAR_DEF:
+				if(c == ',' && mode != 0) err(__LINE__);
+				state = ST_INIT;
+				break;
+			default:
+				err(__LINE__);
+				state = ST_INIT;
+			}
+
+
+			if(c == ',' && expr && parser->fs)	// set param done
+			{
+				parser->fs->stringidx = stringidx;
+				if(level) err(__LINE__);
+				return c;
+			}
+			isRef = 0;
+			break;
+		case '\'':
+		case '"':
+			{
+				int app = 0;
+				tmp = 0;
+				if(type != 0 && type != 2) err(__LINE__);
+				switch(state)
+				{
+				case ST_INIT:
+					state = STR_0;
+					break;
+				case ST_EQ:
+					state = STR_EQ;
+					break;
+				case ALPHA_0:
+				case VAR_0:
+					tmp = isRef? OP_VAR_OUT : OP_READER_OUT;
+					rt_stack.stop--;
+					state = STR_0;
+					break;
+				case ALPHA_EQ:
+				case VAR_EQ:
+					tmp = isRef? OP_VAR_OUT : OP_READER_OUT;
+					rt_stack.stop--;
+					state = STR_EQ;
+					break;
+				case STR_0:
+				case STR_EQ:
+					app = 1;
+					break;
+				default:
+					err(__LINE__);
+					state = ST_INIT;
+				}
+				_cle_emit0(parser,&code,tmp);
+
+				if(app == 0)
+				{
+					_cle_emitIs(parser,&code,OP_STR,stringidx);
+					_cle_put_stack(&rt_stack,1);
+
+					cur_string = strings;
+					st_insert(parser->t,&cur_string,(cdat)&stringidx,sizeof(ushort));
+					stringidx++;
+				}
+				
+				app = cle_string(parser->f,parser->t,&cur_string,c,&c,app);
+				if(app) err(app);
+				type = 2;
+			}
+			continue;
+		case '$':
+			{
+				uchar pathval_rw = 0;	// 0 - load, 1 - read with, 2 - write with, 3 - ref
+				switch(state)
+				{
+				case ST_INIT:
+				case CURL_0:
+					pathval_rw = 3;
+					state = VAR_0;
+					break;
+				case ALPHA_0:
+				case VAR_0:
+					if(type != 0 && type != 2) err(__LINE__);
+					type = 2;
+				case STR_0:
+					_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
+					rt_stack.stop--;
+					state = VAR_0;
+					break;
+				case DOT_0:
+				case APP_0:
+					state = VAR_0;
+					pathval_rw = 1;
+					break;
+				case ALPHA_EQ:
+				case VAR_EQ:
+					if(type != 0 && type != 2) err(__LINE__);
+					type = 2;
+				case STR_EQ:
+					_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
+					rt_stack.stop--;
+				case ST_EQ:
+					state = VAR_EQ;
+					break;
+				case DOT_EQ:
+				case APP_EQ:
+					state = VAR_EQ;
+					pathval_rw = 1;
+					break;
+				case ST_NEW:
+				case DOT_NEW:
+				case CURL_NEW:
+					state = VAR_NEW;
+					pathval_rw = 2;
+					break;
+				default:
+					err(__LINE__);
+					state = ST_INIT;
+				}
+
+				if(parser->fs)
+				{
+					c = _cle_var(parser,&code,&rt_stack,0,0,pathval_rw);
+					if(pathval_rw == 3 && c == '=')
+						isRef = 1;
+				}
+				else err(__LINE__);
+			}
+			continue;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			break;
+		default:
+  			if(alpha(c))
+  			{
+				int keyword;
+				uint op = _cle_name(parser,&c);
+
+				keyword = _cle_keyword(parser->opbuf + parser->top);
+				switch(keyword)
+				{
+				case 0:		// private
+				case 1:		// public
+				case 2:		// begin
+					err(__LINE__);
+					state = ST_INIT;
+					break;
+				case 3:		// end
+					if(state != ST_INIT) err(__LINE__);
+
+					while(stack)
+					{
+						switch(stack->opc)
+						{
+						case OEQL:
+							_cle_emit0(parser,&code,OP_POP);
+							rt_stack.stop--;
+						case ONEW:
+							break;
+						default:
+							err(__LINE__);
+						}
+						_cle_oppop(parser,&stack);
+					}
+
+					if(parser->fs)
+					{
+						while(parser->fs->vs)
+							_cle_vpop(parser);
+
+						_cle_fpop(parser);
+					}
+					_cle_emitIs(parser,&code,OP_FUNCTION_END,rt_stack.smax + 1);
+					return c;
+				case 4:		// new
+					_cle_oppush(parser,&stack,state,type,level,0,ONEW,0,0);
+					switch(state)
+					{
+					case ST_INIT:
+						_cle_emit0(parser,&code,OP_WRITER_TO_READER);
+					case ST_EQ:
+						break;
+					default:
+						err(__LINE__);
+					}
+					state = ST_NEW;
+					type = 1;
+					break;
+				case 5:		// var $name
+					if(state != ST_INIT && state != CURL_0) err(__LINE__);
+					if(expr) err(__LINE__);
+
+					_cle_whitespace(parser,&c);
+
+					if(c != '$') err(__LINE__);
+					c = _cle_var(parser,&code,&rt_stack,level,1,0);
+					switch(c)
+					{
+					case '=':
+						isRef = 1;
+						state = ST_VAR_DEF;
+						break;
+					case ';':
+						_cle_emit0(parser,&code,OP_VAR_POP);
+						state = ST_VAR_DEF;
+						break;
+					default:
+						state = ST_NEW;
+					}
+					continue;
+				case 6:		// if
+					break;
+				case 7:		// then
+					break;
+				case 8:		// else
+					break;
+				case 9:		// asc
+					break;
+				case 10:	// desc
+					break;
+				default:
+					tmp = 0;
+					switch(state)
+					{
+					case ALPHA_0:
+					case VAR_0:
+						if(type != 0 && type != 2) err(__LINE__);
+						type = 2;
+					case STR_0:
+						_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
+						rt_stack.stop--;
+					case ST_INIT:
+						tmp = OP_MOVE_READER_FUN;
+						_cle_put_stack(&rt_stack,1);
+						state = ALPHA_0;
+						break;
+					case CURL_0:
+						tmp = OP_DUB_MOVE_READER;
+						_cle_put_stack(&rt_stack,1);
+						state = ALPHA_0;
+						break;
+					case DOT_0:
+					case APP_0:
+						tmp = OP_MOVE_READER;
+						state = ALPHA_0;
+						break;
+					case ALPHA_EQ:
+					case VAR_EQ:
+						if(type != 0 && type != 2) err(__LINE__);
+						type = 2;
+					case STR_EQ:
+						_cle_emit0(parser,&code,isRef? OP_VAR_OUT : OP_READER_OUT);
+						rt_stack.stop--;
+					case ST_EQ:
+						tmp = OP_MOVE_READER_FUN;
+						_cle_put_stack(&rt_stack,1);
+						state = ALPHA_EQ;
+						break;
+					case DOT_EQ:
+					case APP_EQ:
+						tmp = OP_MOVE_READER;
+						state = ALPHA_EQ;
+						break;
+					case CURL_NEW:
+					case ST_NEW:
+						tmp = OP_DUB_MOVE_WRITER;
+						_cle_put_stack(&rt_stack,1);
+						state = ALPHA_NEW;
+						break;
+					case DOT_NEW:
+						tmp = OP_MOVE_WRITER;
+						state = ALPHA_NEW;
+						break;
+					default:
+						err(__LINE__);
+						state = ST_INIT;
+					}
+
+					if(c == '(')	// function call?
+					{
+						if(state != ALPHA_0 && state != ALPHA_EQ) err(__LINE__);
+
+						_cle_oppush(parser,&stack,state,type,level,op - parser->top,OCALL,0,0);
+						_cle_emit0(parser,&code,OP_NEW);
+						_cle_put_stack(&rt_stack,1);
+						parser->top = op;
+						state = ST_NEW;
+
+ 						c = getc(parser->f);
+					}
+					else
+						_cle_emitS(parser,&code,parser->opbuf + parser->top,op - parser->top,tmp);
+				}
+  				continue;
+    		}
+			else
+			{
+				//printf("bad char %c\n",c);
+				err(__LINE__);
+				return c;
+			}
+ 		}
+
+ 		c = getc(parser->f);
+	}
+
+	return 0;	// return last c
+}
+
 // setup call-site and funspace
 static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 {
@@ -1228,7 +1796,7 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 	{
 		// get next funidx
 		tmpptr = *cst->app;
-		if(st_insert(t,&tmpptr,"\0:",2)
+		if(st_insert(cst->t,&tmpptr,"\0:",2)
 			|| st_get(&tmpptr,cst->opbuf + op,sizeof(uint)) > 0)
 			funidx = 0;
 		else
@@ -1257,15 +1825,24 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 	st_insert(cst->t,&cst->root,funspace,FUNSPACE_SIZE);
 	st_insert(cst->t,&cst->root,cst->opbuf + op + HEAD_SIZE,sizeof(uint));
 
+	// clean
+	st_delete(cst->t,&cst->root,0,0);
+
 	// code
 	cst->code = cst->root;
 	st_insert(cst->t,&cst->anno,"B",2);
 
 	// write public/private opcode
+	if(public_fun)
+		_cmp_emit0(cst,OP_PUBLIC_FUN);
 
 	// annotation
 	cst->anno = cst->root;
 	st_insert(cst->t,&cst->anno,"A",2);
+
+	// strings
+	cst->strs = cst->root;
+	st_insert(cst->t,&cst->strs,"S",2);
 
 	// get parameters
 	_cmp_whitespace(cst,&c);
@@ -1276,8 +1853,10 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 	st_delete(cst->t,&params,0,0);	// clear any old
 
 	c = getc(cst->f);
-	while(c != ')')
+	while(1)
 	{
+		_cmp_whitespace(cst,&c);
+
 		if(c == '$')
 		{
 			op = _cmp_name(cst,&c);	// param: $name
@@ -1288,64 +1867,89 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 			st_insert(cst->t,&tmpptr,cst->opbuf + cst->top,op - cst->top);
 
 			// create as var and pre-load it in fun
+			_cmp_whitespace(cst,&c);
+			if(c == '=')
+			{
+				// default value
+				_cmp_push_op(cst,OLOADPARAM,0,0,op);
+				c = _cmp_body(cst,2);
+			}
+			else
+			{
+				_cmp_emitS(cst,OP_LOAD_PARAM,cst->opbuf + cst->top,op - cst->top);
+				_cmp_stack(cst,1);
+			}
 		}
-		if(c <= 0) return(__LINE__);
-
-		_cmp_whitespace(cst,&c);
-		if(c == ',') c = getc(cst->f);
+		
+		if(c == ',')
+			c = getc(cst->f);
+		else
+			break;
 	}
 
-	return 0;
+	return (c == ')'? 0 : __LINE__);
 }
 
-static int _cmp_body(struct _cmp_state* cst)
+// setup _cmp_state
+static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* app)
 {
-	// parse and emit
-	return 0;	// return last c
-}
-
-static int _cmp_init_body(struct _cmp_state* cst)
-{
-	// setup string-space
-	return 0;
+	cst->t = t;
+	cst->f = f;
+	cst->app = app;
+	cst->s_top = cst->s_max = 0;
+	cst->top_var = 0;
+	cst->level = 0;
+	cst->code_size = 0;
+	cst->opbuf = 0;
+	cst->bsize = cst->top = 0;
+	cst->top_opc = 0;
 }
 
 int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun)
 {
 	struct _cmp_state cst;
 	int ret;
-	cst.t = t;
-	cst.f = f;
-	cst.app = app;
+
+	_cmp_init(&cst,f,t,app);
 	cst.ref = ref;
 
 	// create header:
 	ret = _cmp_header(&cst,public_fun);
-	if(ret) return ret;
+	if(ret == 0)
+	{
+		// create annotations
+		ret = cle_write(f,t,0,&cst.anno,0,1);
+		if(ret == 0)
+			// compile body
+			ret = _cmp_body(&cst,0);
+	}
 
-	// create annotations
-	ret = cle_write(f,t,0,&cst.anno,0,1);
-	if(ret) return ret;
-
-	ret = _cmp_init_body(&cst);
-	if(ret) return ret;
-
-	// compile body
-	return _cmp_body(&cst);
+	tk_mfree(cst.opbuf);
+	return ret;
 }
 
 int cmp_expr(FILE* f, task* t, st_ptr* app, st_ptr* ref)
 {
 	struct _cmp_state cst;
 	int ret;
-	cst.t = t;
-	cst.f = f;
-	cst.app = app;
+
+	_cmp_init(&cst,f,t,app);
 	cst.ref = 0;
-	cst.code = *ref;
+	cst.root = *ref;
 
-	ret = _cmp_init_body(&cst);
-	if(ret) return ret;
+	// clean and mark expr
+	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
 
-	return _cmp_body(&cst);
+	// code (expr's never public)
+	cst.code = cst.root;
+	st_insert(t,&cst.code,"B",2);
+
+	// strings
+	cst.strs = cst.root;
+	st_insert(t,&cst.strs,"S",2);
+
+	ret = _cmp_body(&cst,1);
+
+	tk_mfree(cst.opbuf);
+	return ret;
 }

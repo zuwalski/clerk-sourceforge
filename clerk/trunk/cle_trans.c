@@ -106,6 +106,12 @@ int cle_string(FILE* f, task* t, st_ptr* out, int c, int* nxtchar, uchar append)
 	return 0;
 }
 
+void cle_num(task* t, st_ptr* out, int num)
+{
+	st_update(t,out,HEAD_INT,HEAD_SIZE);
+	st_append(t,out,(cdat)&num,sizeof(int));
+}
+
 int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar infun)
 {
 	struct _the_stack ps;
@@ -258,8 +264,7 @@ int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar inf
 				while(num(c));
 
 				if(minus) val *= -1;
-				st_update(t,&after,HEAD_INT,HEAD_SIZE);
-				st_append(t,&after,(cdat)&val,sizeof(int));
+				cle_num(t,&after,val);
 				state = 4;
 				continue;
 			}
