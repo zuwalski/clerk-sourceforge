@@ -44,6 +44,7 @@ static enum opc
 	OVARREAD,
 	OVARWRITE,
 	OALPHA,
+	OALPHANEW,
 	ONUMOP	// + - * / %
 };
 
@@ -179,6 +180,16 @@ static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort le
 	}
 }
 
+static void _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
+{
+	if(opc)
+	{
+		st_append(cst->t,&cst->code,&opc,1);
+		st_append(cst->t,&cst->code,(cdat)&imm,sizeof(ushort));
+		cst->code_size += 1 + sizeof(ushort);
+	}
+}
+
 static void _cmp_stack(struct _cmp_state* cst, int diff)
 {
 	cst->s_top += diff;
@@ -260,6 +271,11 @@ static int _cmp_emit_expr(struct _cmp_state* cst)
 	return 0;
 }
 
+static int _cmp_clear_level(struct _cmp_state* cst)
+{
+	return 0;
+}
+
 // parse body to instruction-stack
 static int _cmp_body(struct _cmp_state* cst, uchar mode)
 {
@@ -267,6 +283,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 	enum parser_states state = (mode? ST_EQ : ST_INIT);
 	int c = getc(cst->f);
 	uint type = 0;
+	uint paran_level = 0;
 	ushort stringidx = 0;
 
 	while(1)
@@ -274,10 +291,16 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 		switch(c)
 		{
 		case '(':
+			paran_level++;
 			_cmp_push_op(cst,OPARN,0,0,0);
 			break;
 		case ')':
-			_cmp_push_op(cst,OPARN_END,0,0,0);
+			if(paran_level == 0) err(__LINE__);
+			else
+			{
+				paran_level--;
+				_cmp_push_op(cst,OPARN_END,0,0,0);
+			}
 			break;
 		case '.':
 			switch(state)
@@ -405,7 +428,9 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				err(__LINE__);
 				state = ST_INIT;
 			}
+
 			_cmp_emit_expr(cst);
+
 			if(cst->level == 0 && mode)
 				return c;
 			break;
@@ -550,6 +575,8 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				case 3:		// end
 					if(state != ST_INIT) err(__LINE__);
 					_cmp_emit_expr(cst);
+
+					_cmp_emitIs(cst,OP_FUNCTION_END,cst->s_max);
 					return c;
 				case 4:		// new
 					_cmp_push_op(cst,ONEW,0,0,0);
@@ -641,11 +668,14 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					{
 						if(state != ALPHA_0 && state != ALPHA_EQ) err(__LINE__);
 
+						paran_level++;
 						_cmp_push_op(cst,OCALL,0,0,op);
 						state = ST_NEW;
 
  						c = getc(cst->f);
 					}
+					else if(state == ALPHA_NEW)
+						_cmp_push_op(cst,OALPHANEW,0,0,op);
 					else
 						_cmp_push_op(cst,OALPHA,0,0,op);
 				}
