@@ -35,9 +35,12 @@ static enum opc
 	OLOADPARAM,
 	OCALL,	// ( - begin call
 	ONEW,	// new
+	OPIPE,
 	OEQL,	// =
 	OAPP,
 	OSTR,
+	ODOT,	//.
+	OPUSH,	//{
 	OPOP,	//}
 	OVAR,
 	OVARREF,
@@ -45,7 +48,8 @@ static enum opc
 	OVARWRITE,
 	OALPHA,
 	OALPHANEW,
-	ONUMOP	// + - * / %
+	ONUMOP,	// + - * / %
+	OTERM
 };
 
 static struct _cmp_state
@@ -74,7 +78,8 @@ static struct _cmp_state
 	// top-var
 	uint top_var;
 
-	// top-opc
+	// opc
+	uint first_opc;
 	uint top_opc;
 
 	// prg-stack
@@ -95,7 +100,7 @@ static struct _cmp_var
 
 static struct _cmp_op
 {
-	uint prev;
+	uint next;
 	uint atcode;
 	uint name;
 	uint leng;
@@ -253,7 +258,7 @@ static void _cmp_push_op(struct _cmp_state* cst, enum opc opc, uint imm, uint pr
 
 	cop = PEEK_OP(begin);
 
-	cop->prev = cst->top_opc;
+	cop->next = 0;
 	cop->atcode = cst->code_size;
 	cop->name = cst->top;
 	cop->leng = op - cst->top;
@@ -261,19 +266,29 @@ static void _cmp_push_op(struct _cmp_state* cst, enum opc opc, uint imm, uint pr
 	cop->opc = opc;
 	cop->imm = imm;
 
+	if(cst->top_opc)
+	{
+		cop = PEEK_OP(cst->top_opc);
+		cop->next = begin;
+	}
+	else
+		cst->first_opc = begin;
+
 	cst->top_opc = begin;
 	cst->top = top;
 }
 
-// emit from instruction-stack
-static int _cmp_emit_expr(struct _cmp_state* cst)
+static void _cmp_opc_emit(struct _cmp_state* cst)
 {
-	return 0;
-}
+	uint nopc = cst->first_opc;
+	cst->first_opc = cst->top_opc = 0;
 
-static int _cmp_clear_level(struct _cmp_state* cst)
-{
-	return 0;
+	while(nopc)
+	{
+		struct _cmp_op* cop = PEEK_OP(nopc);
+
+		nopc = cop->next;
+	}
 }
 
 // parse body to instruction-stack
@@ -282,7 +297,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 	st_ptr cur_string;
 	enum parser_states state = (mode? ST_EQ : ST_INIT);
 	int c = getc(cst->f);
-	uint type = 0;
+	uint lock_level  = 0;
 	uint paran_level = 0;
 	ushort stringidx = 0;
 
@@ -321,21 +336,18 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				err(__LINE__);
 				state = DOT_0;	// recover
 			}
+			_cmp_push_op(cst,ODOT,0,0,0);
 			break;
 		case '\\':
 			switch(state)
 			{
 			case ALPHA_0:
 			case VAR_0:
-				if(type != 0 && type != 2) err(__LINE__);
-				type = 2;
 			case ST_INIT:
 				state = APP_0;
 				break;
 			case ALPHA_EQ:
 			case VAR_EQ:
-				if(type != 0 && type != 2) err(__LINE__);
-				type = 2;
 			case ST_EQ:
 				state = APP_EQ;
 				break;
@@ -362,6 +374,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				err(__LINE__);
 				state = ST_INIT;
 			}
+			_cmp_push_op(cst,OPUSH,cst->level,0,0);
 			break;
 		case '}':
 			switch(state)
@@ -381,8 +394,23 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				_cmp_push_op(cst,OPOP,cst->level,0,0);
 			}
 			break;
+		case '|':
+			switch(state)
+			{
+			case ALPHA_0:
+			case VAR_0:
+			case STR_0:
+			case ALPHA_EQ:
+			case VAR_EQ:
+			case STR_EQ:
+				break;
+			default:
+				err(__LINE__);
+			}
+			_cmp_push_op(cst,OPIPE,0,0,0);
+			state = ST_EQ;
+			break;
 		case '=':
-			if(type > 1) err(__LINE__);
 			switch(state)
 			{
 			case ALPHA_0:
@@ -401,7 +429,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			}
 			_cmp_push_op(cst,OEQL,state,0,0);
 			state = ST_EQ;
-			type = 0;
 			break;
 		case ',':
 		case ';':
@@ -419,9 +446,10 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			case ALPHA_EQ:
 			case VAR_EQ:
 			case STR_EQ:
+				state = lock_level? CURL_NEW : (cst->level? CURL_0 : ST_INIT);
 				break;
 			case ST_VAR_DEF:
-				if(c == ',' && mode != 0) err(__LINE__);
+				if(c == ',' && mode != 2) err(__LINE__);
 				state = ST_INIT;
 				break;
 			default:
@@ -429,16 +457,21 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				state = ST_INIT;
 			}
 
-			_cmp_emit_expr(cst);
+			if(cst->level == 0 || cst->level < lock_level)
+			{
+				lock_level = 0;
+				_cmp_opc_emit(cst);
 
-			if(cst->level == 0 && mode)
-				return c;
+				if(mode)
+					return c;
+			}
+			else
+				_cmp_push_op(cst,OTERM,0,0,0);
 			break;
 		case '\'':
 		case '"':
 			{
 				int app = 0;
-				if(type != 0 && type != 2) err(__LINE__);
 				switch(state)
 				{
 				case ST_INIT:
@@ -474,7 +507,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				
 				app = cle_string(cst->f,cst->t,&cur_string,c,&c,app);
 				if(app) err(app);
-				type = 2;
 			}
 			continue;
 		case '$':
@@ -490,8 +522,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					break;
 				case ALPHA_0:
 				case VAR_0:
-					if(type != 0 && type != 2) err(__LINE__);
-					type = 2;
 				case STR_0:
 					state = VAR_0;
 					break;
@@ -502,8 +532,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					break;
 				case ALPHA_EQ:
 				case VAR_EQ:
-					if(type != 0 && type != 2) err(__LINE__);
-					type = 2;
 				case STR_EQ:
 				case ST_EQ:
 					state = VAR_EQ;
@@ -574,7 +602,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					break;
 				case 3:		// end
 					if(state != ST_INIT) err(__LINE__);
-					_cmp_emit_expr(cst);
+					_cmp_opc_emit(cst);
 
 					_cmp_emitIs(cst,OP_FUNCTION_END,cst->s_max);
 					return c;
@@ -588,11 +616,13 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					default:
 						err(__LINE__);
 					}
+					if(lock_level == 0)
+						lock_level = cst->level + 1;
 					state = ST_NEW;
-					type = 1;
 					break;
 				case 5:		// var $name
 					if(state != ST_INIT && state != CURL_0) err(__LINE__);
+					if(mode == 2) err(__LINE__);
 
 					_cmp_whitespace(cst,&c);
 
@@ -600,8 +630,14 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 
 					op = _cmp_name(cst,&c);
 					if(op > 0)
-						_cmp_def_var(cst,op);
+					{
+						if(_cmp_find_var(cst,op))
+							err(__LINE__);			// already defined
+						else
+							_cmp_def_var(cst,op);
+					}
 
+					_cmp_whitespace(cst,&c);
 					switch(c)
 					{
 					case '=':
@@ -627,8 +663,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					{
 					case ALPHA_0:
 					case VAR_0:
-						if(type != 0 && type != 2) err(__LINE__);
-						type = 2;
 					case STR_0:
 					case ST_INIT:
 						state = ALPHA_0;
@@ -642,8 +676,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 						break;
 					case ALPHA_EQ:
 					case VAR_EQ:
-						if(type != 0 && type != 2) err(__LINE__);
-						type = 2;
 					case STR_EQ:
 					case ST_EQ:
 						state = ALPHA_EQ;
@@ -683,7 +715,6 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
     		}
 			else
 			{
-				//printf("bad char %c\n",c);
 				err(__LINE__);
 				return c;
 			}
@@ -825,7 +856,7 @@ static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* app)
 	cst->code_size = 0;
 	cst->opbuf = 0;
 	cst->bsize = cst->top = 0;
-	cst->top_opc = 0;
+	cst->first_opc = cst->top_opc = 0;
 }
 
 int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun)
