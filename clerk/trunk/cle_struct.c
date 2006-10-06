@@ -145,12 +145,10 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
 
 #define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)&(pag->pg) + sizeof(page) + sizeof(key) + 3 > (pag)->pg.used)
 
-/* PRE: length < PAGE_SIZE (allways) */
 static void _st_write(struct _st_lkup_res* rt, task* t)
 {
-	key*   newkey;
-	uint   size = rt->length >> 3;
-	ushort nkoff;
+	key* newkey;
+	uint size = rt->length >> 3;
 
 	/* continue/append (last)key? */
 	if(rt->diff == rt->sub->length && IS_LAST_KEY(rt->sub,rt->pg))
@@ -171,31 +169,57 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 		rt->path += length;
 	}
 
-	size += sizeof(key);
-
-	if(size + rt->pg->pg.used > PAGE_SIZE)	/* page-overflow */
-		_st_page_overflow(rt,t,size);
-
-	nkoff  = rt->pg->pg.used;
-	newkey = GOKEY(rt->pg,nkoff);
-	rt->pg->pg.used += size + (size & 1);	/* short aligned */
-	
-	newkey->offset = rt->diff;
-	newkey->length = rt->length;
-	newkey->sub = newkey->next = 0;
-	
-	if(rt->prev)
+	do
 	{
-		newkey->next   = rt->prev->next;
-		rt->prev->next = nkoff;
-	}
-	else if(rt->sub)
-	{
-		newkey->next = rt->sub->sub;
-		rt->sub->sub = nkoff;
-	}
+		uint   room   = PAGE_SIZE - rt->pg->pg.used;
+		uint   length = rt->length;
+		uint   pgsize = size;
+		ushort nkoff;
 
-	memcpy(KDATA(newkey),rt->path,rt->length >> 3);
+		pgsize += sizeof(key);
+
+		if(pgsize > room)	/* page-overflow */
+		{
+			if(room > sizeof(key))	/* room for any data at all? */
+				pgsize = room;		/* as much as we can */
+			else
+			{
+				_st_page_overflow(rt,t,pgsize);	/* we need a new page */
+
+				room = PAGE_SIZE - rt->pg->pg.used;
+				pgsize = room > pgsize? pgsize : room;
+			}
+
+			size       -= pgsize - sizeof(key);
+			length      = (pgsize - sizeof(key)) << 3;
+			rt->length -= length;
+		}
+
+		nkoff  = rt->pg->pg.used;
+		newkey = GOKEY(rt->pg,nkoff);
+		rt->pg->pg.used += pgsize + (pgsize & 1);	/* short aligned */
+		
+		newkey->offset = rt->diff;
+		newkey->length = length;
+		newkey->sub = newkey->next = 0;
+		
+		if(rt->prev)
+		{
+			newkey->next   = rt->prev->next;
+			rt->prev->next = nkoff;
+		}
+		else if(rt->sub)
+		{
+			newkey->next = rt->sub->sub;
+			rt->sub->sub = nkoff;
+		}
+
+		memcpy(KDATA(newkey),rt->path,length >> 3);
+
+		rt->diff = length;
+		rt->path += length >> 3;
+	}
+	while(size);
 	
 	rt->sub  = newkey;
 	rt->diff = newkey->length;
@@ -388,6 +412,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	return 0;
 }
 
+/* FIXME */
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;

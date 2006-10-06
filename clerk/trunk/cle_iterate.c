@@ -474,9 +474,7 @@ void it_load(it_ptr* it, cdat path, uint length)
 	if(it->ksize < length)
 	{
 		it->ksize = length;
-		it->kdata = (uchar*)realloc(it->kdata,it->ksize);
-		if(it->kdata == 0)
-			unimplm();
+		it->kdata = (uchar*)tk_realloc(it->kdata,it->ksize);
 	}
 
 	memcpy(it->kdata,path,length);

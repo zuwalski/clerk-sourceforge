@@ -96,7 +96,7 @@ static struct _cmp_var
 	uint type;
 	uint level;
 };
-#define PEEK_VAR(v) ((struct _cmp_var*)(cst->opbuf + v))
+#define PEEK_VAR(v) ((struct _cmp_var*)(cst->opbuf + (v)))
 
 static struct _cmp_op
 {
@@ -108,7 +108,7 @@ static struct _cmp_op
 	enum opc opc;
 	uint imm;
 };
-#define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + o))
+#define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + (o)))
 
 static const char* keywords[] = {
 	"private","public","begin","end","new","var","if","then","else","asc","desc",0
