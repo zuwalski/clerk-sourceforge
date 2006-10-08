@@ -140,11 +140,11 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 
 	root = &app;
 
-	if(st_move(root,funspace,FUNSPACE_SIZE))
-	{
-		err(__LINE__);
-		return;
-	}
+	//if(st_move(root,funspace,FUNSPACE_SIZE))
+	//{
+	//	err(__LINE__);
+	//	return;
+	//}
 
 	if(st_move(root,(cdat)&funidx,sizeof(uint)))
 	{
@@ -337,8 +337,8 @@ static struct _rt_continuation* _rt_create_continuation(task* t, st_ptr* app, st
 		return 0;
 
 	tmpptr = *app;
-	if(st_move(&tmpptr,funspace,FUNSPACE_SIZE))
-		return 0;
+	//if(st_move(&tmpptr,funspace,FUNSPACE_SIZE))
+	//	return 0;
 
 	if(st_move(&tmpptr,(cdat)&cont->funidx,sizeof(uint)))
 		return 0;
@@ -400,8 +400,8 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		return(__LINE__);
 
 	tmpptr = *app;
-	if(st_move(&tmpptr,funspace,FUNSPACE_SIZE))
-		return(__LINE__);
+	//if(st_move(&tmpptr,funspace,FUNSPACE_SIZE))
+	//	return(__LINE__);
 
 	if(st_move(&tmpptr,(cdat)&funidx,sizeof(uint)))
 		return(__LINE__);

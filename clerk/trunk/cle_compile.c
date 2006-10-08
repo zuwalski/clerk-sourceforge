@@ -56,24 +56,19 @@ static struct _cmp_state
 {
 	task* t;
 	FILE* f;
-	st_ptr* app;
-	st_ptr* ref;
 	char* opbuf;
 	st_ptr root;
 	st_ptr code;
 	st_ptr anno;
 	st_ptr strs;
 
-	uint funidx;
+	uint err;
 
 	uint bsize;
 	uint top;
 
 	// code-size
 	uint code_size;
-
-	// {}
-	uint level;
 
 	// top-var
 	uint top_var;
@@ -85,6 +80,9 @@ static struct _cmp_state
 	// prg-stack
 	uint s_top;
 	uint s_max;
+
+	// blocks
+	uint outer_block;
 };
 
 static struct _cmp_var
@@ -101,12 +99,13 @@ static struct _cmp_var
 static struct _cmp_op
 {
 	uint next;
-	uint atcode;
 	uint name;
 	uint leng;
 	uint prec;
 	enum opc opc;
 	uint imm;
+	uint block_prev;
+	uint skip_ref;
 };
 #define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + (o)))
 
@@ -114,10 +113,12 @@ static const char* keywords[] = {
 	"private","public","begin","end","new","var","if","then","else","asc","desc",0
 };
 
-static void err(int line)
+static void print_err(int line)
 {
 	printf("error on line %d\n",line);
 }
+
+#define err(line) {cst->err++;print_err(line);}
 
 static void _cmp_check_buffer(struct _cmp_state* cst, uint top)
 {
@@ -202,7 +203,7 @@ static void _cmp_stack(struct _cmp_state* cst, int diff)
 		cst->s_max = cst->s_top;
 }
 
-static void _cmp_def_var(struct _cmp_state* cst, uint op)
+static void _cmp_def_var(struct _cmp_state* cst, uint level, uint op)
 {
 	struct _cmp_var* var;
 	uint top,begin = op;
@@ -219,7 +220,7 @@ static void _cmp_def_var(struct _cmp_state* cst, uint op)
 	var->name = cst->top;
 	var->leng = op - cst->top;
 	var->type = 0;
-	var->level = cst->level;
+	var->level = level;
 
 	_cmp_stack(cst,1);
 
@@ -259,12 +260,13 @@ static void _cmp_push_op(struct _cmp_state* cst, enum opc opc, uint imm, uint pr
 	cop = PEEK_OP(begin);
 
 	cop->next = 0;
-	cop->atcode = cst->code_size;
 	cop->name = cst->top;
 	cop->leng = op - cst->top;
 	cop->prec = prec;
 	cop->opc = opc;
 	cop->imm = imm;
+	cop->block_prev = 0;
+	cop->skip_ref = 0;
 
 	if(cst->top_opc)
 	{
@@ -278,17 +280,61 @@ static void _cmp_push_op(struct _cmp_state* cst, enum opc opc, uint imm, uint pr
 	cst->top = top;
 }
 
-static void _cmp_opc_emit(struct _cmp_state* cst)
+// begin: 0 app, 1 ctx, 2 var
+static uint _cmp_gen_path(struct _cmp_state* cst, struct _cmp_op* cop, uchar begin)
 {
-	uint nopc = cst->first_opc;
-	cst->first_opc = cst->top_opc = 0;
+	struct _cmp_op* nxt = PEEK_OP(cop->next);
+	if(nxt->opc)
+		;
+	return cop->next;
+}
 
-	while(nopc)
+static void _cmp_code_gen(struct _cmp_state* cst)
+{
+	uint type = 0;	// 0 init/any, 1 tree, 2 str, 3 num
+	uint nopc = cst->first_opc;
+
+	while(nopc && cst->err == 0)
 	{
 		struct _cmp_op* cop = PEEK_OP(nopc);
-
 		nopc = cop->next;
+
+		switch(cop->opc)
+		{
+		case OPARN:	// (
+		case OPARN_END:	// )
+		case OLOADPARAM:
+		case OCALL:	// ( - begin call
+		case ONEW:	// new
+		case OPIPE:
+		case OEQL:	// =
+			break;
+		case OAPP:
+			nopc = _cmp_gen_path(cst,cop,0);
+			break;
+		case OSTR:
+			if(type != 0 && type != 2) err(__LINE__);
+			type = 2;
+			_cmp_emitIs(cst,OP_STR,cop->imm);
+			break;
+		case OPUSH:	//{
+		case OPOP:	//}
+			break;
+		case OVAR:
+			nopc = _cmp_gen_path(cst,cop,2);
+			break;
+		case OALPHA:
+			nopc = _cmp_gen_path(cst,cop,1);
+			break;
+		case OALPHANEW:
+		case OTERM:
+			break;
+		}
 	}
+
+	if(cst->first_opc)
+		cst->top = cst->first_opc;
+	cst->first_opc = cst->top_opc = 0;
 }
 
 // parse body to instruction-stack
@@ -297,6 +343,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 	st_ptr cur_string;
 	enum parser_states state = (mode? ST_EQ : ST_INIT);
 	int c = getc(cst->f);
+	uint level       = 0;
 	uint lock_level  = 0;
 	uint paran_level = 0;
 	ushort stringidx = 0;
@@ -310,7 +357,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			_cmp_push_op(cst,OPARN,0,0,0);
 			break;
 		case ')':
-			if(paran_level == 0) err(__LINE__);
+			if(paran_level == 0) err(__LINE__)
 			else
 			{
 				paran_level--;
@@ -333,7 +380,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				state = DOT_EQ;
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 				state = DOT_0;	// recover
 			}
 			_cmp_push_op(cst,ODOT,0,0,0);
@@ -352,13 +399,13 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				state = APP_EQ;
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 				state = ST_INIT;
 			}
 			_cmp_push_op(cst,OAPP,0,0,0);
 			break;
 		case '{':
-			cst->level++;
+			level++;
 			switch(state)
 			{
 			case ALPHA_0:
@@ -371,10 +418,10 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				state = CURL_NEW;
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 				state = ST_INIT;
 			}
-			_cmp_push_op(cst,OPUSH,cst->level,0,0);
+			_cmp_push_op(cst,OPUSH,level,0,0);
 			break;
 		case '}':
 			switch(state)
@@ -383,15 +430,15 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			case CURL_NEW:
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 				state = ST_INIT;
 			}
 
-			if(cst->level == 0) err(__LINE__);
+			if(level == 0) err(__LINE__)
 			else
 			{
-				cst->level--;
-				_cmp_push_op(cst,OPOP,cst->level,0,0);
+				level--;
+				_cmp_push_op(cst,OPOP,level,0,0);
 			}
 			break;
 		case '|':
@@ -405,7 +452,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			case STR_EQ:
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 			}
 			_cmp_push_op(cst,OPIPE,0,0,0);
 			state = ST_EQ;
@@ -414,18 +461,18 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			switch(state)
 			{
 			case ALPHA_0:
-				state = cst->level? CURL_0 : ST_INIT;
+				state = level? CURL_0 : ST_INIT;
 				break;
 			case VAR_0:
 			case ST_VAR_DEF:
-				state = cst->level? CURL_0 : ST_INIT;
+				state = level? CURL_0 : ST_INIT;
 				break;
 			case ALPHA_NEW:
 			case VAR_NEW:
 				state = CURL_NEW;
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 			}
 			_cmp_push_op(cst,OEQL,state,0,0);
 			state = ST_EQ;
@@ -437,7 +484,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			case VAR_0:
 			case ALPHA_0:
 			case STR_0:
-				state = cst->level? CURL_0 : ST_INIT;
+				state = level? CURL_0 : ST_INIT;
 				break;
 			case ALPHA_NEW:
 			case VAR_NEW:
@@ -446,21 +493,21 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 			case ALPHA_EQ:
 			case VAR_EQ:
 			case STR_EQ:
-				state = lock_level? CURL_NEW : (cst->level? CURL_0 : ST_INIT);
+				state = lock_level? CURL_NEW : (level? CURL_0 : ST_INIT);
 				break;
 			case ST_VAR_DEF:
 				if(c == ',' && mode != 2) err(__LINE__);
 				state = ST_INIT;
 				break;
 			default:
-				err(__LINE__);
+				err(__LINE__)
 				state = ST_INIT;
 			}
 
-			if(cst->level == 0 || cst->level < lock_level)
+			if(level == 0 || level < lock_level)
 			{
 				lock_level = 0;
-				_cmp_opc_emit(cst);
+				_cmp_code_gen(cst);
 
 				if(mode)
 					return c;
@@ -493,8 +540,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					app = 1;
 					break;
 				default:
-					err(__LINE__);
-					state = ST_INIT;
+					err(__LINE__)
 				}
 
 				if(app == 0)
@@ -548,8 +594,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					pathval_rw = 2;
 					break;
 				default:
-					err(__LINE__);
-					state = ST_INIT;
+					err(__LINE__)
 				}
 
 				c = getc(cst->f);
@@ -576,7 +621,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 						}
 					}
 					else
-						err(__LINE__);
+						err(__LINE__)
 				}
 			}
 			continue;
@@ -597,12 +642,13 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 				case 0:		// private
 				case 1:		// public
 				case 2:		// begin
-					err(__LINE__);
+					err(__LINE__)
 					state = ST_INIT;
 					break;
 				case 3:		// end
-					if(state != ST_INIT) err(__LINE__);
-					_cmp_opc_emit(cst);
+					if(state != ST_INIT) err(__LINE__)
+					if(level != 0) err(__LINE__)
+					_cmp_code_gen(cst);
 
 					_cmp_emitIs(cst,OP_FUNCTION_END,cst->s_max);
 					return c;
@@ -614,10 +660,10 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					case ST_EQ:
 						break;
 					default:
-						err(__LINE__);
+						err(__LINE__)
 					}
 					if(lock_level == 0)
-						lock_level = cst->level + 1;
+						lock_level = level + 1;
 					state = ST_NEW;
 					break;
 				case 5:		// var $name
@@ -632,9 +678,9 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 					if(op > 0)
 					{
 						if(_cmp_find_var(cst,op))
-							err(__LINE__);			// already defined
+							err(__LINE__)			// already defined
 						else
-							_cmp_def_var(cst,op);
+							_cmp_def_var(cst,level,op);
 					}
 
 					_cmp_whitespace(cst,&c);
@@ -692,7 +738,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 						state = ALPHA_NEW;
 						break;
 					default:
-						err(__LINE__);
+						err(__LINE__)
 						state = ST_INIT;
 					}
 
@@ -715,7 +761,7 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
     		}
 			else
 			{
-				err(__LINE__);
+				err(__LINE__)
 				return c;
 			}
  		}
@@ -729,61 +775,25 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 // setup call-site and funspace
 static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 {
-	st_ptr tmpptr,params;
-	uint op,funidx;
+	st_ptr params;
+	uint op;
 	int c = getc(cst->f);
 
 	// get function name
 	op = _cmp_name(cst,&c);
 	if(!op) return(__LINE__);
 
-	// goto/insert name and check for fun-ref
-	st_insert(cst->t,cst->ref,cst->opbuf + cst->top,op - cst->top);
-	_cmp_check_buffer(cst,cst->top + HEAD_SIZE + sizeof(uint));
-
-	cst->opbuf[op + 1] = 0;
-
-	tmpptr = *cst->ref;
-	// exsisting function? no? make new funidx etc.
-	if(st_get(&tmpptr,cst->opbuf + op,HEAD_SIZE + sizeof(uint)) > 0
-		|| memcmp(cst->opbuf + op,HEAD_FUNCTION,HEAD_SIZE) != 0)
-	{
-		// get next funidx
-		tmpptr = *cst->app;
-		if(st_insert(cst->t,&tmpptr,"\0:",2)
-			|| st_get(&tmpptr,cst->opbuf + op,sizeof(uint)) > 0)
-			funidx = 0;
-		else
-			funidx = *(uint*)(cst->opbuf + op + HEAD_SIZE);
-
-		// next...
-		++funidx;
-
-		// update application
-		tmpptr = *cst->app;
-		st_move(&tmpptr,"\0:",2);
-		st_update(cst->t,&tmpptr,(cdat)&funidx,sizeof(uint));
-
-		// write fun-ref
-		memcpy(cst->opbuf + op,HEAD_FUNCTION,HEAD_SIZE);
-		*(uint*)(cst->opbuf + op + HEAD_SIZE) = funidx;
-		st_update(cst->t,cst->ref,cst->opbuf + op,HEAD_SIZE + sizeof(uint));
-	}
-	else
-		// get old fun ref
-		funidx = *(uint*)(cst->opbuf + op + HEAD_SIZE);
-
-	// goto funspace
-	cst->funidx = funidx;
-	cst->root = *cst->app;
-	st_insert(cst->t,&cst->root,funspace,FUNSPACE_SIZE);
-	st_insert(cst->t,&cst->root,cst->opbuf + op + HEAD_SIZE,sizeof(uint));
+	// insert name 
+	st_insert(cst->t,&cst->code,cst->opbuf + cst->top,op - cst->top);
 
 	// clean
-	st_delete(cst->t,&cst->root,0,0);
+	st_delete(cst->t,&cst->code,0,0);
+
+	cst->root = cst->code;
+	cst->anno = cst->code;
+	cst->strs = cst->code;
 
 	// code
-	cst->code = cst->root;
 	st_insert(cst->t,&cst->anno,"B",2);
 
 	// write public/private opcode
@@ -791,11 +801,9 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 		_cmp_emit0(cst,OP_PUBLIC_FUN);
 
 	// annotation
-	cst->anno = cst->root;
 	st_insert(cst->t,&cst->anno,"A",2);
 
 	// strings
-	cst->strs = cst->root;
 	st_insert(cst->t,&cst->strs,"S",2);
 
 	// get parameters
@@ -804,7 +812,6 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 
 	params = cst->anno;
 	st_insert(cst->t,&params,"P",2);
-	st_delete(cst->t,&params,0,0);	// clear any old
 
 	c = getc(cst->f);
 	while(1)
@@ -813,6 +820,7 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 
 		if(c == '$')
 		{
+			st_ptr tmpptr;
 			op = _cmp_name(cst,&c);	// param: $name
 			if(!op) return(__LINE__);
 
@@ -845,65 +853,73 @@ static int _cmp_header(struct _cmp_state* cst, uchar public_fun)
 }
 
 // setup _cmp_state
-static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* app)
+static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* ref)
 {
 	cst->t = t;
 	cst->f = f;
-	cst->app = app;
+	cst->code = *ref;
 	cst->s_top = cst->s_max = 0;
 	cst->top_var = 0;
-	cst->level = 0;
 	cst->code_size = 0;
 	cst->opbuf = 0;
 	cst->bsize = cst->top = 0;
 	cst->first_opc = cst->top_opc = 0;
+	cst->err = 0;
+	cst->outer_block = 0;
 }
 
-int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun)
+static void _cmp_end(struct _cmp_state* cst)
+{
+	if(cst->err != 0)
+		st_delete(cst->t,&cst->root,0,0);
+
+	tk_mfree(cst->opbuf);
+}
+
+int cmp_function(FILE* f, task* t, st_ptr* ref, uchar public_fun)
 {
 	struct _cmp_state cst;
 	int ret;
 
-	_cmp_init(&cst,f,t,app);
-	cst.ref = ref;
+	_cmp_init(&cst,f,t,ref);
 
 	// create header:
 	ret = _cmp_header(&cst,public_fun);
 	if(ret == 0)
 	{
 		// create annotations
-		ret = cle_write(f,t,0,&cst.anno,0,1);
+		ret = cle_write(f,t,&cst.anno,0,1);
 		if(ret == 0)
 			// compile body
 			ret = _cmp_body(&cst,0);
+		else cst.err++;
 	}
+	else cst.err++;
 
-	tk_mfree(cst.opbuf);
+	_cmp_end(&cst);
 	return ret;
 }
 
-int cmp_expr(FILE* f, task* t, st_ptr* app, st_ptr* ref)
+int cmp_expr(FILE* f, task* t, st_ptr* ref)
 {
 	struct _cmp_state cst;
 	int ret;
 
-	_cmp_init(&cst,f,t,app);
-	cst.ref = 0;
+	_cmp_init(&cst,f,t,ref);
 	cst.root = *ref;
 
 	// clean and mark expr
-	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
+	st_update(t,&cst.code,HEAD_EXPR,HEAD_SIZE);
+	cst.strs = cst.code;
 
 	// code (expr's never public)
-	cst.code = cst.root;
 	st_insert(t,&cst.code,"B",2);
 
 	// strings
-	cst.strs = cst.root;
 	st_insert(t,&cst.strs,"S",2);
 
 	ret = _cmp_body(&cst,1);
 
-	tk_mfree(cst.opbuf);
+	_cmp_end(&cst);
 	return ret;
 }

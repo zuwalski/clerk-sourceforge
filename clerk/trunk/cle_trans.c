@@ -112,7 +112,7 @@ void cle_num(task* t, st_ptr* out, int num)
 	st_append(t,out,(cdat)&num,sizeof(int));
 }
 
-int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar infun)
+int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun)
 {
 	struct _the_stack ps;
 	st_ptr after = *root;
@@ -215,10 +215,9 @@ int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar inf
 				{
 					if(!whitespace(c)) return(__LINE__);
 					if(state != 0) return(__LINE__);
-					if(!app) return(__LINE__);
 					if(infun) return(__LINE__);
 
-					c = cmp_function(f,t,app,&after,idx == 6);
+					c = cmp_function(f,t,&after,idx == 6);
 
 					after = ps.ps->pt;
 				}
@@ -230,8 +229,7 @@ int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar inf
 					if(infun)
 						return (level != 0? __LINE__ : 0);
 
-					if(!app) return(__LINE__);
-					c = cmp_expr(f,t,app,&after);
+					c = cmp_expr(f,t,&after);
 
 					after = ps.ps->pt;
 				}
@@ -347,7 +345,7 @@ int cle_trans(FILE* f, task* t, st_ptr* app)
 		case '=':
 			if(state == 2) return(__LINE__);
 			// write
-			c = cle_write(f,t,app,&after,state != 3,0);
+			c = cle_write(f,t,&after,state != 3,0);
 			if(c)
 				return c;
 			state = 0;
@@ -395,7 +393,7 @@ int cle_trans(FILE* f, task* t, st_ptr* app)
 					task* param_t = tk_create_task(t);
 
 					st_empty(param_t,&param);
-					c = cle_write(f,param_t,0,&param,0,1);	// parameters
+					c = cle_write(f,param_t,&param,0,1);	// parameters
 					if(c != 1)
 						return c;
 

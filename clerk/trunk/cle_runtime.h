@@ -14,9 +14,6 @@
 #define HEAD_INT "\0I"
 #define HEAD_STR "\0S"
 
-#define FUNSPACE_SIZE 5
-extern const char* funspace;
-
 enum cle_opcode
 {
 	OP_ILLEGAL = 0,
@@ -62,15 +59,15 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param);
 int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root);
 
 /* transaction-writer */
-int cle_write(FILE* f, task* t, st_ptr* app, st_ptr* root, uint clear, uchar infun);
+int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun);
 /* "test ""test"" 'test'" | 'test ''test'' "test"' */
 int cle_string(FILE* f, task* t, st_ptr* out, int c, int* nxtchar, uchar append);
 
 void cle_num(task* t, st_ptr* out, int num);
 
 /* compiler functions */
-int cmp_function(FILE* f, task* t, st_ptr* app, st_ptr* ref, uchar public_fun);
-int cmp_expr(FILE* f, task* t, st_ptr* app, st_ptr* ref);
+int cmp_function(FILE* f, task* t, st_ptr* ref, uchar public_fun);
+int cmp_expr(FILE* f, task* t, st_ptr* ref);
 
 #define whitespace(c) (c == ' ' || c == '\t' || c == '\n' || c == '\r')
 #define num(c) (c >= '0' && c <= '9')
