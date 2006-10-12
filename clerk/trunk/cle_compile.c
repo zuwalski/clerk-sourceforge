@@ -1,5 +1,18 @@
-/* Copyrigth(c) Lars Szuwalski, 2006 */
+/* 
+   Copyright 2005-2006 Lars Szuwalski
 
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
 #include "cle_runtime.h"
 #include "cle_struct.h"
 
@@ -80,9 +93,6 @@ static struct _cmp_state
 	// prg-stack
 	uint s_top;
 	uint s_max;
-
-	// blocks
-	uint outer_block;
 };
 
 static struct _cmp_var
@@ -286,13 +296,18 @@ static uint _cmp_gen_path(struct _cmp_state* cst, struct _cmp_op* cop, uchar beg
 	struct _cmp_op* nxt = PEEK_OP(cop->next);
 	if(nxt->opc)
 		;
+	
+	_cmp_stack(cst,1);
 	return cop->next;
 }
 
+#define OP_OFFSET(o) ((uint)(o) - (uint)cst->opbuf)
 static void _cmp_code_gen(struct _cmp_state* cst)
 {
-	uint type = 0;	// 0 init/any, 1 tree, 2 str, 3 num
-	uint nopc = cst->first_opc;
+	uint top_block = 0;
+	uint level = 0;
+	uint type  = 0;	// 0 init/any, 1 tree, 2 str, 3 num
+	uint nopc  = cst->first_opc;
 
 	while(nopc && cst->err == 0)
 	{
@@ -304,6 +319,11 @@ static void _cmp_code_gen(struct _cmp_state* cst)
 		case OPARN:	// (
 		case OPARN_END:	// )
 		case OLOADPARAM:
+			cop->block_prev = top_block;
+			cop->skip_ref;
+			top_block = OP_OFFSET(cop);
+			_cmp_stack(cst,1);
+			break;
 		case OCALL:	// ( - begin call
 		case ONEW:	// new
 		case OPIPE:
@@ -316,9 +336,14 @@ static void _cmp_code_gen(struct _cmp_state* cst)
 			if(type != 0 && type != 2) err(__LINE__);
 			type = 2;
 			_cmp_emitIs(cst,OP_STR,cop->imm);
+			_cmp_stack(cst,1);
 			break;
 		case OPUSH:	//{
+			level++;
+			break;
 		case OPOP:	//}
+			level--;
+			_cmp_stack(cst,-1);
 			break;
 		case OVAR:
 			nopc = _cmp_gen_path(cst,cop,2);
@@ -506,11 +531,12 @@ static int _cmp_body(struct _cmp_state* cst, uchar mode)
 
 			if(level == 0 || level < lock_level)
 			{
-				lock_level = 0;
 				_cmp_code_gen(cst);
 
 				if(mode)
 					return c;
+
+				lock_level = 0;
 			}
 			else
 				_cmp_push_op(cst,OTERM,0,0,0);
@@ -865,7 +891,6 @@ static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* ref)
 	cst->bsize = cst->top = 0;
 	cst->first_opc = cst->top_opc = 0;
 	cst->err = 0;
-	cst->outer_block = 0;
 }
 
 static void _cmp_end(struct _cmp_state* cst)

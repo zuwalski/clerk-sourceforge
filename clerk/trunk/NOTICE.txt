@@ -1,0 +1,3 @@
+
+The Clerk Ignition-engine
+Copyright 2005-2006 Lars Szuwalski

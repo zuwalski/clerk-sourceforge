@@ -1,4 +1,18 @@
-/* Copyrigth(c) Lars Szuwalski, 2005 */
+/* 
+   Copyright 2005-2006 Lars Szuwalski
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
 #include <stdlib.h>
 
 #include "cle_clerk.h"
@@ -156,7 +170,7 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 		uint length = (rt->pg->pg.used + size > PAGE_SIZE)? PAGE_SIZE - rt->pg->pg.used : size;
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
-		rt->sub->length += length << 3;
+		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
 		rt->pg->pg.used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)&(rt->pg->pg) + sizeof(key);
 		rt->pg->pg.used += rt->pg->pg.used & 1;
 
@@ -190,7 +204,6 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 				pgsize = room > pgsize? pgsize : room;
 			}
 
-			size       -= pgsize - sizeof(key);
 			length      = (pgsize - sizeof(key)) << 3;
 			rt->length -= length;
 		}
@@ -218,6 +231,7 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 
 		rt->diff = length;
 		rt->path += length >> 3;
+		size     -= pgsize - sizeof(key);
 	}
 	while(size);
 	
@@ -413,7 +427,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 }
 
 /* FIXME */
-uint st_prepend(task* t, st_ptr* pt, cdat path, uint length)
+uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length)
 {
 	struct _st_lkup_res rt;
 	key* me,*nxt = 0;
@@ -424,7 +438,7 @@ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length)
 	rt.pg     = pt->pg;
 	rt.prev   = 0;
 	me = rt.sub = GOKEY(pt->pg,pt->key);
-	rt.diff   = me->length != 1? pt->offset : 1;
+	rt.diff   = rt.sub->length == 1? 1 : pt->offset;
 
 	if(pt->offset > 0 && me->sub)
 	{
@@ -455,7 +469,7 @@ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length)
 		nxt->offset = rt.sub->length;
 	}
 	
-	if(me->length > pt->offset && me->length > 1)	// rest? (not just append)
+	if((me->length & 0xFFF8) > pt->offset)	// rest? (not just append)
 	{
 		const uint dec = pt->offset & 0xFFF8;
 		waste = me->length + 7 - dec;
