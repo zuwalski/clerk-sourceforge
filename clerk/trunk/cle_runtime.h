@@ -79,7 +79,7 @@ int cle_string(FILE* f, task* t, st_ptr* out, int c, int* nxtchar, uchar append)
 void cle_num(task* t, st_ptr* out, int num);
 
 /* compiler functions */
-int cmp_function(FILE* f, task* t, st_ptr* ref, uchar public_fun);
+int cmp_function(FILE* f, task* t, st_ptr* ref);
 int cmp_expr(FILE* f, task* t, st_ptr* ref);
 
 #define whitespace(c) (c == ' ' || c == '\t' || c == '\n' || c == '\r')

@@ -222,15 +222,14 @@ int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun)
 				if(buffer[idx] == '.')
 					return(__LINE__);
 				
-				// private/public Name(params) [annotations] begin [expr] end
-				if((idx == 7 && memcmp(buffer,"private",7) == 0)
-					|| (idx == 6 && memcmp(buffer,"public",6) == 0))
+				// function Name(params) [annotations] begin [expr] end
+				if((idx == 8 && memcmp(buffer,"function",8) == 0))
 				{
 					if(!whitespace(c)) return(__LINE__);
 					if(state != 0) return(__LINE__);
 					if(infun) return(__LINE__);
 
-					c = cmp_function(f,t,&after,idx == 6);
+					c = cmp_function(f,t,&after);
 
 					after = ps.ps->pt;
 				}
