@@ -120,9 +120,9 @@ static const char* _rt_opc_name(uint opc)
 static struct _body_
 {
 	char body;
+	uchar maxparams;
 	ushort codesize;
 	ushort stacksize;
-	ushort maxparams;
 };
 
 static void _rt_dump_function(st_ptr app, st_ptr* root)
@@ -162,7 +162,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 	else
 	{
 		struct _body_ body;
-		if(st_get(&tmpptr,(char*)&body,7) != -1)
+		if(st_get(&tmpptr,(char*)&body,sizeof(struct _body_)) != -2)
 		{
 			err(__LINE__);
 			return;
@@ -174,15 +174,15 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			return;
 		}
 
-		bptr = bptr2 = (char*)tk_malloc(body.codesize - 7);
-		if(st_get(&tmpptr,bptr,body.codesize - 7) != 0)
+		bptr = bptr2 = (char*)tk_malloc(body.codesize - sizeof(struct _body_));
+		if(st_get(&tmpptr,bptr,body.codesize - sizeof(struct _body_)) != -1)
 		{
 			tk_mfree(bptr);
 			err(__LINE__);
 			return;
 		}
 
-		len = body.codesize - 10;
+		len = body.codesize - sizeof(struct _body_);
 		printf("\nCodesize %d, Stacksize: %d, Params %d\n",body.codesize,body.stacksize,body.maxparams);
 	}
 
@@ -270,7 +270,7 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 	st_ptr rroot = root;
 	char head[HEAD_SIZE];
 
-	if(0 && st_get(&root,head,sizeof(head)) <= 0 && head[0] == 0)
+	if(st_get(&root,head,sizeof(head)) <= 0 && head[0] == 0)
 	{
 		switch(head[1])
 		{

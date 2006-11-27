@@ -509,23 +509,36 @@ uint st_offset(st_ptr* pt, uint offset)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint klen     = me->length - pt->offset;
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < pt->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+		if(nxt)
+			klen = nxt->offset - pt->offset;
+	}
+	else
+	{
+		klen = me->length - pt->offset;
+		nxt  = 0;
+	}
 
 	offset <<= 3;
 
 	while(1)
 	{
-		key* nxt = 0;
-		uint max;
-
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
-		}
-
-		max = offset > klen?klen:offset;
+		uint max = offset > klen?klen:offset;
 		offset -= max;
 
 		// move to next key for more data?
@@ -533,7 +546,16 @@ uint st_offset(st_ptr* pt, uint offset)
 		{
 			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
 			ckey = KDATA(me);
-			klen = me->length;
+			if(me->sub)
+			{
+				nxt = GOOFF(pg,me->sub);
+				klen = nxt->offset;
+			}
+			else
+			{
+				klen = me->length;
+				nxt = 0;
+			}
 		}
 		// is there any more data?
 		else
@@ -562,38 +584,45 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint klen     = me->length - pt->offset;
 	uint offset   = pt->offset;
+	uint klen;
+	int read      = 0;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+		if(nxt)
+			klen = nxt->offset - offset;
+	}
+	else
+	{
+		klen = me->length - pt->offset;
+		nxt = 0;
+	}
 
 	length <<= 3;
 
 	while(1)
 	{
-		key* nxt = 0;
 		uint max = 0;
-
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			while(nxt->offset < offset)
-			{
-				if(nxt->next == 0)
-				{
-					nxt = 0;
-					break;
-				}
-				nxt = GOOFF(pg,nxt->next);
-			}
-			if(nxt)
-				klen = nxt->offset - offset;
-		}
 
 		if(klen > 0)
 		{
 			max = (length > klen?klen:length)>>3;
 			memcpy(buffer,ckey,max);
 			buffer += max;
+			read   += max;
 			length -= max << 3;
 		}
 
@@ -602,35 +631,53 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 		{
 			// no next key! or trying to read past split?
 			if(nxt == 0 || nxt->offset < me->length)
-				return (length >> 3);
+			{
+				pt->offset = max + (offset & 0xFFF8);
+				break;
+			}
 
+			offset = 0;
 			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
 			ckey = KDATA(me);
-			klen = me->length;
-			offset = 0;
+			if(me->sub)
+			{
+				nxt = GOOFF(pg,me->sub);
+				klen = nxt->offset;
+			}
+			else
+			{
+				klen = me->length;
+				nxt = 0;
+			}
 		}
 		// is there any more data?
 		else
 		{
 			max <<= 3;
-			max += offset;
 
 			if(max < klen)	// more on this key?
-				pt->offset = max;
+				pt->offset = max + (offset & 0xFFF8);
 			else if(nxt && nxt->offset == me->length)	// continuing key?
 			{
 				pt->offset = 0;
 				me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
 			}
 			else
-				return 0;	// no more!
+			{
+				pt->offset = me->length;
+				read = -1;	// no more!
+				break;
+			}
 
 			// yes .. tell caller and move st_ptr
-			pt->pg  = pg;
-			pt->key = (uint)me - (uint)&pg->pg;
-			return -1;
+			read = -2;
+			break;
 		}
 	}
+
+	pt->key = (uint)me - (uint)&pg->pg;
+	pt->pg  = pg;
+	return read;
 }
 
 char* st_get_all(st_ptr* pt, uint* length)
@@ -638,33 +685,36 @@ char* st_get_all(st_ptr* pt, uint* length)
 	char* buffer  = 0;
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint klen     = me->length - pt->offset;
-	uint offset   = pt->offset;
 	uint nlength  = 128;
 	uint rlength  = 0;
 	uint boffset  = 0;
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < pt->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+		if(nxt)
+			klen = nxt->offset - pt->offset;
+	}
+	else
+	{
+		klen = me->length - pt->offset;
+		nxt = 0;
+	}
 
 	while(1)
 	{
-		key* nxt = 0;
-
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			while(nxt->offset < offset)
-			{
-				if(nxt->next == 0)
-				{
-					nxt = 0;
-					break;
-				}
-				nxt = GOOFF(pg,nxt->next);
-			}
-			if(nxt)
-				klen = nxt->offset - offset;
-		}
-
 		klen >>= 3;
 		if(klen > 0)
 		{
@@ -690,7 +740,15 @@ char* st_get_all(st_ptr* pt, uint* length)
 		// move to next key for more data
 		me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
 		ckey = KDATA(me);
-		klen = me->length;
-		offset = 0;
+		if(me->sub)
+		{
+			nxt = GOOFF(pg,me->sub);
+			klen = nxt->offset;
+		}
+		else
+		{
+			klen = me->length;
+			nxt = 0;
+		}
 	}
 }

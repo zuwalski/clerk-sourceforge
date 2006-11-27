@@ -700,14 +700,14 @@ static void _cmp_end(struct _cmp_state* cst)
 	// make body
 	if(cst->err == 0)
 	{
-		ushort* ptr = (ushort*)(cst->code + 1);
+		ushort* ptr;
+		cst->code[1] = cst->params;	// max-params
+		ptr = (ushort*)(cst->code + 2);
 		*ptr = cst->code_next;	// codesize
 		ptr++;
 		*ptr = cst->s_max;		// stack-size
-		ptr++;
-		*ptr = cst->params;		// max-params
 		st_insert(cst->t,&cst->root,"B",2);
-		//st_insert(cst->t,&cst->root,cst->code,cst->code_next);
+		st_insert(cst->t,&cst->root,cst->code,cst->code_next);
 	}
 
 	tk_mfree(cst->code);
