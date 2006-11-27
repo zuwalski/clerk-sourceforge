@@ -149,12 +149,12 @@ static void _it_grow_kdata(it_ptr* it, struct _st_lkup_it_res* rt)
 	rt->path = it->kdata + path_offset;
 }
 
-static void _it_get_prev(struct _st_lkup_it_res* rt, uint offset)
+static void _it_get_prev(struct _st_lkup_it_res* rt)
 {
-	if(offset && rt->sub->sub)
+	if(rt->diff && rt->sub->sub)
 	{
 		key* nxt = GOKEY(rt->pg,rt->sub->sub);
-		while(nxt->offset < offset)
+		while(nxt->offset < rt->diff)
 		{
 			rt->prev = nxt;
 			if(nxt->next == 0)
@@ -164,10 +164,11 @@ static void _it_get_prev(struct _st_lkup_it_res* rt, uint offset)
 	}
 }
 
-static void _it_next(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
+static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_next)
 {
-	key* prev = rt->prev;
-	key* sub  = rt->sub;
+	key* sub    = rt->sub;
+	key* prev   = rt->prev;
+	uint offset = rt->diff & 0xFFF8;
 
 	it->kused = (uint)rt->path - (uint)it->kdata;
 
@@ -176,7 +177,7 @@ static void _it_next(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
 		cdat ckey;
 		uint clen;
 
-		if(sub->length == 0)
+		if(sub->length == 0)	// ptr-key?
 			sub = _tk_get_ptr(&rt->pg,sub);
 
 		rt->sub = sub;
@@ -189,9 +190,22 @@ static void _it_next(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
 
 		if(prev)
 		{
-			while(prev->offset < sub->length &&
-				(*(ckey + (prev->offset>>3)) & (0x80 >> (prev->offset & 7))) == 0)
-   			{
+			while(1)
+			{
+				if(prev->offset == sub->length)	// continue-key?
+					break;
+				else
+				{
+					// is prev higher/lower than sub?
+					uchar is_low = *(ckey + (prev->offset>>3)) & (0x80 >> (prev->offset & 7));
+					if(is_next)
+					{
+						if(is_low) break;
+					}
+					else
+						if(!is_low) break;
+				}
+
 				if(prev->next == 0)
 				{
 					prev = 0;
@@ -210,7 +224,7 @@ static void _it_next(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
 			offset = 0;
 		}
 		clen >>= 3;
-		
+		// copy bytes
 		while(clen-- != 0)
 		{
 			it->kused++;
@@ -222,71 +236,7 @@ static void _it_next(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
    				return;
   		}
 
-		sub = prev;
-		prev = 0;
-	}
-	while(sub);
-}
-
-static void _it_prev(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
-{
-	key* prev = rt->prev;
-	key* sub  = rt->sub;
-
-	it->kused = (uint)rt->path - (uint)it->kdata;
-
-	do
-	{
-		cdat ckey;
-		uint clen;
-
-		if(sub->length == 0)
-			sub = _tk_get_ptr(&rt->pg,sub);
-
-		rt->sub = sub;
-		ckey = KDATA(sub);
-
-		if(prev)
-			prev = (prev->next) ? GOOFF(rt->pg,prev->next) : 0;
-		else if(sub->sub)
-			prev = GOOFF(rt->pg,sub->sub);
-
-		if(prev)
-		{
-			while(prev->offset < sub->length && 
-				(*(ckey + (prev->offset>>3)) & (0x80 >> (prev->offset & 7))) != 0)
-   			{
-				if(prev->next == 0)
-				{
-					prev = 0;
-					break;
-				}
-				prev = GOOFF(rt->pg,prev->next);
-			}
-		}
-
-		clen = (prev) ? prev->offset : sub->length;
-		rt->diff = offset;
-		if(offset)
-		{
-			clen -= offset;
-			ckey += offset >> 3;
-			offset = 0;
-		}
-		clen >>= 3;
-		
-		while(clen-- != 0)
-		{
-			it->kused++;
-			if(it->kused > it->ksize)
-				_it_grow_kdata(it,rt);
-
-			rt->diff += 8;
-			if((*rt->path++ = *ckey++) == 0)
-   				return;
-  		}
-
-		sub = prev;
+		sub = prev;	// next key
 		prev = 0;
 	}
 	while(sub);
@@ -295,17 +245,15 @@ static void _it_prev(it_ptr* it, struct _st_lkup_it_res* rt, uint offset)
 uint it_next(st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
-	uint offset = it->offset;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
 	rt.sub    = GOKEY(it->pg,it->key);
 	rt.prev   = 0;
-	rt.diff   = offset;
+	rt.diff   = it->offset;
 
 	if(rt.length > 0)
 	{
-		key* sub = rt.sub;
 		_it_lookup(&rt);
 
 		if(rt.high == 0)
@@ -315,18 +263,17 @@ uint it_next(st_ptr* pt, it_ptr* it)
 		}
 		else if(rt.length == 0)
 		{
+			rt.diff = rt.high_prev? rt.high_prev->offset : 0;
 			rt.sub  = rt.high;
 			rt.prev = rt.high_prev;
 			rt.path = rt.high_path;
 			rt.pg   = rt.high_pg;
 		}
-
-		if(rt.sub != sub) offset = 0;
 	}
 	else
-		_it_get_prev(&rt,offset);
+		_it_get_prev(&rt);
 
-	_it_next(it,&rt,offset);
+	_it_next_prev(it,&rt,1);
 
 	if(pt)
 	{
@@ -340,17 +287,15 @@ uint it_next(st_ptr* pt, it_ptr* it)
 uint it_next_eq(st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
-	uint offset = it->offset;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
 	rt.sub    = GOKEY(it->pg,it->key);
 	rt.prev   = 0;
-	rt.diff   = offset;
+	rt.diff   = it->offset;
 
 	if(rt.length > 0)
 	{
-		key* sub = rt.sub;
 		_it_lookup(&rt);
 
 		if(rt.length == 0)
@@ -367,16 +312,16 @@ uint it_next_eq(st_ptr* pt, it_ptr* it)
 		if(rt.high == 0)
 			return 0;
 
+		rt.diff = rt.high_prev? rt.high_prev->offset : 0;
 		rt.sub  = rt.high;
 		rt.prev = rt.high_prev;
 		rt.path = rt.high_path;
 		rt.pg   = rt.high_pg;
-		if(rt.sub != sub) offset = 0;
 	}
 	else
-		_it_get_prev(&rt,offset);
+		_it_get_prev(&rt);
 
-	_it_next(it,&rt,offset);
+	_it_next_prev(it,&rt,1);
 
 	if(pt)
 	{
@@ -390,17 +335,15 @@ uint it_next_eq(st_ptr* pt, it_ptr* it)
 uint it_prev(st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
-	uint offset = it->offset;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
 	rt.sub    = GOKEY(it->pg,it->key);
 	rt.prev   = 0;
-	rt.diff   = offset;
+	rt.diff   = it->offset;
 
 	if(rt.length > 0)
 	{
-		key* sub = rt.sub;
 		_it_lookup(&rt);
 
 		if(rt.low == 0)
@@ -410,18 +353,17 @@ uint it_prev(st_ptr* pt, it_ptr* it)
 		}
 		else if(rt.length == 0)
 		{
+			rt.diff = rt.low_prev? rt.low_prev->offset : 0;
 			rt.sub  = rt.low;
 			rt.prev = rt.low_prev;
 			rt.path = rt.low_path;
 			rt.pg   = rt.low_pg;
 		}
-
-		if(rt.sub != sub) offset = 0;
 	}
 	else
-		_it_get_prev(&rt,offset);
+		_it_get_prev(&rt);
 
-	_it_prev(it,&rt,offset);
+	_it_next_prev(it,&rt,0);
 
 	if(pt)
 	{
@@ -435,7 +377,6 @@ uint it_prev(st_ptr* pt, it_ptr* it)
 uint it_prev_eq(st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
-	uint offset = it->offset;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
@@ -445,7 +386,6 @@ uint it_prev_eq(st_ptr* pt, it_ptr* it)
 
 	if(rt.length > 0)
 	{
-		key* sub = rt.sub;
 		_it_lookup(&rt);
 
 		if(rt.length == 0)
@@ -462,17 +402,16 @@ uint it_prev_eq(st_ptr* pt, it_ptr* it)
 		if(rt.low == 0)
 			return 0;
 
+		rt.diff = rt.low_prev? rt.low_prev->offset : 0;
 		rt.sub  = rt.low;
 		rt.prev = rt.low_prev;
 		rt.path = rt.low_path;
 		rt.pg   = rt.low_pg;
-
-		if(rt.sub != sub) offset = 0;
 	}
 	else
-		_it_get_prev(&rt,offset);
+		_it_get_prev(&rt);
 
-	_it_prev(it,&rt,offset);
+	_it_next_prev(it,&rt,0);
 
 	if(pt)
 	{
@@ -525,9 +464,9 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 	rt.diff   = it->offset;
 	it->kused = 0;
 
-	_it_get_prev(&rt,it->offset);
+	_it_get_prev(&rt);
 
-	_it_prev(it,&rt,it->offset);	// get highest position
+	_it_next_prev(it,&rt,0);	// get highest position
 
 	if(it->kused == 0)	// init 1.index
 	{

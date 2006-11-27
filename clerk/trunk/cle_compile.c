@@ -87,7 +87,7 @@ static const char* keywords[] = {
 
 static void print_err(int line)
 {
-	printf("error on line %d\n",line);
+	printf("[cmp]error on line %d\n",line);
 }
 
 #define err(line) {cst->err++;print_err(line);}
@@ -187,17 +187,6 @@ static uint _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
 	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(ushort));
 	cst->code_next += sizeof(ushort);
 	return (cst->code_next - sizeof(ushort));
-}
-
-static uint _cmp_emitIs2(struct _cmp_state* cst, uchar opc, ushort imm, ushort imm2)
-{
-	_cmp_check_code(cst,cst->code_size + 1 + sizeof(ushort));
-	cst->code[cst->code_next++] = opc;
-	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(ushort));
-	cst->code_next += sizeof(ushort);
-	memcpy(cst->code + cst->code_next,(char*)&imm2,sizeof(ushort));
-	cst->code_next += sizeof(ushort);
-	return (cst->code_next - sizeof(ushort)*2);
 }
 
 static void _cmp_update_imm(struct _cmp_state* cst, uint offset, ushort imm)
@@ -509,7 +498,7 @@ static void _cmp_expr(struct _cmp_state* cst, uchar nest)
 				chk_out()
 			_cmp_str(cst,state == ST_STR);
 			state = ST_STR;
-			break;
+			continue;
 		case '{':
 			chk_state(ST_0)
 			level++;
@@ -525,13 +514,13 @@ static void _cmp_expr(struct _cmp_state* cst, uchar nest)
 				_cmp_free_var(cst);
 			}
 			else err(__LINE__)
-			if(level == 0) return;
+			if(level == 0 && nest) return;
 			state = ST_0;
 			break;
 		case ';':
 		case ',':
 			chk_out()
-			if(level == 0) return;
+			if(level == 0 && nest) return;
 			state = ST_0;
 			break;
 		case '.':
@@ -700,7 +689,8 @@ static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* ref)
 	cst->glevel = 0;
 	cst->params = 0;
 
-	_cmp_emitIs2(cst,OP_BODY,0,0);
+	_cmp_emit0(cst,OP_BODY);
+	cst->code_next += sizeof(ushort)*3;
 }
 
 static void _cmp_end(struct _cmp_state* cst)
@@ -711,11 +701,13 @@ static void _cmp_end(struct _cmp_state* cst)
 	if(cst->err == 0)
 	{
 		ushort* ptr = (ushort*)(cst->code + 1);
-		*ptr = cst->code_next;
+		*ptr = cst->code_next;	// codesize
 		ptr++;
-		*ptr = cst->params;
+		*ptr = cst->s_max;		// stack-size
+		ptr++;
+		*ptr = cst->params;		// max-params
 		st_insert(cst->t,&cst->root,"B",2);
-		st_insert(cst->t,&cst->root,cst->code,cst->code_next);
+		//st_insert(cst->t,&cst->root,cst->code,cst->code_next);
 	}
 
 	tk_mfree(cst->code);
@@ -744,7 +736,7 @@ int cmp_function(FILE* f, task* t, st_ptr* ref)
 	else cst.err++;
 
 	_cmp_end(&cst);
-	return ret;
+	return cst.c;
 }
 
 int cmp_expr(FILE* f, task* t, st_ptr* ref)
@@ -763,5 +755,5 @@ int cmp_expr(FILE* f, task* t, st_ptr* ref)
 	_cmp_expr(&cst,PURE_EXPR);
 
 	_cmp_end(&cst);
-	return 0;
+	return cst.c;
 }

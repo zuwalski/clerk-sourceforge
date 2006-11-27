@@ -34,7 +34,7 @@ double duration;
 
 #define DEFRUNS 2000000
 
-int main(int argc, char *argv[])
+int main_0(int argc, char *argv[])
 {
 	st_ptr pt,tmp;
 	task* t = tk_create_task(0);
@@ -129,7 +129,7 @@ int main_1(int argc, char *argv[])
 	return 0;
 }
 
-int main_2(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 	st_ptr pt;
 	task* t = tk_create_task(0);

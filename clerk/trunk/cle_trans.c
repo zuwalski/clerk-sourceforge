@@ -231,7 +231,7 @@ int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun)
 
 					c = cmp_function(f,t,&after);
 
-					after = ps.ps->pt;
+					//after = ps.ps->pt;
 				}
 				else if(idx == 5 && memcmp(buffer,"begin",5) == 0)
 				{

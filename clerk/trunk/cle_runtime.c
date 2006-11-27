@@ -117,35 +117,35 @@ static const char* _rt_opc_name(uint opc)
 	}
 }
 
+static struct _body_
+{
+	char body;
+	ushort codesize;
+	ushort stacksize;
+	ushort maxparams;
+};
+
 static void _rt_dump_function(st_ptr app, st_ptr* root)
 {
 	st_ptr strings,tmpptr;
 	char* bptr,*bptr2;
-	uint funidx,tmpuint;
-	int len;
+	uint len;
 	ushort tmpushort;
 	ushort tmpushort2;
+	ushort tmpushort3;
 	uchar tmpuchar;
 
 	tmpptr = *root;
+	strings = *root;
 
-	if(st_move(root,"A",2))
+	if(st_move(&tmpptr,"A",2))
 	{
 		err(__LINE__);
 		return;
 	}
 
 	puts("Function:");
-	_cle_read(root,0);
-
-	root = &tmpptr;
-	strings = tmpptr;
-
-	if(st_move(root,"B",2))
-	{
-		err(__LINE__);
-		return;
-	}
+	_cle_read(&tmpptr,0);
 
 	if(st_move(&strings,"S",2))
 	{
@@ -153,10 +153,38 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		return;
 	}
 
-	bptr = bptr2 = st_get_all(root,&len);
+	tmpptr = *root;
+	if(st_move(&tmpptr,"B",2))
+	{
+		err(__LINE__);
+		return;
+	}
+	else
+	{
+		struct _body_ body;
+		if(st_get(&tmpptr,(char*)&body,7) != -1)
+		{
+			err(__LINE__);
+			return;
+		}
 
-	tmpushort = *((ushort*)(bptr + len - sizeof(ushort)));
-	printf("\nCode (code size: %d, stack size: %d):\n",len,(int)tmpushort);
+		if(body.body != OP_BODY)
+		{
+			err(__LINE__);
+			return;
+		}
+
+		bptr = bptr2 = (char*)tk_malloc(body.codesize - 7);
+		if(st_get(&tmpptr,bptr,body.codesize - 7) != 0)
+		{
+			tk_mfree(bptr);
+			err(__LINE__);
+			return;
+		}
+
+		len = body.codesize - 10;
+		printf("\nCodesize %d, Stacksize: %d, Params %d\n",body.codesize,body.stacksize,body.maxparams);
+	}
 
 	while(len > 0)
 	{
@@ -203,6 +231,19 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			break;
 
 		case OP_STR:
+			// emit Is
+			tmpushort = *((ushort*)bptr);
+			bptr += sizeof(ushort);
+			tmpptr = strings;
+			if(st_move(&tmpptr,(cdat)&tmpushort,sizeof(ushort)))
+				err(__LINE__);
+			else
+			{
+				uint slen = 0;
+				char* str = st_get_all(&tmpptr,&slen);
+				printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,str);
+			}
+			break;
 		case OP_WVAR:
 		case OP_RVAR:
 		case OP_CVAR:
@@ -212,15 +253,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
 			printf("%s %d\n",_rt_opc_name(opc),tmpushort);
-			break;
-
-		case OP_BODY:
-			// emit Is2
-			tmpushort = *((ushort*)bptr);
-			bptr += sizeof(ushort);
-			tmpushort2 = *((ushort*)bptr);
-			bptr += sizeof(ushort);
-			printf("%s %d %d\n",_rt_opc_name(opc),tmpushort,tmpushort2);
 			break;
 
 		default:
@@ -238,7 +270,7 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 	st_ptr rroot = root;
 	char head[HEAD_SIZE];
 
-	if(st_get(&root,head,sizeof(head)) < 0 && head[0] == 0)
+	if(0 && st_get(&root,head,sizeof(head)) <= 0 && head[0] == 0)
 	{
 		switch(head[1])
 		{
