@@ -257,7 +257,6 @@ static struct _cmp_var* _cmp_def_var(struct _cmp_state* cst)
 	var->leng = len;
 	var->level = cst->glevel;
 
-	_cmp_emit0(cst,OP_DEF);
 	_cmp_stack(cst,1);
 
 	cst->top_var = begin;
@@ -583,6 +582,7 @@ static void _cmp_expr(struct _cmp_state* cst, uchar nest)
 					chk_state(ST_0)
 					if(nest) err(__LINE__)
 					_cmp_def_var(cst);
+					_cmp_emit0(cst,OP_DEF);
 					_cmp_new(cst,ST_VAR);
 					state = ST_0;
 					break;
@@ -690,7 +690,7 @@ static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* ref)
 	cst->params = 0;
 
 	_cmp_emit0(cst,OP_BODY);
-	cst->code_next += sizeof(ushort)*3;
+	cst->code_next += sizeof(ushort)*2 + 1;
 }
 
 static void _cmp_end(struct _cmp_state* cst)

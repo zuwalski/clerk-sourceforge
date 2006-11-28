@@ -129,7 +129,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 {
 	st_ptr strings,tmpptr;
 	char* bptr,*bptr2;
-	uint len;
+	int len;
 	ushort tmpushort;
 	ushort tmpushort2;
 	ushort tmpushort3;
@@ -144,7 +144,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		return;
 	}
 
-	puts("Function:");
+	puts("BEGIN_FUNCTION\nAnnotations:");
 	_cle_read(&tmpptr,0);
 
 	if(st_move(&strings,"S",2))
@@ -204,12 +204,18 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_OUTS:
 		case OP_CONF:
 		case OP_RIDX:
-		case OP_END:
 		case OP_CHKP:
 		case OP_DEF:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
+		case OP_END:
+			// emit0
+			puts("OP_END\nEND_OF_FUNCTION\n");
+			if(len != 0)
+				err(__LINE__);
+			tk_mfree(bptr2);
+			return;
 
 		case OP_CALL:
 		case OP_DMVW:
@@ -222,27 +228,30 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			bptr += sizeof(ushort);
 			printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,bptr);
 			bptr += tmpushort;
+			len -= tmpushort + sizeof(ushort);
 			break;
 
 		case OP_SETP:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%s %d\n",_rt_opc_name(opc),tmpuchar);
+			len--;
 			break;
 
 		case OP_STR:
 			// emit Is
-			tmpushort = *((ushort*)bptr);
-			bptr += sizeof(ushort);
 			tmpptr = strings;
-			if(st_move(&tmpptr,(cdat)&tmpushort,sizeof(ushort)))
+			if(st_move(&tmpptr,bptr,sizeof(ushort)))
 				err(__LINE__);
 			else
 			{
 				uint slen = 0;
 				char* str = st_get_all(&tmpptr,&slen);
-				printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,str);
+				printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,str + HEAD_SIZE);
+				tk_mfree(str);
 			}
+			bptr += sizeof(ushort);
+			len -= sizeof(ushort);
 			break;
 		case OP_WVAR:
 		case OP_RVAR:
@@ -252,11 +261,13 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			// emit Is
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
+			len -= sizeof(ushort);
 			printf("%s %d\n",_rt_opc_name(opc),tmpushort);
 			break;
 
 		default:
 			err(__LINE__);
+			tk_mfree(bptr2);
 			return;
 		}
 	}
