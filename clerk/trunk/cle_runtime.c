@@ -66,20 +66,16 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_DOCALL_N";
 	case OP_DOCALL:
 		return "OP_DOCALL";
-	case OP_ASGN:
-		return "OP_ASGN";
-	case OP_ASGNRET:
-		return "OP_ASGNRET";
 	case OP_WIDX:
 		return "OP_WIDX";
+	case OP_WVAR0:
+		return "OP_WVAR0";
 	case OP_WVAR:
 		return "OP_WVAR";
 	case OP_DMVW:
 		return "OP_DMVW";
 	case OP_MVW:
 		return "OP_MVW";
-	case OP_APP:
-		return "OP_APP";
 	case OP_OUTS:
 		return "OP_OUTS";
 	case OP_CONF:
@@ -112,6 +108,10 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CALL";
 	case OP_POP:
 		return "OP_POP";
+	case OP_FUN:
+		return "OP_FUN";
+	case OP_NULLP:
+		return "OP_NULLP";
 	default:
 		return "OP_ILLEGAL";
 	}
@@ -196,16 +196,14 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_NOOP:
 		case OP_DOCALL_N:
 		case OP_DOCALL:
-		case OP_ASGN:
-		case OP_ASGNRET:
 		case OP_POP:
 		case OP_WIDX:
-		case OP_APP:
 		case OP_OUTS:
 		case OP_CONF:
 		case OP_RIDX:
 		case OP_CHKP:
 		case OP_DEF:
+		case OP_FUN:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -231,6 +229,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			len -= tmpushort + sizeof(ushort);
 			break;
 
+		case OP_NULLP:
 		case OP_SETP:
 			// emit Ic
 			tmpuchar = *bptr++;
@@ -253,6 +252,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
 			break;
+		case OP_WVAR0:
 		case OP_WVAR:
 		case OP_RVAR:
 		case OP_CVAR:
