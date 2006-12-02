@@ -15,6 +15,16 @@
 */
 #include "cle_runtime.h"
 
+/*
+	stack-strukture:
+	var-space
+	stack-space
+
+	runtime:
+	[0] <- assign to: st_ptr OR output-identifier
+	[...] <- values
+*/
+
 static void _cle_indent(uint indent, const char* str)
 {
 	while(indent-- > 0)
@@ -58,8 +68,6 @@ static const char* _rt_opc_name(uint opc)
 	{
 	case OP_NOOP:
 		return "OP_NOOP";
-	case OP_DEF:
-		return "OP_DEF";
 	case OP_SETP:
 		return "OP_SETP";
 	case OP_DOCALL_N:
@@ -98,8 +106,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_END";
 	case OP_DEFP:
 		return "OP_DEFP";
-	case OP_CHKP:
-		return "OP_CHKP";
 	case OP_BODY:
 		return "OP_BODY";
 	case OP_STR:
@@ -110,8 +116,20 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_POP";
 	case OP_FUN:
 		return "OP_FUN";
-	case OP_NULLP:
-		return "OP_NULLP";
+	case OP_FREE:
+		return "OP_FREE";
+	case OP_EMPTY:
+		return "OP_EMPTY";
+	case OP_DAVARS:
+		return "OP_DAVARS";
+	case OP_AVARS:
+		return "OP_AVARS";
+	case OP_DVARS:
+		return "OP_DVARS";
+	case OP_CAVS:
+		return "OP_CAVS";
+	case OP_OVARS:
+		return "OP_OVARS";
 	default:
 		return "OP_ILLEGAL";
 	}
@@ -121,8 +139,8 @@ static struct _body_
 {
 	char body;
 	uchar maxparams;
+	ushort maxstack;
 	ushort codesize;
-	ushort stacksize;
 };
 
 static void _rt_dump_function(st_ptr app, st_ptr* root)
@@ -131,9 +149,8 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 	char* bptr,*bptr2;
 	int len;
 	ushort tmpushort;
-	ushort tmpushort2;
-	ushort tmpushort3;
 	uchar tmpuchar;
+	uchar tmpuchar2;
 
 	tmpptr = *root;
 	strings = *root;
@@ -183,13 +200,15 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		}
 
 		len = body.codesize - sizeof(struct _body_);
-		printf("\nCodesize %d, Stacksize: %d, Params %d\n",body.codesize,body.stacksize,body.maxparams);
+		printf("\nCodesize %d, Params %d, Stacksize: %d\n",body.codesize,body.maxparams,body.maxstack);
 	}
 
 	while(len > 0)
 	{
-		uint opc = *bptr++;
+		uint opc = *bptr;
+		printf("%04d  ",(uint)bptr - (uint)bptr2);
 		len--;
+		bptr++;
 
 		switch(opc)
 		{
@@ -201,9 +220,9 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_OUTS:
 		case OP_CONF:
 		case OP_RIDX:
-		case OP_CHKP:
-		case OP_DEF:
 		case OP_FUN:
+		case OP_EMPTY:
+		case OP_CAVS:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -224,16 +243,35 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			// emit s
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
-			printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,bptr);
+			printf("%-10s (%d) %s\n",_rt_opc_name(opc),tmpushort,bptr);
 			bptr += tmpushort;
 			len -= tmpushort + sizeof(ushort);
 			break;
 
-		case OP_NULLP:
 		case OP_SETP:
+		case OP_WVAR0:
+		case OP_WVAR:
+		case OP_RVAR:
+		case OP_CVAR:
+		case OP_LVAR:
+		case OP_DAVARS:
+		case OP_DVARS:
 			// emit Ic
 			tmpuchar = *bptr++;
-			printf("%s %d\n",_rt_opc_name(opc),tmpuchar);
+			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);
+			len--;
+			break;
+
+		case OP_AVARS:
+		case OP_OVARS:
+			// emit Ic
+			tmpuchar = *bptr++;
+			printf("%-10s %d {",_rt_opc_name(opc),tmpuchar);
+			while(tmpuchar-- > 0)
+			{
+				printf("%d ",*bptr++);
+			}
+			puts("}");
 			len--;
 			break;
 
@@ -246,23 +284,28 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			{
 				uint slen = 0;
 				char* str = st_get_all(&tmpptr,&slen);
-				printf("%s (%d) %s\n",_rt_opc_name(opc),tmpushort,str + HEAD_SIZE);
+				printf("%-10s (%d) %s\n",_rt_opc_name(opc),tmpushort,str + HEAD_SIZE);
 				tk_mfree(str);
 			}
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
 			break;
-		case OP_WVAR0:
-		case OP_WVAR:
-		case OP_RVAR:
-		case OP_CVAR:
-		case OP_LVAR:
+
 		case OP_DEFP:
-			// emit Is
+			// emit Is2 (branch forward)
+			tmpuchar = *bptr++;
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
-			len -= sizeof(ushort);
-			printf("%s %d\n",_rt_opc_name(opc),tmpushort);
+			len -= sizeof(ushort) + 1;
+			printf("%-10s %d %04d\n",_rt_opc_name(opc),tmpuchar,tmpushort + (uint)bptr - (uint)bptr2);
+			break;
+
+		case OP_FREE:
+			// emit Ic2 (byte,byte)
+			tmpuchar = *bptr++;
+			tmpuchar2 = *bptr++;
+			len -= 2;
+			printf("%-10s %d %d\n",_rt_opc_name(opc),tmpuchar,tmpuchar2);
 			break;
 
 		default:

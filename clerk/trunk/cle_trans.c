@@ -233,7 +233,7 @@ int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun)
 
 					//after = ps.ps->pt;
 				}
-				else if(idx == 5 && memcmp(buffer,"begin",5) == 0)
+				else if(idx == 4 && memcmp(buffer,"body",4) == 0)
 				{
 					if(!whitespace(c)) return(__LINE__);
 					if(state != 0) return(__LINE__);
