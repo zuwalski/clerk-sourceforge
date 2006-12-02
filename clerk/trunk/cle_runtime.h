@@ -61,6 +61,21 @@ enum cle_opcode
 	OP_END,
 	OP_CAVS,
 	OP_CAT,
+	OP_ADD,
+	OP_SUB,
+	OP_MUL,
+	OP_DIV,
+	OP_REM,
+	OP_IMM,
+	OP_BZ,
+	OP_BR,
+	OP_GE,
+	OP_NE,
+	OP_GT,
+	OP_LE,
+	OP_LT,
+	OP_EQ,
+	OP_LOOP,
 
 	OP_OP_MAX
 };

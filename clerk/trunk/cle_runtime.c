@@ -128,6 +128,35 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_OVARS";
 	case OP_CAT:
 		return "OP_CAT";
+	case OP_ADD:
+		return "OP_ADD";
+	case OP_SUB:
+		return "OP_SUB";
+	case OP_MUL:
+		return "OP_MUL";
+	case OP_DIV:
+		return "OP_DIV";
+	case OP_REM:
+		return "OP_REM";
+	case OP_IMM:
+		return "OP_IMM";
+	case OP_BZ:
+		return "OP_BZ";
+	case OP_BR:
+		return "OP_BR";
+	case OP_NE:
+		return "OP_NE";
+	case OP_GT:
+		return "OP_GT";
+	case OP_LE:
+		return "OP_LE";
+	case OP_LT:
+		return "OP_LT";
+	case OP_EQ:
+		return "OP_EQ";
+	case OP_LOOP:
+		return "OP_LOOP";
+
 	default:
 		return "OP_ILLEGAL";
 	}
@@ -146,7 +175,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 {
 	st_ptr strings,tmpptr;
 	char* bptr,*bptr2;
-	int len;
+	int len,tmpint;
 	ushort tmpushort;
 	uchar tmpuchar;
 	uchar tmpuchar2;
@@ -223,6 +252,16 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_FUN:
 		case OP_CAVS:
 		case OP_CAT:
+		case OP_ADD:
+		case OP_SUB:
+		case OP_MUL:
+		case OP_DIV:
+		case OP_REM:
+		case OP_NE:
+		case OP_GT:
+		case OP_LE:
+		case OP_LT:
+		case OP_EQ:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -299,12 +338,37 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			printf("%-10s %d %04d\n",_rt_opc_name(opc),tmpuchar,tmpushort + (uint)bptr - (uint)bptr2);
 			break;
 
+		case OP_BZ:
+		case OP_BR:
+			// emit Is (branch forward)
+			tmpushort = *((ushort*)bptr);
+			bptr += sizeof(ushort);
+			len -= sizeof(ushort);
+			printf("%-10s %04d\n",_rt_opc_name(opc),tmpushort + (uint)bptr - (uint)bptr2);
+			break;
+
+		case OP_LOOP:
+			// emit Is (branch back)
+			tmpushort = *((ushort*)bptr);
+			bptr += sizeof(ushort);
+			len -= sizeof(ushort);
+			printf("%-10s %04d\n",_rt_opc_name(opc),(uint)bptr - (uint)bptr2 - tmpushort);
+			break;
+
 		case OP_FREE:
 			// emit Ic2 (byte,byte)
 			tmpuchar = *bptr++;
 			tmpuchar2 = *bptr++;
 			len -= 2;
 			printf("%-10s %d %d\n",_rt_opc_name(opc),tmpuchar,tmpuchar2);
+			break;
+
+		case OP_IMM:
+			// emit II (imm int)
+			tmpint = *((int*)bptr);
+			bptr += sizeof(int);
+			len -= sizeof(int);
+			printf("%-10s %d\n",_rt_opc_name(opc),tmpint);
 			break;
 
 		default:
