@@ -525,14 +525,9 @@ uint st_offset(st_ptr* pt, uint offset)
 			}
 			nxt = GOOFF(pg,nxt->next);
 		}
-		if(nxt)
-			klen = nxt->offset - pt->offset;
 	}
-	else
-	{
-		klen = me->length - pt->offset;
-		nxt  = 0;
-	}
+
+	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
 
 	offset <<= 3;
 
@@ -584,7 +579,7 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt;
+	key* nxt      = 0;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint offset   = pt->offset;
 	uint klen;
@@ -602,14 +597,9 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 			}
 			nxt = GOOFF(pg,nxt->next);
 		}
-		if(nxt)
-			klen = nxt->offset - offset;
 	}
-	else
-	{
-		klen = me->length - pt->offset;
-		nxt = 0;
-	}
+
+	klen = ((nxt)? nxt->offset : me->length) - offset;
 
 	length <<= 3;
 
@@ -704,14 +694,9 @@ char* st_get_all(st_ptr* pt, uint* length)
 			}
 			nxt = GOOFF(pg,nxt->next);
 		}
-		if(nxt)
-			klen = nxt->offset - pt->offset;
 	}
-	else
-	{
-		klen = me->length - pt->offset;
-		nxt = 0;
-	}
+
+	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
 
 	while(1)
 	{

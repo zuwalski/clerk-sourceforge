@@ -47,8 +47,8 @@ enum cle_opcode
 	OP_WVAR0,
 	OP_DMVW,
 	OP_MVW,
-	OP_EMPTY,
-	OP_OUTS,
+	OP_OUT,
+	OP_OUTL,
 	OP_CONF,
 	OP_FUN,
 	OP_RIDX,
@@ -62,6 +62,7 @@ enum cle_opcode
 	OP_END,
 	OP_CAVS,
 	OP_OVARS,
+	OP_CAT,
 
 	OP_OP_MAX
 };

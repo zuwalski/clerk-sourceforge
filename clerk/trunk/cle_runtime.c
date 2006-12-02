@@ -84,8 +84,10 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_DMVW";
 	case OP_MVW:
 		return "OP_MVW";
-	case OP_OUTS:
-		return "OP_OUTS";
+	case OP_OUT:
+		return "OP_OUT";
+	case OP_OUTL:
+		return "OP_OUTL";
 	case OP_CONF:
 		return "OP_CONF";
 	case OP_RIDX:
@@ -118,8 +120,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FUN";
 	case OP_FREE:
 		return "OP_FREE";
-	case OP_EMPTY:
-		return "OP_EMPTY";
 	case OP_DAVARS:
 		return "OP_DAVARS";
 	case OP_AVARS:
@@ -130,6 +130,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CAVS";
 	case OP_OVARS:
 		return "OP_OVARS";
+	case OP_CAT:
+		return "OP_CAT";
 	default:
 		return "OP_ILLEGAL";
 	}
@@ -217,12 +219,13 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_DOCALL:
 		case OP_POP:
 		case OP_WIDX:
-		case OP_OUTS:
+		case OP_OUT:
+		case OP_OUTL:
 		case OP_CONF:
 		case OP_RIDX:
 		case OP_FUN:
-		case OP_EMPTY:
 		case OP_CAVS:
+		case OP_CAT:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -230,7 +233,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			// emit0
 			puts("OP_END\nEND_OF_FUNCTION\n");
 			if(len != 0)
-				err(__LINE__);
+				printf("!!! Remaining length: %d\n",len);
 			tk_mfree(bptr2);
 			return;
 
@@ -270,6 +273,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			while(tmpuchar-- > 0)
 			{
 				printf("%d ",*bptr++);
+				len--;
 			}
 			puts("}");
 			len--;
