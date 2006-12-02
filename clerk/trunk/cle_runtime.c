@@ -120,12 +120,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FUN";
 	case OP_FREE:
 		return "OP_FREE";
-	case OP_DAVARS:
-		return "OP_DAVARS";
 	case OP_AVARS:
 		return "OP_AVARS";
-	case OP_DVARS:
-		return "OP_DVARS";
 	case OP_CAVS:
 		return "OP_CAVS";
 	case OP_OVARS:
@@ -141,7 +137,8 @@ static struct _body_
 {
 	char body;
 	uchar maxparams;
-	ushort maxstack;
+	uchar maxvars;
+	uchar maxstack;
 	ushort codesize;
 };
 
@@ -202,7 +199,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		}
 
 		len = body.codesize - sizeof(struct _body_);
-		printf("\nCodesize %d, Params %d, Stacksize: %d\n",body.codesize,body.maxparams,body.maxstack);
+		printf("\nCodesize %d, Params %d, Vars %d, Stacksize: %d\n",body.codesize,body.maxparams,body.maxvars,body.maxstack);
 	}
 
 	while(len > 0)
@@ -257,8 +254,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_RVAR:
 		case OP_CVAR:
 		case OP_LVAR:
-		case OP_DAVARS:
-		case OP_DVARS:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);

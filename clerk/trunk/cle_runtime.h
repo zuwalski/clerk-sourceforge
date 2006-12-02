@@ -37,9 +37,8 @@ enum cle_opcode
 	OP_SETP,
 	OP_DOCALL_N,
 	OP_DOCALL,
-	OP_DAVARS,
 	OP_AVARS,
-	OP_DVARS,
+	OP_OVARS,
 	OP_LVAR,
 	OP_POP,
 	OP_WIDX,
@@ -61,7 +60,6 @@ enum cle_opcode
 	OP_BODY,
 	OP_END,
 	OP_CAVS,
-	OP_OVARS,
 	OP_CAT,
 
 	OP_OP_MAX
