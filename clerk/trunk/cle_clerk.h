@@ -20,8 +20,8 @@
 
 #define PAGE_SIZE 2048
 
-
 typedef unsigned int uint;
+typedef unsigned long ulong;
 typedef unsigned short ushort;
 typedef unsigned char uchar;
 typedef const unsigned char* cdat;
