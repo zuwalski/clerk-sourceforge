@@ -59,7 +59,6 @@ enum cle_opcode
 	OP_DEFP,
 	OP_BODY,
 	OP_END,
-	OP_CAVS,
 	OP_CAT,
 	OP_ADD,
 	OP_SUB,

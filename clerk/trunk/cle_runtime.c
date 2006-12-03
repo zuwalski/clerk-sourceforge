@@ -122,8 +122,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FREE";
 	case OP_AVARS:
 		return "OP_AVARS";
-	case OP_CAVS:
-		return "OP_CAVS";
 	case OP_OVARS:
 		return "OP_OVARS";
 	case OP_CAT:
@@ -250,7 +248,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_CONF:
 		case OP_RIDX:
 		case OP_FUN:
-		case OP_CAVS:
 		case OP_CAT:
 		case OP_ADD:
 		case OP_SUB:

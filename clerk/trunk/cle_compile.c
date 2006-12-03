@@ -438,7 +438,7 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 		cst->code[coff + 1] = count + 1;
 		_cmp_stack(cst,1);
 		_cmp_expr(cst,TP_ANY,PURE_EXPR);
-		_cmp_emit0(cst,OP_CAVS);			// clear-var-assign
+		_cmp_emit0(cst,OP_POP);			// clear-var-assign
 		_cmp_stack(cst,-1);
 		_cmp_nextc(cst);
 	}
@@ -588,12 +588,13 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_state(ST_ALPHA|ST_VAR)
 			state = ST_DOT;
 			break;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			_cmp_whitespace(cst);
+			continue;
 		default:
-			if(whitespace(cst->c))
-			{
-				_cmp_whitespace(cst);
-				continue;
-			}
 			if(alpha(cst->c))
 			{
 				uint len = _cmp_name(cst);
@@ -705,24 +706,22 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			_cmp_op_push(cst,OP_LT,1);
 			continue;
 		case '=':
-			_cmp_nextc(cst);
-			if(cst->c == '=')
+			if(nest & NEST_EXPR)
 			{
 				chk_state(ST_ALPHA|ST_VAR|ST_NUM)
 				_cmp_op_push(cst,OP_EQ,1);
 				state = ST_NUM_OP;
-				break;
 			}
 			else
 			{
-				if(nest) err(__LINE__)	// asign
+				if(nest) err(__LINE__)	// assign
 				chk_state(ST_ALPHA|ST_VAR)
 				_cmp_expr(cst,TP_ANY,PURE_EXPR);
 				_cmp_emit0(cst,OP_POP);
 				_cmp_stack(cst,-1);
 				state = ST_0;
 			}
-			continue;
+			break;
 
 		case '(':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
@@ -830,12 +829,13 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			chk_out()
 			state = ST_CONF;
 			break;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			_cmp_whitespace(cst);
+			continue;
 		default:
-			if(whitespace(cst->c))
-			{
-				_cmp_whitespace(cst);
-				continue;
-			}
 			if(num(cst->c))
 			{
 				int val = 0;
