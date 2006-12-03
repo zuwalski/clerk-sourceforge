@@ -33,9 +33,9 @@ enum cle_opcode
 	OP_NOOP,
 	OP_FREE,
 	OP_STR,
+	OP_CALL_N,
 	OP_CALL,
 	OP_SETP,
-	OP_DOCALL_N,
 	OP_DOCALL,
 	OP_AVARS,
 	OP_OVARS,
@@ -77,6 +77,7 @@ enum cle_opcode
 	OP_LOOP,
 	OP_CAV,
 	OP_LNUM,
+	OP_NEW,
 
 	OP_OP_MAX
 };

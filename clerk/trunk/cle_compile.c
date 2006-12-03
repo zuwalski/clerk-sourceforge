@@ -386,8 +386,16 @@ static void _cmp_call(struct _cmp_state* cst, uint len, uchar nest)
 {
 	uint pcount = 0;
 
-	_cmp_emitS(cst,OP_CALL,cst->opbuf + cst->top,len);
-	_cmp_stack(cst,SIZE_OF_CALL);
+	if(nest & NEST_EXPR)
+	{
+		_cmp_emitS(cst,OP_CALL_N,cst->opbuf + cst->top,len);
+		_cmp_stack(cst,SIZE_OF_CALL + 1);
+	}
+	else
+	{
+		_cmp_emitS(cst,OP_CALL,cst->opbuf + cst->top,len);
+		_cmp_stack(cst,SIZE_OF_CALL);
+	}
 
 	do {
 		uint stack = cst->s_top;
@@ -402,11 +410,7 @@ static void _cmp_call(struct _cmp_state* cst, uint len, uchar nest)
 	if(cst->c != ')') err(__LINE__)
 	else _cmp_nextc(cst);
 
-	if(nest & NEST_EXPR)
-		_cmp_emit0(cst,OP_DOCALL_N);
-	else
-		_cmp_emit0(cst,OP_DOCALL);
-
+	_cmp_emit0(cst,OP_DOCALL);
 	_cmp_stack(cst,-SIZE_OF_CALL);
 }
 
