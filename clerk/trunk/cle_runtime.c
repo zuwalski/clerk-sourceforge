@@ -437,9 +437,9 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 
 // -------------- RUNTIME -------------------------------------------------------
 
-union _rt_stack;
+static union _rt_stack;
 
-struct _rt_function
+static struct _rt_function
 {
 	uchar* code;
 	st_ptr root;
@@ -450,7 +450,7 @@ struct _rt_function
 	uchar  max_vars;
 };
 
-struct _rt_invocation
+static struct _rt_invocation
 {
 	struct _rt_invocation* parent;
 	struct _rt_invocation* pipe_fwrd;
@@ -461,25 +461,25 @@ struct _rt_invocation
 	uchar* ip;
 };
 
-struct _rt_s_int
+static struct _rt_s_int
 {
 	int value;
 	ulong  _fill;
 };
 
-struct _rt_s_inv_ref
+static struct _rt_s_inv_ref
 {
 	struct _rt_invocation* inv;
 	ulong  _fill;
 };
 
-struct _rt_s_assign_ref
+static struct _rt_s_assign_ref
 {
 	union _rt_stack* var;
 	ulong _fill;
 };
 
-struct _rt_s_assign_many
+static struct _rt_s_assign_many
 {
 	struct _rt_s_assign_ref* ref;
 	ushort _fill;
@@ -487,19 +487,20 @@ struct _rt_s_assign_many
 	uchar  remaining_depth;
 };
 
-struct _rt_value
+static struct _rt_value
 {
 	uchar* data;
 	uint   length;
+	uint   ref;
 };
 
-struct _rt_s_value
+static struct _rt_s_value
 {
 	struct _rt_value* value;
 	ulong _fill;
 };
 
-struct _rt_s_check
+static struct _rt_s_check
 {
 	void*  part_pointer;
 	ushort is_ptr;		// place-of-key (if == 0 => special type: see _rt_stack)
@@ -507,7 +508,7 @@ struct _rt_s_check
 	uchar  data;		// other stuff
 };
 
-enum _rt_s_types
+static enum _rt_s_types
 {
 	STACK_NULL = 0,
 	STACK_PTR,
@@ -519,7 +520,7 @@ enum _rt_s_types
 	STACK_STR_INT
 };
 
-union _rt_stack
+static union _rt_stack
 {
 	struct _rt_s_assign_many many;
 	struct _rt_s_assign_ref ref;
@@ -658,9 +659,19 @@ static struct _rt_invocation* _rt_free_invocation(struct _rt_invocation* inv)
 	return parent;
 }
 
-static uint _rt_load_value(union _rt_stack* sp, uint stype)
+static uint _rt_load_value(task* t, union _rt_stack* sp, uint stype)
 {
 	return __LINE__;
+}
+
+static void _rt_free_value(union _rt_stack* sp)
+{
+	if(sp->value.value->ref == 0)
+	{
+		tk_mfree(sp->value.value);
+	}
+	else
+		sp->value.value->ref--;
 }
 
 static void _rt_free_se(union _rt_stack* sp, uint count)
@@ -669,7 +680,7 @@ static void _rt_free_se(union _rt_stack* sp, uint count)
 	memset(sp,0,sizeof(union _rt_stack) * count);
 }
 
-static uint _rt_compare(union _rt_stack* sp)
+static uint _rt_compare(task* t, union _rt_stack* sp)
 {
 	union _rt_stack* sp2 = sp - 1;
 	uint type = _rt_get_type(sp);
@@ -690,13 +701,27 @@ static uint _rt_compare(union _rt_stack* sp)
 			sp->ptr.offset == sp2->ptr.offset)
 			return 0;
 		// compare content
-		if(_rt_load_value(sp,STACK_STR_INT))
+		if(_rt_load_value(t,sp,STACK_STR_INT))
+		{
+			_rt_free_value(sp);
 			return -4;
-		if(_rt_load_value(sp2,STACK_STR_INT))
+		}
+		if(_rt_load_value(t,sp2,STACK_STR_INT))
+		{
+			_rt_free_value(sp);
+			_rt_free_value(sp2);
 			return -5;
+		}
 
-		
-		break;
+		type = (sp->value.value->length > sp2->value.value->length)?
+			sp2->value.value->length : sp->value.value->length;
+		type = memcmp(sp->value.value->data,sp2->value.value->data,type);
+
+		_rt_free_value(sp);
+		_rt_free_value(sp2);
+		if(type == 0) return 0;
+		if(type < 0) return -1;
+		return 1;
 	}
 	return -3;	// uncomparable types
 }
@@ -731,7 +756,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_LNUM:
 		if(_rt_get_type(inv->sp) != STACK_INT)
 		{
-			tmpint = _rt_load_value(inv->sp,STACK_INT);
+			tmpint = _rt_load_value(t,inv->sp,STACK_INT);
 			if(tmpint) return tmpint;
 		}
 		break;
@@ -756,35 +781,35 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp--;
 		break;
 	case OP_EQ:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		_rt_make_int(inv->sp,tmpint == 0);
 		break;
 	case OP_NE:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		_rt_make_int(inv->sp,tmpint != 0);
 		break;
 	case OP_GE:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		if(tmpint < -1) return __LINE__;
 		_rt_make_int(inv->sp,tmpint >= 0);
 		break;
 	case OP_GT:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		if(tmpint < -1) return __LINE__;
 		_rt_make_int(inv->sp,tmpint > 0);
 		break;
 	case OP_LE:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		if(tmpint < -1) return __LINE__;
 		_rt_make_int(inv->sp,tmpint <= 0);
 		break;
 	case OP_LT:
-		tmpint = _rt_compare(inv->sp);
+		tmpint = _rt_compare(t,inv->sp);
 		inv->sp--;
 		if(tmpint < -1) return __LINE__;
 		_rt_make_int(inv->sp,tmpint < 0);
@@ -847,7 +872,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		if(_rt_get_type(inv->sp) == STACK_DIRECT_OUT)
 		{
 			// gen. pop-event.
-			tmpint = t->output->pop(t->outputdata);
+			tmpint = t->output->pop(t);
 			if(tmpint) return tmpint;
 		}
 		else
@@ -873,9 +898,9 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			break;
 		case STACK_DIRECT_OUT:
 			// gen. name+push-event
-			tmpint = t->output->name(t->outputdata,inv->ip,tmpushort);
+			tmpint = t->output->name(t,inv->ip,tmpushort);
 			if(tmpint) return tmpint;
-			tmpint = t->output->push(t->outputdata);
+			tmpint = t->output->push(t);
 			if(tmpint) return tmpint;
 			tmpptr.key = 0;
 			break;
@@ -901,7 +926,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			break;
 		case STACK_DIRECT_OUT:
 			// gen. name-event
-			tmpint = t->output->name(t->outputdata,inv->ip,tmpushort);
+			tmpint = t->output->name(t,inv->ip,tmpushort);
 			if(tmpint) return tmpint;
 			break;
 		default:
@@ -910,25 +935,97 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->ip += tmpushort;
 		break;
 	case OP_WIDX:
-		tmpint = _rt_load_value(inv->sp,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->sp,STACK_STR_INT);
 		if(tmpint) return tmpint;
 		switch(_rt_get_type(inv->sp - 1))
 		{
 		case STACK_PTR:
-			st_insert(t,&(inv->sp - 1)->ptr,inv->sp->value.value->data,inv->sp->value.value->length);
-
+			tmpptr = (inv->sp - 1)->ptr;
+			break;
+		case STACK_REF:
+			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
+				st_empty(t,&inv->sp->ref.var->ptr);
+			tmpptr = inv->sp->ref.var->ptr;
+			break;
+		case STACK_MANY:
+			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
+				st_empty(t,&inv->sp->many.ref->var->ptr);
+			tmpptr = inv->sp->many.ref->var->ptr;
 			break;
 		case STACK_DIRECT_OUT:
 			// gen. name-event
-			tmpint = t->output->name(t->outputdata,inv->sp->value.value->data,inv->sp->value.value->length);
+			tmpint = t->output->name(t,inv->sp->value.value->data,inv->sp->value.value->length);
+			if(tmpint) return tmpint;
+			tmpptr.key = 0;
+			break;
+		default:
+			return __LINE__;
+		}
+		if(tmpptr.key)
+			st_insert(t,&tmpptr,inv->sp->value.value->data,inv->sp->value.value->length);
+		_rt_free_value(inv->sp);
+		inv->sp--;
+		break;
+	case OP_WVAR:
+		tmpuchar = *inv->ip++;
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		if(tmpint) return tmpint;
+		switch(_rt_get_type(inv->sp))
+		{
+		case STACK_PTR:
+			tmpptr = inv->sp->ptr;
+			break;
+		case STACK_REF:
+			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
+				st_empty(t,&inv->sp->ref.var->ptr);
+			tmpptr = inv->sp->ref.var->ptr;
+			break;
+		case STACK_MANY:
+			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
+				st_empty(t,&inv->sp->many.ref->var->ptr);
+			tmpptr = inv->sp->many.ref->var->ptr;
+			break;
+		case STACK_DIRECT_OUT:
+			// gen. name-event
+			tmpint = t->output->name(t,(inv->vars + tmpuchar)->value.value->data,
+				(inv->vars + tmpuchar)->value.value->length);
+			if(tmpint) return tmpint;
+			tmpint = t->output->push(t);
+			if(tmpint) return tmpint;
+			tmpptr.key = 0;
+			break;
+		default:
+			return __LINE__;
+		}
+		if(tmpptr.key)
+		{
+			st_insert(t,&tmpptr,(inv->vars + tmpuchar)->value.value->data,
+				(inv->vars + tmpuchar)->value.value->length);
+			inv->sp->ptr = tmpptr;
+		}
+		_rt_free_value(inv->sp);
+		break;
+	case OP_WVAR0:
+		tmpuchar = *inv->ip++;
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		if(tmpint) return tmpint;
+		switch(_rt_get_type(inv->sp))
+		{
+		case STACK_PTR:
+			tmpptr = inv->sp->ptr;
+			st_insert(t,&tmpptr,(inv->vars + tmpuchar)->value.value->data,
+				(inv->vars + tmpuchar)->value.value->length);
+			inv->sp->ptr = tmpptr;
+			break;
+		case STACK_DIRECT_OUT:			// gen. name-event
+			tmpint = t->output->name(t,(inv->vars + tmpuchar)->value.value->data,
+				(inv->vars + tmpuchar)->value.value->length);
 			if(tmpint) return tmpint;
 			break;
 		default:
 			return __LINE__;
 		}
-		break;
-	case OP_WVAR:
-	case OP_WVAR0:
+		_rt_free_value(inv->vars + tmpuchar);
 		break;
 
 	case OP_CMV:
@@ -956,17 +1053,15 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			_rt_make_null(inv->sp);
 		inv->ip += tmpushort;
 		break;
-
 	case OP_RIDX:
-
 	case OP_RVAR:
 	case OP_CVAR:
 		break;
+
 	case OP_LVAR:
 		inv->sp++;
 		*inv->sp = inv->vars[*inv->ip++];
 		break;
-
 	case OP_AVARS:
 		tmpint = tmpuchar = *inv->ip++;
 		{
@@ -999,15 +1094,32 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 
 	case OP_OVARS:
 		// emit Ic
-		//tmpuchar = *bptr++;
-		//printf("%-10s %d {",_rt_opc_name(opc),tmpuchar);
-		//while(tmpuchar-- > 0)
-		//{
-		//	printf("%d ",*bptr++);
-		//	len--;
-		//}
-		//puts("}");
-		//len--;
+		tmpint = tmpuchar = *inv->ip++;
+		tmpushort = _rt_get_type(inv->sp);
+		{
+			uchar* list = inv->ip + tmpint - 1;
+			while(tmpint-- > 0)
+			{
+				union _rt_stack* elm = inv->vars + *list--;
+				int ret = _rt_load_value(t,elm,STACK_STR_INT);	///!! could be a tree!!!
+				if(ret) return ret;
+
+				switch(tmpushort)
+				{
+				case STACK_PTR:
+					break;
+				case STACK_REF:
+				case STACK_MANY:
+					break;
+				case STACK_DIRECT_OUT:
+					t->output->data(t,elm->value.value->data,elm->value.value->length);
+					t->output->next(t);
+				default:
+					return __LINE__;
+				}
+				_rt_free_value(elm);
+			}
+		}
 		break;
 
 	case OP_STR:
@@ -1096,8 +1208,11 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	// mark for output-handler
 	inv->sp->chk.type = STACK_DIRECT_OUT;
 	inv->sp++;
+
+	t->output->start(t);	// begin output
 	// .. and invoke
 	ret = _rt_invoke(inv,t,app);
+	t->output->end(t);		// end output
 
 	_rt_free_invocation(inv);
 	return ret;

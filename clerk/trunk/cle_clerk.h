@@ -49,13 +49,13 @@ typedef struct it_ptr
 
 /* output interface begin */
 
-typedef void* (*event_start)();
-typedef int (*event_end)(void*);
-typedef int (*event_pop)(void*);
-typedef int (*event_push)(void*);
-typedef int (*event_name)(void*,cdat,uint);
-typedef int (*event_data)(void*,cdat,uint);
-typedef int (*event_next)(void*);
+typedef int (*event_start)(task*);
+typedef int (*event_end)(task*);
+typedef int (*event_pop)(task*);
+typedef int (*event_push)(task*);
+typedef int (*event_name)(task*,cdat,uint);
+typedef int (*event_data)(task*,cdat,uint);
+typedef int (*event_next)(task*);
 
 typedef struct cle_output
 {
