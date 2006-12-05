@@ -14,6 +14,7 @@
    limitations under the License.
 */
 #include "cle_runtime.h"
+#include "cle_struct.h"
 
 /*
 	stack-strukture:
@@ -125,6 +126,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CALL_N";
 	case OP_POP:
 		return "OP_POP";
+	case OP_POPW:
+		return "OP_POPW";
 	case OP_FUN:
 		return "OP_FUN";
 	case OP_FREE:
@@ -169,6 +172,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CAV";
 	case OP_LNUM:
 		return "OP_LNUM";
+	case OP_NULL:
+		return "OP_NULL";
 
 	default:
 		return "OP_ILLEGAL";
@@ -243,6 +248,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_NOOP:
 		case OP_DOCALL:
 		case OP_POP:
+		case OP_POPW:
 		case OP_WIDX:
 		case OP_OUT:
 		case OP_OUTL:
@@ -261,8 +267,8 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_LE:
 		case OP_LT:
 		case OP_EQ:
-		case OP_CAV:
 		case OP_LNUM:
+		case OP_NULL:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -295,6 +301,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_RVAR:
 		case OP_CVAR:
 		case OP_LVAR:
+		case OP_CAV:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);
@@ -443,8 +450,6 @@ struct _rt_function
 	uchar  max_vars;
 };
 
-// !! SIZE_OF_CALL must give size of this
-// struct in terms of _rt_stack-elements
 struct _rt_invocation
 {
 	struct _rt_invocation* parent;
@@ -462,25 +467,35 @@ struct _rt_s_int
 	ulong  _fill;
 };
 
-struct _rt_s_assign0
-{
-	uchar* ip_list;
-	ushort zero;
-	uchar  length;
-	uchar  current;
-};
-
-struct _rt_s_assign1
+struct _rt_s_inv_ref
 {
 	struct _rt_invocation* inv;
-	ushort zero;
-	uchar  id;
-	uchar  depth;
+	ulong  _fill;
 };
 
-struct _rt_s_assign_one
+struct _rt_s_assign_ref
 {
 	union _rt_stack* var;
+	ulong _fill;
+};
+
+struct _rt_s_assign_many
+{
+	struct _rt_s_assign_ref* ref;
+	ushort _fill;
+	uchar  _type;
+	uchar  remaining_depth;
+};
+
+struct _rt_value
+{
+	uchar* data;
+	uint   length;
+};
+
+struct _rt_s_value
+{
+	struct _rt_value* value;
 	ulong _fill;
 };
 
@@ -497,16 +512,20 @@ enum _rt_s_types
 	STACK_NULL = 0,
 	STACK_PTR,
 	STACK_INT,
-	STACK_ASG,
-	STACK_ASG_ONE
+	STACK_REF,
+	STACK_INV,
+	STACK_MANY,
+	STACK_DIRECT_OUT,
+	STACK_STR_INT
 };
 
 union _rt_stack
 {
+	struct _rt_s_assign_many many;
+	struct _rt_s_assign_ref ref;
+	struct _rt_s_inv_ref inv;
+	struct _rt_s_value value;
 	struct _rt_s_check chk;
-	struct _rt_s_assign1 asgn1;
-	struct _rt_s_assign0 _asgn0;
-	struct _rt_s_assign_one asgn_one;
 	struct _rt_s_int sint;
 	st_ptr ptr;
 };
@@ -518,11 +537,18 @@ static void _rt_make_int(union _rt_stack* sp, int value)
 	sp->sint.value = value;
 }
 
-static void _rt_make_assign_one(union _rt_stack* sp, union _rt_stack* var)
+static void _rt_make_assign_ref(union _rt_stack* sp, union _rt_stack* var)
 {
+	sp->ref.var = var;
 	sp->chk.is_ptr = 0;
-	sp->chk.type = STACK_ASG_ONE;
-	sp->asgn_one.var = var;
+	sp->chk.type = STACK_REF;
+}
+
+static void _rt_make_inv_ref(union _rt_stack* sp, struct _rt_invocation* inv)
+{
+	sp->inv.inv = inv;
+	sp->chk.is_ptr = 0;
+	sp->chk.type = STACK_INV;
 }
 
 static void _rt_make_null(union _rt_stack* sp)
@@ -537,10 +563,12 @@ static uint _rt_get_type(union _rt_stack* sp)
 	return sp->chk.type;
 }
 
-static uint _rt_create_invocation(st_ptr context, st_ptr root, task* t, struct _rt_invocation* inv)
+static uint _rt_load_function(task* t, st_ptr root, struct _rt_function** ret_fun)
 {
 	struct _rt_function* fun;
+	st_ptr strings;
 	char head[HEAD_SIZE];
+	*ret_fun = 0;
 
 	// TODO: read functions-from cache....
 	if(st_get(&root,head,sizeof(head)) > 0)
@@ -549,12 +577,8 @@ static uint _rt_create_invocation(st_ptr context, st_ptr root, task* t, struct _
 	if(head[0] != 0 && (head[1] != 'F' || head[1] != 'E'))
 		return __LINE__;
 
-	fun = (struct _rt_function*)tk_malloc(sizeof(struct _rt_function));
-	fun->ref_count = 0;
-	fun->root = root;
-	fun->strings = root;
-
-	if(st_move(&fun->strings,"S",2))
+	strings = root;
+	if(st_move(&strings,"S",2))
 		return __LINE__;
 
 	if(st_move(&root,"B",2))
@@ -568,21 +592,53 @@ static uint _rt_create_invocation(st_ptr context, st_ptr root, task* t, struct _
 		if(body.body != OP_BODY)
 			return __LINE__;
 
-		fun->code = (char*)tk_malloc(body.codesize - sizeof(struct _body_));
+		fun = (struct _rt_function*)tk_malloc(
+			sizeof(struct _rt_function) + body.codesize - sizeof(struct _body_));
+
+		fun->ref_count = 0;
+		*ret_fun = fun;
+
+		fun->code = (char*)fun + sizeof(struct _rt_function);
 		if(st_get(&root,fun->code,body.codesize - sizeof(struct _body_)) != -1)
-		{
-			tk_mfree(fun->code);
 			return __LINE__;
-		}
 
 		fun->max_params = body.maxparams;
 		fun->max_vars   = body.maxvars;
 		fun->max_stack  = body.maxstack;
+		fun->strings    = strings;
+		fun->root       = root;
 	}
+	return 0;
+}
 
-	inv->vars = tk_malloc((fun->max_vars + fun->max_stack) * sizeof(union _rt_stack));
+static void _rt_release_fun(struct _rt_function* fun)
+{
+	if(fun == 0) return;
+
+	if(fun->ref_count == 0)
+		tk_mfree(fun);
+	else
+		fun->ref_count--;
+}
+
+static uint _rt_create_invocation(task* t, st_ptr context, st_ptr root, struct _rt_invocation** ret_inv)
+{
+	struct _rt_invocation* inv;
+	struct _rt_function* fun;
+	uint ret = _rt_load_function(t,root,&fun);
+	if(ret)
+	{
+		_rt_release_fun(fun);
+		return ret;
+	}
+	
+	// setup-invocation
+	inv = (struct _rt_invocation*)
+		tk_malloc(sizeof(struct _rt_invocation) + (fun->max_vars + fun->max_stack) * sizeof(union _rt_stack));
+
+	inv->vars = (union _rt_stack*)((char*)inv + sizeof(struct _rt_invocation));
+
 	memset(inv->vars,0,fun->max_vars * sizeof(union _rt_stack));
-
 	inv->context = context;
 	inv->sp = inv->vars + inv->fun->max_vars;
 	inv->ip = fun->code;
@@ -593,20 +649,16 @@ static uint _rt_create_invocation(st_ptr context, st_ptr root, task* t, struct _
 
 static struct _rt_invocation* _rt_free_invocation(struct _rt_invocation* inv)
 {
-	tk_mfree(inv->vars);
+	struct _rt_invocation* parent = inv->parent;
+	
+	_rt_release_fun(inv->fun);
 
-	if(inv->fun->ref_count == 0)
-	{
-		tk_mfree(inv->fun->code);
-		tk_mfree(inv->fun);
-	}
-	else
-		inv->fun->ref_count--;
+	tk_mfree(inv);
 
-	return inv->parent;
+	return parent;
 }
 
-static uint _rt_load_value(union _rt_stack* sp)
+static uint _rt_load_value(union _rt_stack* sp, uint stype)
 {
 	return __LINE__;
 }
@@ -628,7 +680,7 @@ static uint _rt_compare(union _rt_stack* sp)
 	switch(type)
 	{
 	case STACK_NULL:
-		return 0;	// same allways
+		return 0;	// same always
 	case STACK_INT:
 		if(sp->sint.value == sp2->sint.value) return 0;
 		return (sp->sint.value > sp2->sint.value)? 1 : -1;
@@ -638,6 +690,12 @@ static uint _rt_compare(union _rt_stack* sp)
 			sp->ptr.offset == sp2->ptr.offset)
 			return 0;
 		// compare content
+		if(_rt_load_value(sp,STACK_STR_INT))
+			return -4;
+		if(_rt_load_value(sp2,STACK_STR_INT))
+			return -5;
+
+		
 		break;
 	}
 	return -3;	// uncomparable types
@@ -645,6 +703,7 @@ static uint _rt_compare(union _rt_stack* sp)
 
 static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 {
+	st_ptr tmpptr;
 	int tmpint;
 	ushort tmpushort;
 	uchar  tmpuchar,tmpuchar2;
@@ -653,6 +712,10 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	switch(*inv->ip++)
 	{
 	case OP_NOOP:
+		break;
+	case OP_NULL:
+		inv->sp++;
+		_rt_make_null(inv->sp);
 		break;
 	case OP_POP:
 		inv->sp--;
@@ -668,9 +731,8 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_LNUM:
 		if(_rt_get_type(inv->sp) != STACK_INT)
 		{
-			tmpint = _rt_load_value(inv->sp);
+			tmpint = _rt_load_value(inv->sp,STACK_INT);
 			if(tmpint) return tmpint;
-			if(_rt_get_type(inv->sp) != STACK_INT) return __LINE__;
 		}
 		break;
 	case OP_ADD:
@@ -738,64 +800,135 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			return 0;
 
 		inv->pipe_fwrd = 0;
-		inv->sp -= SIZE_OF_CALL;	// pop inv-element
 		break;
 	case OP_CALL_N:
-		*(inv->sp + 1) = *inv->sp;	// dub
-		st_empty(t,&inv->sp->ptr);
+		*(inv->sp + 2) = *inv->sp;	// dub
+		_rt_make_null(inv->sp++);	// blank
+		_rt_make_assign_ref(inv->sp,inv->sp - 1);
 		inv->sp++;
 	case OP_CALL:
 		{
-			struct _rt_invocation* cl = (struct _rt_invocation*)inv->sp;
-			st_ptr tmpptr = inv->sp->ptr;
+			struct _rt_invocation* cl;
+			tmpptr = inv->sp->ptr;
 			tmpushort = *((ushort*)inv->ip);
 			inv->ip += sizeof(ushort);
 
-			if(st_move(&tmpptr,inv->ip,tmpushort))
+			if(tmpptr.key == 0 || st_move(&tmpptr,inv->ip,tmpushort))
 				return __LINE__;
 
-			tmpint = _rt_create_invocation(inv->sp->ptr,tmpptr,t,cl);
+			tmpint = _rt_create_invocation(t,inv->sp->ptr,tmpptr,&cl);
 			cl->parent = inv;
-			*cl->sp = *(inv->sp - 1);
-			inv->sp += SIZE_OF_CALL - 1;
+			*cl->sp = *(inv->sp - 1);	// copy assign-to
+
+			_rt_make_inv_ref(inv->sp,cl);
 		}
 		break;
 	case OP_DOCALL:
 		{
-			struct _rt_invocation* cl = (struct _rt_invocation*)(inv->sp - SIZE_OF_CALL);
+			struct _rt_invocation* cl = inv->sp->inv.inv;
 			inv->pipe_fwrd = cl;
+			inv->sp--;
 			inv = cl;
 		}
 		break;
+	case OP_SETP:
+		{
+			struct _rt_invocation* cl = (inv->sp - 1)->inv.inv;
+			tmpuchar = *inv->ip++;
+			if(tmpuchar < cl->fun->max_params)
+				cl->vars[tmpuchar] = *inv->sp;
+			else
+				return __LINE__;
+			inv->sp--;
+		}
+		break;
 
+	case OP_POPW:
+		if(_rt_get_type(inv->sp) == STACK_DIRECT_OUT)
+		{
+			// gen. pop-event.
+			tmpint = t->output->pop(t->outputdata);
+			if(tmpint) return tmpint;
+		}
+		else
+			inv->sp--;
+		break;
 	case OP_DMVW:
-		*(inv->sp + 1) = *inv->sp;
-		inv->sp++;
+		tmpushort = *((ushort*)inv->ip);
+		inv->ip += sizeof(ushort);
+		switch(_rt_get_type(inv->sp))
+		{
+		case STACK_PTR:
+			tmpptr = inv->sp->ptr;
+			break;
+		case STACK_REF:
+			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
+				st_empty(t,&inv->sp->ref.var->ptr);
+			tmpptr = inv->sp->ref.var->ptr;
+			break;
+		case STACK_MANY:
+			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
+				st_empty(t,&inv->sp->many.ref->var->ptr);
+			tmpptr = inv->sp->many.ref->var->ptr;
+			break;
+		case STACK_DIRECT_OUT:
+			// gen. name+push-event
+			tmpint = t->output->name(t->outputdata,inv->ip,tmpushort);
+			if(tmpint) return tmpint;
+			tmpint = t->output->push(t->outputdata);
+			if(tmpint) return tmpint;
+			tmpptr.key = 0;
+			break;
+		default:
+			return __LINE__;
+		}
+
+		if(tmpptr.key)
+		{
+			st_insert(t,&tmpptr,inv->ip,tmpushort);
+			inv->sp++;
+			inv->sp->ptr = tmpptr;
+		}
+		inv->ip += tmpushort;
+		break;
 	case OP_MVW:
 		tmpushort = *((ushort*)inv->ip);
 		inv->ip += sizeof(ushort);
+		switch(_rt_get_type(inv->sp))
 		{
-			st_ptr* tmp = 0;
-			switch(_rt_get_type(inv->sp))
-			{
-			case STACK_PTR:
-				tmp = &inv->sp->ptr;
-				break;
-			case STACK_ASG_ONE:
-				if(_rt_get_type(inv->sp->asgn_one.var) == STACK_NULL)
-					st_empty(t,&inv->sp->asgn_one.var->ptr);
-				tmp = &inv->sp->asgn_one.var->ptr;
-				break;
-			case STACK_ASG_ONE:
-				break;
-			}
-
-			if(tmp)
-				st_insert(t,tmp,inv->ip,tmpushort);
-			else
-				return __LINE__;	// TODO: direct-output
+		case STACK_PTR:
+			st_insert(t,&inv->sp->ptr,inv->ip,tmpushort);
+			break;
+		case STACK_DIRECT_OUT:
+			// gen. name-event
+			tmpint = t->output->name(t->outputdata,inv->ip,tmpushort);
+			if(tmpint) return tmpint;
+			break;
+		default:
+			return __LINE__;
 		}
 		inv->ip += tmpushort;
+		break;
+	case OP_WIDX:
+		tmpint = _rt_load_value(inv->sp,STACK_STR_INT);
+		if(tmpint) return tmpint;
+		switch(_rt_get_type(inv->sp - 1))
+		{
+		case STACK_PTR:
+			st_insert(t,&(inv->sp - 1)->ptr,inv->sp->value.value->data,inv->sp->value.value->length);
+
+			break;
+		case STACK_DIRECT_OUT:
+			// gen. name-event
+			tmpint = t->output->name(t->outputdata,inv->sp->value.value->data,inv->sp->value.value->length);
+			if(tmpint) return tmpint;
+			break;
+		default:
+			return __LINE__;
+		}
+		break;
+	case OP_WVAR:
+	case OP_WVAR0:
 		break;
 
 	case OP_CMV:
@@ -810,39 +943,22 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_FMV:
 		inv->sp++;
 		inv->sp->ptr = inv->context;
-	case OP_MV:
 		tmpushort = *((ushort*)inv->ip);
 		inv->ip += sizeof(ushort);
 		if(st_move(&inv->sp->ptr,inv->ip,tmpushort))
 			_rt_make_null(inv->sp);
 		inv->ip += tmpushort;
 		break;
-
-	case OP_SETP:
-		{
-			struct _rt_invocation* cl = (struct _rt_invocation*)(inv->sp - SIZE_OF_CALL);
-			tmpuchar = *inv->ip++;
-			if(tmpuchar < cl->fun->max_params)
-				cl->vars[tmpuchar] = *inv->sp;
-			else
-				return __LINE__;
-			inv->sp--;
-		}
+	case OP_MV:
+		tmpushort = *((ushort*)inv->ip);
+		inv->ip += sizeof(ushort);
+		if(inv->sp->chk.is_ptr == 0 || st_move(&inv->sp->ptr,inv->ip,tmpushort))
+			_rt_make_null(inv->sp);
+		inv->ip += tmpushort;
 		break;
 
 	case OP_RIDX:
-	case OP_WIDX:
-	case OP_OUT:
-	case OP_OUTL:
-		break;
-	case OP_CAT:
-		break;
-	case OP_CAV:
-		// emit0
-		break;
 
-	case OP_WVAR:
-	case OP_WVAR0:
 	case OP_RVAR:
 	case OP_CVAR:
 		break;
@@ -852,6 +968,35 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		break;
 
 	case OP_AVARS:
+		tmpint = tmpuchar = *inv->ip++;
+		{
+			uchar* list = inv->ip + tmpint - 1;
+			while(tmpint-- > 0)
+			{
+				inv->sp++;
+				_rt_make_assign_ref(inv->sp,inv->vars + *list--);
+			}
+		}
+		inv->sp++;
+		inv->sp->chk.is_ptr = 0;
+		inv->sp->chk.type = STACK_MANY;
+		inv->sp->many.remaining_depth = tmpuchar;
+		inv->sp->many.ref = &(inv->sp - 1)->ref;
+		inv->ip += tmpuchar;
+		break;
+	case OP_CAV:
+		// emitIc
+		tmpuchar = *inv->ip++;
+		inv->sp -= tmpuchar;
+		break;
+
+	case OP_CAT:
+		break;
+	case OP_OUT:
+		break;
+	case OP_OUTL:
+		break;
+
 	case OP_OVARS:
 		// emit Ic
 		//tmpuchar = *bptr++;
@@ -869,8 +1014,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		// emit Is
 		inv->sp++;
 		inv->sp->ptr = inv->fun->strings;
-		if(st_move(&inv->sp->ptr,inv->ip,sizeof(ushort)))
-			return __LINE__;
+		st_move(&inv->sp->ptr,inv->ip,sizeof(ushort));
 		inv->ip += sizeof(ushort);
 		break;
 
@@ -880,11 +1024,11 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		tmpushort = *((ushort*)inv->ip);
 		inv->ip += sizeof(ushort);
 
-		if(_rt_get_type(inv->sp) == STACK_NULL)
+		if(_rt_get_type(inv->vars + tmpuchar) == STACK_NULL)
 		{
 			// setup assign to var[tmpuchar]
 			inv->sp++;
-			_rt_make_assign_one(inv->sp,inv->vars + tmpuchar);
+			_rt_make_assign_ref(inv->sp,inv->vars + tmpuchar);
 		}
 		else
 			inv->ip += tmpushort;
@@ -905,15 +1049,13 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_BR:
 		// emit Is (branch forward)
 		tmpushort = *((ushort*)inv->ip);
-		inv->ip += sizeof(ushort);
-		inv->ip += tmpushort;
+		inv->ip += tmpushort + sizeof(ushort);
 		break;
 
 	case OP_LOOP:
 		// emit Is (branch back)
 		tmpushort = *((ushort*)inv->ip);
-		inv->ip += sizeof(ushort);
-		inv->ip -= tmpushort;
+		inv->ip -= tmpushort - sizeof(ushort);
 		break;
 
 	case OP_FREE:
@@ -936,19 +1078,27 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 
 int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 {
-	struct _rt_invocation inv;
+	struct _rt_invocation* inv;
 	// create invocation
-	int ret = _rt_create_invocation(*root,*fun,t,&inv);
-	if(ret) return ret;
+	int ret = _rt_create_invocation(t,*root,*fun,&inv);
 
-	if(inv.fun->max_params != 1)
+	if(ret == 0 && inv->fun->max_params != 1)
+		ret = __LINE__;
+
+	if(ret)
 	{
-		_rt_free_invocation(&inv);
-		return __LINE__;
+		_rt_free_invocation(inv);
+		return ret;
 	}
 
 	// set param-tree
-	inv.vars->ptr = *param;
+	inv->vars->ptr = *param;
+	// mark for output-handler
+	inv->sp->chk.type = STACK_DIRECT_OUT;
+	inv->sp++;
 	// .. and invoke
-	return _rt_invoke(&inv,t,app);
+	ret = _rt_invoke(inv,t,app);
+
+	_rt_free_invocation(inv);
+	return ret;
 }

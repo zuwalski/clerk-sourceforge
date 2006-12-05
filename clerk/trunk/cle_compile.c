@@ -101,7 +101,7 @@ static struct _cmp_op
 #define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + (o)))
 
 static const char* keywords[] = {
-	"function","body","new","var","if","else","while","do",0
+	"function","body","new","var","if","else","while","null",0
 };
 
 static void print_err(int line)
@@ -389,13 +389,10 @@ static void _cmp_call(struct _cmp_state* cst, uint len, uchar nest)
 	if(nest & NEST_EXPR)
 	{
 		_cmp_emitS(cst,OP_CALL_N,cst->opbuf + cst->top,len);
-		_cmp_stack(cst,SIZE_OF_CALL + 1);
+		_cmp_stack(cst,2);
 	}
 	else
-	{
 		_cmp_emitS(cst,OP_CALL,cst->opbuf + cst->top,len);
-		_cmp_stack(cst,SIZE_OF_CALL);
-	}
 
 	do {
 		uint stack = cst->s_top;
@@ -411,7 +408,13 @@ static void _cmp_call(struct _cmp_state* cst, uint len, uchar nest)
 	else _cmp_nextc(cst);
 
 	_cmp_emit0(cst,OP_DOCALL);
-	_cmp_stack(cst,-SIZE_OF_CALL);
+	_cmp_stack(cst,-1);
+
+	if(nest & NEST_EXPR)
+	{
+		_cmp_emit0(cst,OP_POP);
+		_cmp_stack(cst,-1);
+	}
 }
 
 static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
@@ -442,11 +445,13 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 
 	if(cst->c == '=')
 	{
-		cst->code[coff + 1] = count + 1;
-		_cmp_stack(cst,2);
+		count++;
+		cst->code[coff + 1] = count;
+		count++;
+		_cmp_stack(cst,count);
 		_cmp_expr(cst,TP_ANY,PURE_EXPR);
-		_cmp_emit0(cst,OP_CAV);			// clear-var-assign
-		_cmp_stack(cst,-2);
+		_cmp_emitIc(cst,OP_CAV,count);			// clear-var-assign
+		_cmp_stack(cst,-count);
 		if(cst->c != ';' && cst->c != '}') err(__LINE__)
 		_cmp_nextc(cst);
 	}
@@ -539,7 +544,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_state(ST_ALPHA|ST_VAR)
 			_cmp_expr(cst,TP_ANY,PURE_EXPR);
 			if(cst->c != ';' && cst->c != '}') err(__LINE__)
-			_cmp_emit0(cst,OP_POP);
+			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);
 			if(level == 0) return;
 			state = ST_0;
@@ -553,7 +558,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_state(ST_0|ST_ALPHA|ST_VAR)
 			if(cst->s_top != stack)
 			{
-				_cmp_emit0(cst,OP_POP);
+				_cmp_emit0(cst,OP_POPW);
 				_cmp_stack(cst,-1);
 			}
 			if(level > 0) level--; else err(__LINE__)
@@ -588,7 +593,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			continue;
 		case ';':
 			chk_state(ST_ALPHA|ST_VAR)
-			_cmp_emit0(cst,OP_POP);
+			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);
 			if(level == 0) return;
 			state = ST_0;
@@ -946,6 +951,11 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					if(cst->c == ')' || cst->c == ']') return type;
 					state = ST_0;
 					break;
+				case 7:		// null
+					chk_state(ST_0|ST_NUM_OP)
+					_cmp_emit0(cst,OP_NULL);
+					_cmp_stack(cst,1);
+					continue;
 				default:
 					err(__LINE__)
 				}

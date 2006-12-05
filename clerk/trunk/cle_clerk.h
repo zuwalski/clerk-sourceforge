@@ -47,6 +47,29 @@ typedef struct it_ptr
 	ushort kused;
 } it_ptr;
 
+/* output interface begin */
+
+typedef void* (*event_start)();
+typedef int (*event_end)(void*);
+typedef int (*event_pop)(void*);
+typedef int (*event_push)(void*);
+typedef int (*event_name)(void*,cdat,uint);
+typedef int (*event_data)(void*,cdat,uint);
+typedef int (*event_next)(void*);
+
+typedef struct cle_output
+{
+	event_start start;
+	event_end   end;
+	event_pop   pop;
+	event_push  push;
+	event_name  name;
+	event_data  data;
+	event_next  next;
+} cle_output;
+
+/* output interface end */
+
 /* generel functions */
 void st_empty(task* t, st_ptr* pt);
 

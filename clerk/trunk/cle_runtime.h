@@ -41,6 +41,7 @@ enum cle_opcode
 	OP_OVARS,
 	OP_LVAR,
 	OP_POP,
+	OP_POPW,
 	OP_WIDX,
 	OP_WVAR,
 	OP_WVAR0,
@@ -77,13 +78,10 @@ enum cle_opcode
 	OP_LOOP,
 	OP_CAV,
 	OP_LNUM,
-	OP_NEW,
+	OP_NULL,
 
 	OP_OP_MAX
 };
-
-// number of stack-elements for an invocation-element.
-#define SIZE_OF_CALL 4
 
 int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param);
 int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root);
