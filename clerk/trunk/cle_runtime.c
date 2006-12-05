@@ -659,6 +659,11 @@ static struct _rt_invocation* _rt_free_invocation(struct _rt_invocation* inv)
 	return parent;
 }
 
+static uint _rt_copy_tree(task* t, union _rt_stack* to, union _rt_stack* from)
+{
+	return __LINE__;
+}
+
 static uint _rt_load_value(task* t, union _rt_stack* sp, uint stype)
 {
 	return __LINE__;
@@ -724,6 +729,44 @@ static uint _rt_compare(task* t, union _rt_stack* sp)
 		return 1;
 	}
 	return -3;	// uncomparable types
+}
+
+static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, const uint length, const uchar push)
+{
+	int tmpint;
+	switch(_rt_get_type(sp))
+	{
+	case STACK_PTR:
+		*tmpptr = sp->ptr;
+		st_insert(t,tmpptr,name,length);
+		break;
+	case STACK_REF:
+		if(_rt_get_type(sp->ref.var) == STACK_NULL)
+			st_empty(t,&sp->ref.var->ptr);
+		*tmpptr = sp->ref.var->ptr;
+		st_insert(t,tmpptr,name,length);
+		break;
+	case STACK_MANY:
+		if(_rt_get_type(sp->many.ref->var) == STACK_NULL)
+			st_empty(t,&sp->many.ref->var->ptr);
+		*tmpptr = sp->many.ref->var->ptr;
+		st_insert(t,tmpptr,name,length);
+		break;
+	case STACK_DIRECT_OUT:
+		// gen. name-event
+		tmpint = t->output->name(t,name,length);
+		if(tmpint) return tmpint;
+		if(push)
+		{
+			tmpint = t->output->push(t);
+			if(tmpint) return tmpint;
+		}
+		tmpptr->key = 0;
+		break;
+	default:
+		return __LINE__;
+	}
+	return 0;
 }
 
 static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
@@ -881,33 +924,8 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_DMVW:
 		tmpushort = *((ushort*)inv->ip);
 		inv->ip += sizeof(ushort);
-		switch(_rt_get_type(inv->sp))
-		{
-		case STACK_PTR:
-			tmpptr = inv->sp->ptr;
-			break;
-		case STACK_REF:
-			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
-				st_empty(t,&inv->sp->ref.var->ptr);
-			tmpptr = inv->sp->ref.var->ptr;
-			break;
-		case STACK_MANY:
-			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
-				st_empty(t,&inv->sp->many.ref->var->ptr);
-			tmpptr = inv->sp->many.ref->var->ptr;
-			break;
-		case STACK_DIRECT_OUT:
-			// gen. name+push-event
-			tmpint = t->output->name(t,inv->ip,tmpushort);
-			if(tmpint) return tmpint;
-			tmpint = t->output->push(t);
-			if(tmpint) return tmpint;
-			tmpptr.key = 0;
-			break;
-		default:
-			return __LINE__;
-		}
-
+		tmpint = _rt_insert(t,&tmpptr,inv->sp,inv->ip,tmpushort,1);
+		if(tmpint) return tmpint;
 		if(tmpptr.key)
 		{
 			st_insert(t,&tmpptr,inv->ip,tmpushort);
@@ -937,32 +955,9 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_WIDX:
 		tmpint = _rt_load_value(t,inv->sp,STACK_STR_INT);
 		if(tmpint) return tmpint;
-		switch(_rt_get_type(inv->sp - 1))
-		{
-		case STACK_PTR:
-			tmpptr = (inv->sp - 1)->ptr;
-			break;
-		case STACK_REF:
-			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
-				st_empty(t,&inv->sp->ref.var->ptr);
-			tmpptr = inv->sp->ref.var->ptr;
-			break;
-		case STACK_MANY:
-			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
-				st_empty(t,&inv->sp->many.ref->var->ptr);
-			tmpptr = inv->sp->many.ref->var->ptr;
-			break;
-		case STACK_DIRECT_OUT:
-			// gen. name-event
-			tmpint = t->output->name(t,inv->sp->value.value->data,inv->sp->value.value->length);
-			if(tmpint) return tmpint;
-			tmpptr.key = 0;
-			break;
-		default:
-			return __LINE__;
-		}
-		if(tmpptr.key)
-			st_insert(t,&tmpptr,inv->sp->value.value->data,inv->sp->value.value->length);
+		tmpint = _rt_insert(t,&tmpptr,inv->sp - 1,inv->sp->value.value->data,
+			inv->sp->value.value->length,0);
+		if(tmpint) return tmpint;
 		_rt_free_value(inv->sp);
 		inv->sp--;
 		break;
@@ -970,61 +965,23 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		tmpuchar = *inv->ip++;
 		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
 		if(tmpint) return tmpint;
-		switch(_rt_get_type(inv->sp))
-		{
-		case STACK_PTR:
-			tmpptr = inv->sp->ptr;
-			break;
-		case STACK_REF:
-			if(_rt_get_type(inv->sp->ref.var) == STACK_NULL)
-				st_empty(t,&inv->sp->ref.var->ptr);
-			tmpptr = inv->sp->ref.var->ptr;
-			break;
-		case STACK_MANY:
-			if(_rt_get_type(inv->sp->many.ref->var) == STACK_NULL)
-				st_empty(t,&inv->sp->many.ref->var->ptr);
-			tmpptr = inv->sp->many.ref->var->ptr;
-			break;
-		case STACK_DIRECT_OUT:
-			// gen. name-event
-			tmpint = t->output->name(t,(inv->vars + tmpuchar)->value.value->data,
-				(inv->vars + tmpuchar)->value.value->length);
-			if(tmpint) return tmpint;
-			tmpint = t->output->push(t);
-			if(tmpint) return tmpint;
-			tmpptr.key = 0;
-			break;
-		default:
-			return __LINE__;
-		}
+		tmpint = _rt_insert(t,&tmpptr,inv->sp,(inv->vars + tmpuchar)->value.value->data,
+			(inv->vars + tmpuchar)->value.value->length,1);
+		if(tmpint) return tmpint;
 		if(tmpptr.key)
 		{
-			st_insert(t,&tmpptr,(inv->vars + tmpuchar)->value.value->data,
-				(inv->vars + tmpuchar)->value.value->length);
+			inv->sp++;
 			inv->sp->ptr = tmpptr;
 		}
-		_rt_free_value(inv->sp);
+		_rt_free_value(inv->vars + tmpuchar);
 		break;
 	case OP_WVAR0:
 		tmpuchar = *inv->ip++;
 		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
 		if(tmpint) return tmpint;
-		switch(_rt_get_type(inv->sp))
-		{
-		case STACK_PTR:
-			tmpptr = inv->sp->ptr;
-			st_insert(t,&tmpptr,(inv->vars + tmpuchar)->value.value->data,
-				(inv->vars + tmpuchar)->value.value->length);
-			inv->sp->ptr = tmpptr;
-			break;
-		case STACK_DIRECT_OUT:			// gen. name-event
-			tmpint = t->output->name(t,(inv->vars + tmpuchar)->value.value->data,
-				(inv->vars + tmpuchar)->value.value->length);
-			if(tmpint) return tmpint;
-			break;
-		default:
-			return __LINE__;
-		}
+		tmpint = _rt_insert(t,&tmpptr,inv->sp,(inv->vars + tmpuchar)->value.value->data,
+			(inv->vars + tmpuchar)->value.value->length,0);
+		if(tmpint) return tmpint;
 		_rt_free_value(inv->vars + tmpuchar);
 		break;
 
@@ -1054,8 +1011,23 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->ip += tmpushort;
 		break;
 	case OP_RIDX:
-	case OP_RVAR:
+		tmpint = _rt_load_value(t,inv->sp,STACK_STR_INT);
+		if(tmpint) return tmpint;
+		if(st_move(&(inv->sp - 1)->ptr,inv->sp->value.value->data,inv->sp->value.value->length))
+			_rt_make_null(inv->sp - 1);
+		_rt_free_value(inv->sp);
+		inv->sp--;
+		break;
 	case OP_CVAR:
+		inv->sp++;
+		inv->sp->ptr = *config;
+	case OP_RVAR:
+		tmpuchar = *inv->ip++;
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		if(tmpint) return tmpint;
+		if(st_move(&inv->sp->ptr,inv->sp->value.value->data,inv->sp->value.value->length))
+			_rt_make_null(inv->sp);
+		_rt_free_value(inv->vars + tmpuchar);
 		break;
 
 	case OP_LVAR:
@@ -1088,6 +1060,11 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_CAT:
 		break;
 	case OP_OUT:
+		//switch(_rt_get_type(inv->sp - 1))
+		//{
+		//case STACK_PTR:
+		//	case 
+		//}
 		break;
 	case OP_OUTL:
 		break;
@@ -1101,23 +1078,6 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			while(tmpint-- > 0)
 			{
 				union _rt_stack* elm = inv->vars + *list--;
-				int ret = _rt_load_value(t,elm,STACK_STR_INT);	///!! could be a tree!!!
-				if(ret) return ret;
-
-				switch(tmpushort)
-				{
-				case STACK_PTR:
-					break;
-				case STACK_REF:
-				case STACK_MANY:
-					break;
-				case STACK_DIRECT_OUT:
-					t->output->data(t,elm->value.value->data,elm->value.value->length);
-					t->output->next(t);
-				default:
-					return __LINE__;
-				}
-				_rt_free_value(elm);
 			}
 		}
 		break;
@@ -1207,6 +1167,7 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	inv->vars->ptr = *param;
 	// mark for output-handler
 	inv->sp->chk.type = STACK_DIRECT_OUT;
+	inv->sp->chk.is_ptr = 0;
 	inv->sp++;
 
 	t->output->start(t);	// begin output
