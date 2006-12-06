@@ -661,35 +661,34 @@ static struct _rt_invocation* _rt_free_invocation(struct _rt_invocation* inv)
 
 static uint _rt_load_value(task* t, union _rt_stack* sp, uint stype)
 {
+	st_ptr* ptr;
 	char head[HEAD_SIZE];
 
-	if(st_get(&root,head,sizeof(head)) <= 0 && head[0] == 0)
+	ptr = &sp->ptr;
+	if(st_get(ptr,head,sizeof(head)) <= 0 && head[0] == 0)
 	{
 		switch(head[1])
 		{
 		case 'E':
-		case 'F':
-			_rt_dump_function(*app,&root);
+			{
+				struct _rt_invocation* ret_inv;
+				_rt_create_invocation(t,*ptr,*ptr,&ret_inv);
+			}
 			break;
 		case 'I':
 			{
 				int tmp;
-				if(st_get(&root,(char*)&tmp,sizeof(int)) == 0)
+				if(st_get(ptr,(char*)&tmp,sizeof(int)) == 0)
 				{
-					printf("INT(%d)\n",tmp);
 				}
 				else
-					printf("Illegal int\n");
+					return __LINE__;
 			}
 			break;
 		case 'S':
 			{
-				char buffer[256];
-				int len = st_get(&root,buffer,sizeof(buffer));
-				if(len < 0) buffer[255] = 0;
-				else
-					buffer[255 - len] = '\0';
-				printf("STR(%s%s)\n",buffer,(len < 0)?"...":"");
+				uint len;
+				char* data = st_get_all(ptr,&len);
 			}
 			break;
 		default:
@@ -830,6 +829,48 @@ static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from)
 	return 0;
 }
 
+static uint _rt_do_out_tree(task* t, st_ptr* root)
+{
+	it_ptr it;
+	st_ptr pt;
+	uint  ret;
+
+	it_create(&it,root);
+	while(it_next(&pt,&it))
+	{
+		ret = t->output->name(t,it.kdata,it.kused);
+		if(ret) break;
+		ret = t->output->push(t);
+		if(ret) break;
+
+		ret = _rt_do_out_tree(t,&pt);
+		if(ret) break;
+	}
+
+	it_dispose(&it);
+	return ret? ret : t->output->pop(t);
+}
+
+static uint _rt_do_copy(task* t, st_ptr* to, st_ptr* root)
+{
+	it_ptr it;
+	st_ptr pt;
+	uint ret = 0;
+
+	it_create(&it,root);
+	while(it_next(&pt,&it))
+	{
+		st_ptr tto = *to;
+		st_insert(t,&tto,it.kdata,it.kused);
+
+		ret = _rt_do_copy(t,&tto,&pt);
+		if(ret) break;
+	}
+
+	it_dispose(&it);
+	return ret;
+}
+
 static uint _rt_do_concat(task* t, struct _rt_value* result, union _rt_stack* cat)
 {
 	return __LINE__;
@@ -863,10 +904,43 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp->ptr = inv->context;
 		break;
 	case OP_LNUM:
-		if(_rt_get_type(inv->sp) != STACK_INT)
+		// force to STACK_INT
+		switch(_rt_get_type(inv->sp))
 		{
-			tmpint = _rt_load_value(t,inv->sp,STACK_INT);
-			if(tmpint) return tmpint;
+		case STACK_INT:
+			break;
+		case STACK_PTR:
+			{
+				char head[HEAD_SIZE];
+				st_ptr* ptr = &inv->sp->ptr;
+
+				if(st_get(ptr,head,sizeof(head)) > 0 || head[0] != 0)
+					return __LINE__;
+
+				switch(head[1])
+				{
+				case 'E':
+					{
+						struct _rt_invocation* ret_inv;
+						_rt_create_invocation(t,*ptr,*ptr,&ret_inv);
+					}
+					break;
+				case 'I':
+					{
+						int tmp;
+						if(st_get(ptr,(char*)&tmp,sizeof(int)) != 0)
+							return __LINE__;
+
+						_rt_make_int(inv->sp,tmp);
+					}
+					break;
+				default:
+					return __LINE__;
+				}
+			}
+			break;
+		default:
+			return __LINE__;
 		}
 		break;
 	case OP_ADD:
@@ -1123,27 +1197,15 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp -= tmpuchar;
 		break;
 
-	case OP_CAT:
-		if(_rt_get_type(inv->sp - 1) != STACK_STR_INT)
-		{
-			tmpint = _rt_load_value(t,inv->sp - 1,STACK_STR_INT);
-			if(tmpint) return tmpint;
-		}
-		tmpint = _rt_do_concat(t,(inv->sp - 1)->value.value,inv->sp);
-		if(tmpint) return tmpint;
-		inv->sp--;
-		break;
-
-	case OP_OUT:
-		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp);
-		if(tmpint) return tmpint;
-		break;
 	case OP_OUTL:
 		switch(_rt_get_type(inv->sp - 1))
 		{
 		case STACK_PTR:	// copy-to
+			tmpint = _rt_do_copy(t,&(inv->sp - 1)->ptr,&inv->sp->ptr);
+			if(tmpint) return tmpint;
 			break;
 		case STACK_REF: // set ref
+//			??? -nexting
 			*(inv->sp - 1)->ref.var = *inv->sp;
 			break;
 		case STACK_MANY: // set and roll
@@ -1155,10 +1217,11 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			}
 			else
 			{
+//				??? -nexting
 			}
 			break;
 		case STACK_DIRECT_OUT: // output
-			tmpint = _rt_do_output(t,inv->sp);
+			tmpint = _rt_do_out_tree(t,&inv->sp->ptr);
 			if(tmpint) return tmpint;
 			break;
 		default:
@@ -1167,10 +1230,24 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp--;
 		break;
 
+	case OP_CAT:
+		if(_rt_get_type(inv->sp - 1) != STACK_STR_INT)
+		{
+			tmpint = _rt_load_value(t,inv->sp - 1,STACK_STR_INT);
+			if(tmpint) return tmpint;
+		}
+		tmpint = _rt_do_concat(t,(inv->sp - 1)->value.value,inv->sp);
+		if(tmpint) return tmpint;
+		inv->sp--;
+		break;
+	case OP_OUT:
+		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp);
+		if(tmpint) return tmpint;
+		inv->sp--;
+		break;
 	case OP_OVARS:
 		// emit Ic
-		tmpint = tmpuchar = *inv->ip++;
-		tmpushort = _rt_get_type(inv->sp);
+		tmpint = *inv->ip++;
 		{
 			uchar* list = inv->ip + tmpint - 1;
 			while(tmpint-- > 0)
