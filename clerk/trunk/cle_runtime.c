@@ -622,7 +622,7 @@ static void _rt_release_fun(struct _rt_function* fun)
 		fun->ref_count--;
 }
 
-static uint _rt_create_invocation(task* t, st_ptr context, st_ptr root, struct _rt_invocation** ret_inv)
+static uint _rt_create_invocation(task* t, st_ptr* context, st_ptr root, struct _rt_invocation** ret_inv)
 {
 	struct _rt_invocation* inv;
 	struct _rt_function* fun;
@@ -640,11 +640,16 @@ static uint _rt_create_invocation(task* t, st_ptr context, st_ptr root, struct _
 	inv->vars = (union _rt_stack*)((char*)inv + sizeof(struct _rt_invocation));
 
 	memset(inv->vars,0,fun->max_vars * sizeof(union _rt_stack));
-	inv->context = context;
 	inv->sp = inv->vars + inv->fun->max_vars;
 	inv->ip = fun->code;
 	inv->parent = 0;
 	inv->pipe_fwrd = 0;
+	if(context)
+		inv->context = *context;
+	else
+	{
+		return __LINE__;	// set context from expr-def
+	}
 	return 0;
 }
 
@@ -659,7 +664,7 @@ static struct _rt_invocation* _rt_free_invocation(struct _rt_invocation* inv)
 	return parent;
 }
 
-static uint _rt_load_value(task* t, union _rt_stack* sp, uint stype)
+static uint _rt_load_value(task* t, union _rt_stack* sp)
 {
 	st_ptr* ptr;
 	char head[HEAD_SIZE];
@@ -672,7 +677,7 @@ static uint _rt_load_value(task* t, union _rt_stack* sp, uint stype)
 		case 'E':
 			{
 				struct _rt_invocation* ret_inv;
-				_rt_create_invocation(t,*ptr,*ptr,&ret_inv);
+				_rt_create_invocation(t,0,*ptr,&ret_inv);
 			}
 			break;
 		case 'I':
@@ -736,12 +741,12 @@ static uint _rt_compare(task* t, union _rt_stack* sp)
 			sp->ptr.offset == sp2->ptr.offset)
 			return 0;
 		// compare content
-		if(_rt_load_value(t,sp,STACK_STR_INT))
+		if(_rt_load_value(t,sp))
 		{
 			_rt_free_value(sp);
 			return -4;
 		}
-		if(_rt_load_value(t,sp2,STACK_STR_INT))
+		if(_rt_load_value(t,sp2))
 		{
 			_rt_free_value(sp);
 			_rt_free_value(sp2);
@@ -802,7 +807,7 @@ static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, 
 static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from)
 {
 	st_ptr* ptr;
-	uint ret = _rt_load_value(t,from,STACK_STR_INT);
+	uint ret = _rt_load_value(t,from);
 
 	switch(_rt_get_type(to))
 	{
@@ -829,13 +834,51 @@ static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from)
 	return 0;
 }
 
-static uint _rt_do_out_tree(task* t, st_ptr* root)
+static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config);
+
+static uint _rt_do_out_tree(task* t, st_ptr root)
 {
 	it_ptr it;
-	st_ptr pt;
+	st_ptr pt = root;
 	uint  ret;
+	char  head[HEAD_SIZE];
 
-	it_create(&it,root);
+	ret = st_get(&pt,head,sizeof(head));
+
+	while(ret <= 0 && head[0] == 0)	// while-> could be a list
+	{
+		switch(head[1])
+		{
+		case 'E':	// expr -> eval
+			return 0;
+		case 'P':	// stack-ptr
+			break;
+		case 'S':	// string
+		case 'I':	// number/int
+			do
+			{
+				char data[512];
+				int iret = st_get(&pt,data,sizeof(data));
+				iret = t->output->data(t,data,iret < 0? sizeof(data) : iret);
+				if(iret) return iret;
+			}
+			while(ret == -2);
+			break;
+		case 'N':
+			ret = t->output->next(t);
+			if(ret) return ret;
+			break;
+		default:
+			return t->output->pop(t);	// ignore (functions)
+		}
+
+		root = pt;
+		ret = st_get(&pt,head,sizeof(head));
+	}
+
+	if(ret <= 0) return t->output->pop(t);	// no more
+
+	it_create(&it,&root);
 	while(it_next(&pt,&it))
 	{
 		ret = t->output->name(t,it.kdata,it.kused);
@@ -843,7 +886,7 @@ static uint _rt_do_out_tree(task* t, st_ptr* root)
 		ret = t->output->push(t);
 		if(ret) break;
 
-		ret = _rt_do_out_tree(t,&pt);
+		ret = _rt_do_out_tree(t,pt);
 		if(ret) break;
 	}
 
@@ -914,7 +957,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 				char head[HEAD_SIZE];
 				st_ptr* ptr = &inv->sp->ptr;
 
-				if(st_get(ptr,head,sizeof(head)) > 0 || head[0] != 0)
+				if(st_get(ptr,head,sizeof(head)) >= 0 || head[0] != 0)
 					return __LINE__;
 
 				switch(head[1])
@@ -922,7 +965,12 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 				case 'E':
 					{
 						struct _rt_invocation* ret_inv;
-						_rt_create_invocation(t,*ptr,*ptr,&ret_inv);
+						_rt_create_invocation(t,0,*ptr,&ret_inv);
+
+						_rt_make_assign_ref(ret_inv->sp++,inv->sp);
+
+						tmpint = _rt_invoke(ret_inv,t,config);
+						if(tmpint) return tmpint;
 					}
 					break;
 				case 'I':
@@ -1024,7 +1072,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			if(tmpptr.key == 0 || st_move(&tmpptr,inv->ip,tmpushort))
 				return __LINE__;
 
-			tmpint = _rt_create_invocation(t,inv->sp->ptr,tmpptr,&cl);
+			tmpint = _rt_create_invocation(t,&inv->sp->ptr,tmpptr,&cl);
 			cl->parent = inv;
 			*cl->sp = *(inv->sp - 1);	// copy assign-to
 
@@ -1093,7 +1141,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->ip += tmpushort;
 		break;
 	case OP_WIDX:
-		tmpint = _rt_load_value(t,inv->sp,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->sp);
 		if(tmpint) return tmpint;
 		tmpint = _rt_insert(t,&tmpptr,inv->sp - 1,inv->sp->value.value->data,
 			inv->sp->value.value->length,0);
@@ -1103,7 +1151,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		break;
 	case OP_WVAR:
 		tmpuchar = *inv->ip++;
-		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar);
 		if(tmpint) return tmpint;
 		tmpint = _rt_insert(t,&tmpptr,inv->sp,(inv->vars + tmpuchar)->value.value->data,
 			(inv->vars + tmpuchar)->value.value->length,1);
@@ -1117,7 +1165,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		break;
 	case OP_WVAR0:
 		tmpuchar = *inv->ip++;
-		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar);
 		if(tmpint) return tmpint;
 		tmpint = _rt_insert(t,&tmpptr,inv->sp,(inv->vars + tmpuchar)->value.value->data,
 			(inv->vars + tmpuchar)->value.value->length,0);
@@ -1151,7 +1199,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->ip += tmpushort;
 		break;
 	case OP_RIDX:
-		tmpint = _rt_load_value(t,inv->sp,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->sp);
 		if(tmpint) return tmpint;
 		if(st_move(&(inv->sp - 1)->ptr,inv->sp->value.value->data,inv->sp->value.value->length))
 			_rt_make_null(inv->sp - 1);
@@ -1163,7 +1211,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp->ptr = *config;
 	case OP_RVAR:
 		tmpuchar = *inv->ip++;
-		tmpint = _rt_load_value(t,inv->vars + tmpuchar,STACK_STR_INT);
+		tmpint = _rt_load_value(t,inv->vars + tmpuchar);
 		if(tmpint) return tmpint;
 		if(st_move(&inv->sp->ptr,inv->sp->value.value->data,inv->sp->value.value->length))
 			_rt_make_null(inv->sp);
@@ -1193,58 +1241,9 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		break;
 	case OP_CAV:
 		// emitIc
-		tmpuchar = *inv->ip++;
-		inv->sp -= tmpuchar;
+		inv->sp -= *inv->ip++;
 		break;
 
-	case OP_OUTL:
-		switch(_rt_get_type(inv->sp - 1))
-		{
-		case STACK_PTR:	// copy-to
-			tmpint = _rt_do_copy(t,&(inv->sp - 1)->ptr,&inv->sp->ptr);
-			if(tmpint) return tmpint;
-			break;
-		case STACK_REF: // set ref
-//			??? -nexting
-			*(inv->sp - 1)->ref.var = *inv->sp;
-			break;
-		case STACK_MANY: // set and roll
-			if((inv->sp - 1)->many.remaining_depth > 0)
-			{
-				*(inv->sp - 1)->many.ref->var = *inv->sp;
-				(inv->sp - 1)->many.ref--;
-				(inv->sp - 1)->many.remaining_depth--;
-			}
-			else
-			{
-//				??? -nexting
-			}
-			break;
-		case STACK_DIRECT_OUT: // output
-			tmpint = _rt_do_out_tree(t,&inv->sp->ptr);
-			if(tmpint) return tmpint;
-			break;
-		default:
-			return __LINE__;
-		}
-		inv->sp--;
-		break;
-
-	case OP_CAT:
-		if(_rt_get_type(inv->sp - 1) != STACK_STR_INT)
-		{
-			tmpint = _rt_load_value(t,inv->sp - 1,STACK_STR_INT);
-			if(tmpint) return tmpint;
-		}
-		tmpint = _rt_do_concat(t,(inv->sp - 1)->value.value,inv->sp);
-		if(tmpint) return tmpint;
-		inv->sp--;
-		break;
-	case OP_OUT:
-		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp);
-		if(tmpint) return tmpint;
-		inv->sp--;
-		break;
 	case OP_OVARS:
 		// emit Ic
 		tmpint = *inv->ip++;
@@ -1256,6 +1255,69 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 				if(ret) return ret;
 			}
 		}
+		break;
+	case OP_CAT:
+		if(_rt_get_type(inv->sp - 1) != STACK_STR_INT)
+		{
+			tmpint = _rt_load_value(t,inv->sp - 1);
+			if(tmpint) return tmpint;
+		}
+		tmpint = _rt_do_concat(t,(inv->sp - 1)->value.value,inv->sp);
+		if(tmpint) return tmpint;
+		inv->sp--;
+		break;
+	case OP_OUT:
+		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp);
+		if(tmpint) return tmpint;
+		inv->sp--;
+		break;
+	case OP_OUTL:
+		switch(_rt_get_type(inv->sp - 1))
+		{
+		case STACK_MANY: // set and roll
+			if((inv->sp - 1)->many.remaining_depth != 0)
+			{
+				struct _rt_s_assign_many* many = &(inv->sp - 1)->many;
+				*(many->ref->var) = *inv->sp;
+				many->ref--;
+				many->remaining_depth--;
+				break;
+			}
+			else	// change to STACK_REF and fall-through
+				(inv->sp - 1)->ref = *(inv->sp - 1)->many.ref;
+		case STACK_REF: // set ref
+			if(_rt_get_type((inv->sp - 1)->ref.var) == STACK_NULL)
+			{
+				*(inv->sp - 1)->ref.var = *inv->sp;	// first time just copy
+				break;
+			}
+			else	// second time: copy and change to ptr (next'ing on that)
+			{
+				st_ptr empty;
+				st_empty(t,&empty);
+				// update var
+				(inv->sp - 1)->ref.var->ptr = empty;
+
+				// make stack-ref
+				st_insert(t,&empty,HEAD_STK,HEAD_SIZE);
+				st_append(t,&empty,(cdat)(inv->sp - 1)->ref.var,sizeof(union _rt_stack));
+
+				// setup next'ing
+				st_append(t,&empty,HEAD_NEXT,HEAD_SIZE);
+				(inv->sp - 1)->ptr = empty;	// change to ptr
+			}	// fall through...
+		case STACK_PTR:	// copy-to
+			tmpint = _rt_do_copy(t,&(inv->sp - 1)->ptr,&inv->sp->ptr);
+			if(tmpint) return tmpint;
+			break;
+		case STACK_DIRECT_OUT: // output
+			tmpint = _rt_do_out_tree(t,inv->sp->ptr);
+			if(tmpint) return tmpint;
+			break;
+		default:
+			return __LINE__;
+		}
+		inv->sp--;
 		break;
 
 	case OP_STR:
@@ -1328,7 +1390,7 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 {
 	struct _rt_invocation* inv;
 	// create invocation
-	int ret = _rt_create_invocation(t,*root,*fun,&inv);
+	int ret = _rt_create_invocation(t,root,*fun,&inv);
 
 	if(ret == 0 && inv->fun->max_params != 1)
 		ret = __LINE__;
