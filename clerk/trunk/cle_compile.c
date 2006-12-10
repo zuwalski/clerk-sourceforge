@@ -722,6 +722,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			{
 				if(nest) err(__LINE__)	// assign
 				chk_state(ST_ALPHA|ST_VAR)
+				_cmp_emit0(cst,OP_CLEAR);
 				_cmp_expr(cst,TP_ANY,PURE_EXPR);
 				if(cst->c != ';' && cst->c != '}') err(__LINE__)
 				_cmp_emit0(cst,OP_POP);
@@ -811,7 +812,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			_cmp_op_clear(cst);
 			if((nest & NEST_EXPR) == 0 && (state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)) && cst->s_top > 1)
 			{
-				_cmp_emit0(cst,OP_OUTL);
+				_cmp_emit0(cst,type <= TP_TREE? OP_OUTLT : OP_OUTL);
 				_cmp_stack(cst,-1);
 			}
 			if(cst->c == '}')

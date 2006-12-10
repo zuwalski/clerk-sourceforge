@@ -50,6 +50,7 @@ enum cle_opcode
 	OP_MVW,
 	OP_OUT,
 	OP_OUTL,
+	OP_OUTLT,
 	OP_CONF,
 	OP_FUN,
 	OP_RIDX,
@@ -80,6 +81,7 @@ enum cle_opcode
 	OP_CAV,
 	OP_LNUM,
 	OP_NULL,
+	OP_CLEAR,
 
 	OP_OP_MAX
 };
