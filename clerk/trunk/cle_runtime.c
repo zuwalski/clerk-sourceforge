@@ -722,6 +722,38 @@ static void _rt_new_value(task* t, union _rt_stack* sp)
 	memset(sp->value.value,0,sizeof(struct _rt_value));
 }
 
+static void _rt_print_int_hex(int theint, char* output)
+{
+	int i = sizeof(int) * 2;
+	output += i;
+	while(i-- != 0)
+	{
+		char d = theint & 0xF;
+		*output = d + (d > 9? 'A' - 9: '0');
+		theint >>= 4;
+		output--;
+	}
+}
+
+static int _rt_parse_int(char* data, uint length)
+{
+	int ret = 0;
+	while(length-- != 0)
+	{
+		ret <<= 4;
+		if(*data >= '0' && *data <= '9')
+			ret += *data - '0';
+		else if(*data >= 'A' && *data <= 'F')
+			ret += *data - 'A';
+		else
+			return 0;
+
+		data++;
+	}
+
+	return ret;
+}
+
 static uint _rt_load_value(task* t, st_ptr* config, union _rt_stack* sp)
 {
 	st_ptr* ptr;
@@ -730,15 +762,16 @@ static uint _rt_load_value(task* t, st_ptr* config, union _rt_stack* sp)
 recheck:
 	switch(_rt_get_type(sp))
 	{
+	case STACK_NULL:
+		_rt_new_value(t,sp);
 	case STACK_VALUE:
 		return 0;	// nothing to do
 	case STACK_INT: {
 		int tmp = sp->sint.value;
 		_rt_new_value(t,sp);
-		sp->value.value->data = (uchar*)tk_malloc(sizeof(int) + HEAD_SIZE);
-		sp->value.value->length = sizeof(int) + HEAD_SIZE;
-		memcpy(sp->value.value->data,HEAD_INT,HEAD_SIZE);
-		memcpy(sp->value.value->data + HEAD_SIZE,(char*)&tmp,sizeof(int));
+		sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2);
+		sp->value.value->length = sizeof(int)*2;
+		_rt_print_int_hex(tmp,sp->value.value->data);
 		return 0;
 		}
 	case STACK_PTR:
@@ -776,10 +809,9 @@ recheck:
 				return __LINE__;
 
 			_rt_new_value(t,sp);
-			sp->value.value->data = (uchar*)tk_malloc(sizeof(int) + HEAD_SIZE);
-			sp->value.value->length = sizeof(int) + HEAD_SIZE;
-			memcpy(sp->value.value->data,HEAD_INT,HEAD_SIZE);
-			memcpy(sp->value.value->data + HEAD_SIZE,(char*)&tmp,sizeof(int));
+			sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2);
+			sp->value.value->length = sizeof(int)*2;
+			_rt_print_int_hex(tmp,sp->value.value->data);
 		}
 		break;
 	case 'S':
@@ -891,22 +923,34 @@ static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, 
 	return 0;
 }
 
-static uint _rt_do_concat(task* t, union _rt_stack* result, union _rt_stack* cat, const uchar last)
+static uint _rt_do_concat(task* t, st_ptr* config, union _rt_stack* result, union _rt_stack* cat)
 {
-	return __LINE__;
+	uint ret = _rt_load_value(t,config,result);
+	if(ret) return ret;
+
+	ret = _rt_load_value(t,config,cat);
+	if(ret) return ret;
+
+	result->value.value->data = (uchar*)tk_realloc(result->value.value->data,
+		result->value.value->length + cat->value.value->length - 1);
+
+	memcpy(result->value.value->data + result->value.value->length - 1,
+		cat->value.value->data,cat->value.value->length);
+
+	return 0;
 }
 
-static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, const uchar last)
+static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_stack* from, const uchar last)
 {
 	int ret;
 	switch(_rt_get_type(to))
 	{
 	case STACK_VALUE:
-		return _rt_do_concat(t,to,from,last);
+		return _rt_do_concat(t,config,to,from);
 	case STACK_REF:
-		return _rt_do_concat(t,to->ref.var,from,last);
+		return _rt_do_concat(t,config,to->ref.var,from);
 	case STACK_MANY:
-		ret = _rt_do_concat(t,to->many.ref->var,from,last);
+		ret = _rt_do_concat(t,config,to->many.ref->var,from);
 		if(ret) return ret;
 		to->many.remaining_depth--;
 		if(to->many.remaining_depth == 0)
@@ -914,13 +958,17 @@ static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, cons
 		else
 			to->many.ref--;
 		return 0;
-	// BELOW: from might be an expr -> dont copy-copy
+	// BELOW: from might be an expr -> FIX: dont copy-copy
 	case STACK_PTR:
+		ret = _rt_load_value(t,config,from);
+		if(ret) return ret;
 		st_append(t,&to->ptr,from->value.value->data,from->value.value->length);
 		if(last)
 			st_append(t,&to->ptr,HEAD_NEXT,HEAD_SIZE);
 		return 0;
 	case STACK_DIRECT_OUT:
+		ret = _rt_load_value(t,config,from);
+		if(ret) return ret;
 		ret = t->output->data(t,from->value.value->data,from->value.value->length);
 		if(ret || !last) return ret;
 		return t->output->next(t);
@@ -1040,12 +1088,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		case STACK_INT:
 			break;
 		case STACK_VALUE:
-			if(inv->sp->value.value->length != sizeof(int) + HEAD_SIZE)
-				return __LINE__;
-			if(inv->sp->value.value->data[0] != 0 && inv->sp->value.value->data[1] != 'I')
-				return __LINE__;
-
-			_rt_make_int(inv->sp,*((int*)inv->sp->value.value->data + HEAD_SIZE));
+			_rt_make_int(inv->sp,_rt_parse_int(inv->sp->value.value->data,inv->sp->value.value->length));
 			break;
 		case STACK_PTR:
 			{
@@ -1341,23 +1384,23 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			uchar* list = inv->ip + tmpint - 1;
 			while(tmpint-- > 0)
 			{
-				uint ret = _rt_do_out(t,inv->sp,inv->vars + *list--,0);
+				uint ret = _rt_do_out(t,config,inv->sp,inv->vars + *list--,0);
 				if(ret) return ret;
 			}
 		}
 		break;
 	case OP_CAT:
-		tmpint = _rt_do_concat(t,inv->sp - 1,inv->sp,0);
+		tmpint = _rt_do_concat(t,config,inv->sp - 1,inv->sp);
 		if(tmpint) return tmpint;
 		inv->sp--;
 		break;
 	case OP_OUT:
-		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp,0);
+		tmpint = _rt_do_out(t,config,inv->sp - 1,inv->sp,0);
 		if(tmpint) return tmpint;
 		inv->sp--;
 		break;
 	case OP_OUTL: // [OUT Last]
-		tmpint = _rt_do_out(t,inv->sp - 1,inv->sp,1);
+		tmpint = _rt_do_out(t,config,inv->sp - 1,inv->sp,1);
 		if(tmpint) return tmpint;
 		inv->sp--;
 		break;
