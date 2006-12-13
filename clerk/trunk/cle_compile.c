@@ -56,6 +56,7 @@ static struct _cmp_state
 	// code-size
 	uint code_size;
 	uint code_next;
+	uint code_prev;
 
 	// top-var
 	uint top_var;
@@ -191,12 +192,14 @@ static uint _cmp_name(struct _cmp_state* cst)
 
 static void _cmp_emit0(struct _cmp_state* cst, uchar opc)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 1);
 	cst->code[cst->code_next++] = opc;
 }
 
 static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort len)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + len + 1 + sizeof(ushort));
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&len,sizeof(ushort));
@@ -207,6 +210,7 @@ static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort le
 
 static void _cmp_emitIc(struct _cmp_state* cst, uchar opc, uchar imm)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 2);
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm;
@@ -214,6 +218,7 @@ static void _cmp_emitIc(struct _cmp_state* cst, uchar opc, uchar imm)
 
 static void _cmp_emitIc2(struct _cmp_state* cst, uchar opc, uchar imm1, uchar imm2)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 3);
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm1;
@@ -222,6 +227,7 @@ static void _cmp_emitIc2(struct _cmp_state* cst, uchar opc, uchar imm1, uchar im
 
 static void _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(ushort));
@@ -230,6 +236,7 @@ static void _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
 
 static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort imm2)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 2 + sizeof(ushort));
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm1;
@@ -239,6 +246,7 @@ static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort i
 
 static void _cmp_emitII(struct _cmp_state* cst, uchar opc, int imm)
 {
+	cst->code_prev = cst->code_next;
 	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(int));
@@ -527,6 +535,23 @@ static void _cmp_op_push(struct _cmp_state* cst, uchar opc, uchar prec)
 	cst->top_op = begin;
 }
 
+static void _cmp_rewrite_load(struct _cmp_state* cst, uint type)
+{
+	if(cst->code_prev == 0) return;
+
+	switch(*(cst->code + cst->code_prev))
+	{
+	case OP_RIDX:
+	case OP_RVAR:
+	case OP_CVAR:
+	case OP_LVAR:
+	case OP_MV:
+	case OP_CMV:
+	case OP_FMV:
+		break;
+	}
+}
+
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
 
 static void _cmp_new(struct _cmp_state* cst)
@@ -761,6 +786,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 		case ')':
 			chk_state(ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 			_cmp_op_clear(cst);
+			cst->code_prev = 0;
 			if(level != 0) err(__LINE__)
 			if(nest & NEST_EXPR) return type;
 			err(__LINE__)
@@ -824,6 +850,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				}
 				else err(__LINE__)
 			}
+			cst->code_prev = 0;
 			if(level == 0) return type;
 			state = ST_0;
 			type = TP_ANY;
