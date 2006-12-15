@@ -959,7 +959,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					}
 					if(cst->c == ')' || cst->c == ']') return type;
 					state = ST_0;
-					break;
+					continue;		// end-outer-expr-as-well
 				case 6:		// while
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM_OP|ST_IF)
 					chk_out()
@@ -978,7 +978,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					}
 					if(cst->c == ')' || cst->c == ']') return type;
 					state = ST_0;
-					break;
+					continue;		// end-outer-expr-as-well
 				case 7:		// null
 					chk_state(ST_0|ST_NUM_OP)
 					_cmp_emit0(cst,OP_NULL);

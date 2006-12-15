@@ -935,7 +935,7 @@ static uint _rt_do_concat(task* t, st_ptr* config, union _rt_stack* result, unio
 		result->value.value->length + cat->value.value->length - 1);
 
 	memcpy(result->value.value->data + result->value.value->length - 1,
-		cat->value.value->data,cat->value.value->length);
+		cat->value.value->data,cat->value.value->length - 1);
 
 	return 0;
 }
@@ -964,7 +964,7 @@ static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_s
 		if(ret) return ret;
 		st_append(t,&to->ptr,from->value.value->data,from->value.value->length);
 		if(last)
-			st_append(t,&to->ptr,HEAD_NEXT,HEAD_SIZE);
+			st_append(t,&to->ptr,"\0",1);
 		return 0;
 	case STACK_DIRECT_OUT:
 		ret = _rt_load_value(t,config,from);
@@ -1425,13 +1425,15 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 				_rt_next_list(t,inv->sp - 1,inv->sp);
 			break;
 		case STACK_PTR:	// copy-to
-			if(!st_is_empty(&(inv->sp - 1)->ptr))
-				st_insert(t,&(inv->sp - 1)->ptr,HEAD_NEXT,HEAD_SIZE);
 			tmpint = _rt_do_copy(t,&(inv->sp - 1)->ptr,inv->sp);
 			if(tmpint) return tmpint;
+			if(!st_is_empty(&(inv->sp - 1)->ptr))
+				st_insert(t,&(inv->sp - 1)->ptr,HEAD_NEXT,HEAD_SIZE);
 			break;
 		case STACK_DIRECT_OUT: // output
 			tmpint = _rt_do_out_tree(t,inv->sp);
+			if(tmpint) return tmpint;
+			tmpint = t->output->next(t);
 			if(tmpint) return tmpint;
 			break;
 		default:
