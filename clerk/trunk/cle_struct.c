@@ -620,7 +620,7 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 		if(length > 0)
 		{
 			// no next key! or trying to read past split?
-			if(nxt == 0 || nxt->offset < me->length)
+			if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
 			{
 				pt->offset = max + (offset & 0xFFF8);
 				break;
@@ -675,7 +675,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 	char* buffer  = 0;
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt;
+	key* nxt      = 0;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint nlength  = 128;
 	uint rlength  = 0;
@@ -716,7 +716,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 		}
 
 		// no next key! or trying to read past split?
-		if(nxt == 0 || nxt->offset < me->length)
+		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
 		{
 			*length = boffset;
 			return buffer;

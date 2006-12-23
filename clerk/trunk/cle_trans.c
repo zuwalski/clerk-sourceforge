@@ -402,7 +402,7 @@ int cle_trans(FILE* f, task* t, st_ptr* app)
 				else
 				{
 					st_ptr param;
-					task* param_t = tk_create_task(t);
+					task* param_t = tk_create_task(t,t->output);
 
 					st_empty(param_t,&param);
 					c = cle_write(f,param_t,&param,0,1);	// parameters

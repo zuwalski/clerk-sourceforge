@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "cle_clerk.h"
+#include "cle_output.h"
 
 void unimplm()
 {
@@ -37,7 +38,7 @@ double duration;
 int main_0(int argc, char *argv[])
 {
 	st_ptr pt,tmp;
-	task* t = tk_create_task(0);
+	task* t = tk_create_task(0,0);
 
 	st_empty(t,&pt);
 
@@ -57,7 +58,7 @@ int main_1(int argc, char *argv[])
 {
 	st_ptr pt,tmp;
 	it_ptr it;
-	task* t = tk_create_task(0);
+	task* t = tk_create_task(0,0);
 	uint i,its;
 	uint nofound;
 	char test[8] = "0000000";
@@ -131,8 +132,12 @@ int main_1(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
+	cle_output out;
 	st_ptr pt;
-	task* t = tk_create_task(0);
+	task* t;
+
+	cle_out_initstdout(&out);
+	t = tk_create_task(0,&out);
 
 	st_empty(t,&pt);
 

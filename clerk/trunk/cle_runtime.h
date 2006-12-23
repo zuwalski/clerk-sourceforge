@@ -26,7 +26,6 @@
 #define HEAD_INT "\0I"
 #define HEAD_STR "\0S"
 #define HEAD_NEXT "\0N"
-#define HEAD_STK "\0P"
 
 enum cle_opcode
 {

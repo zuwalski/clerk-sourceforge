@@ -167,6 +167,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_output.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_runtime.c"
 				>
 			</File>
@@ -198,6 +202,10 @@
 			>
 			<File
 				RelativePath=".\cle_clerk.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cle_output.h"
 				>
 			</File>
 			<File

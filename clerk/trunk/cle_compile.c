@@ -944,12 +944,20 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					type = _cmp_expr(cst,type,nest);
 					_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));
 					if(cst->c == ')' || cst->c == ']') return type;
+					if(cst->c == 'e') goto do_else;
 					state = ST_IF;
 					break;
 				case 5:		// else
-					chk_state(ST_IF)
+					if(state != ST_IF)
 					{
-						uint else_coff = cst->code_next;
+						cst->c = 'e';
+						return type;
+					}
+					else
+					{
+						uint else_coff;
+do_else:
+						else_coff = cst->code_next;
 						_cmp_emitIs(cst,OP_BR,0);
 						// update - we need the "skip-jump" before
 						_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));

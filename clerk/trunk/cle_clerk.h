@@ -113,7 +113,7 @@ uint it_prev(st_ptr* pt, it_ptr* it);
 uint it_prev_eq(st_ptr* pt, it_ptr* it);
 
 /* Task functions */
-task* tk_create_task(task* parent);
+task* tk_create_task(task* parent, cle_output* out);
 
 void tk_drop_task(task* t);
 

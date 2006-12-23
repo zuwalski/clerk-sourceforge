@@ -130,11 +130,13 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 	}
 }
 
-task* tk_create_task(task* parent)
+task* tk_create_task(task* parent, cle_output* out)
 {
 	task* t = (task*)tk_malloc(sizeof(task));
 
 	t->stack = 0;
+	t->output = out;
+	t->outputdata = 0;
 	return t;
 }
 
