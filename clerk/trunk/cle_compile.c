@@ -34,9 +34,9 @@
 #define PURE_EXPR 2
 
 #define TP_ANY 0
-#define TP_TREE 1
-#define TP_STR 2
-#define TP_NUM 4
+#define TP_NUM 1
+#define TP_TREE 2
+#define TP_STR 4
 
 static struct _cmp_state
 {
@@ -967,6 +967,7 @@ do_else:
 					}
 					if(cst->c == ')' || cst->c == ']') return type;
 					state = ST_0;
+
 					continue;		// end-outer-expr-as-well
 				case 6:		// while
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM_OP|ST_IF)
@@ -986,7 +987,7 @@ do_else:
 					}
 					if(cst->c == ')' || cst->c == ']') return type;
 					state = ST_0;
-					continue;		// end-outer-expr-as-well
+					break;		// end-outer-expr-as-well
 				case 7:		// null
 					chk_state(ST_0|ST_NUM_OP)
 					_cmp_emit0(cst,OP_NULL);

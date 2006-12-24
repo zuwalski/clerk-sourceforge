@@ -80,14 +80,7 @@ int cle_string(FILE* f, task* t, st_ptr* out, int c, int* nxtchar, uchar append)
 	char buffer[BUFFERSIZE];
 	int ic = 0,i = 0;
 
-	if(append)
-	{
-		buffer[1] = 0;
-		st_get(out,buffer,HEAD_SIZE);
-		if(memcmp(buffer,HEAD_STR,HEAD_SIZE) != 0)
-			return(__LINE__);
-	}
-	else
+	if(!append)
 		st_update(t,out,HEAD_STR,HEAD_SIZE);
 
 	while(1)
@@ -133,7 +126,8 @@ int cle_write(FILE* f, task* t, st_ptr* root, uint clear, uchar infun)
 	uint level = 0;
 	int c = getc(f);
 
-	ps.ps = ps.psfree = 0;
+	ps.psfree = 0;
+	_cle_ppush(t,&ps,root,0);
 
 	if(clear)
 		st_delete(t,root,0,0);
@@ -409,8 +403,7 @@ int cle_trans(FILE* f, task* t, st_ptr* app)
 					if(c != 1)
 						return c;
 
-					if(rt_do_call(t,app,&ps.ps->pt,&after,&param))
-						return(__LINE__);
+					printf("call return: %d\n",rt_do_call(t,app,&ps.ps->pt,&after,&param));
 
 					tk_drop_task(param_t);
 					state = 0;

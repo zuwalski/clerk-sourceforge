@@ -1632,13 +1632,13 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_BR:
 		// emit Is (branch forward)
 		tmpushort = *((ushort*)inv->ip);
-		inv->ip += tmpushort;
+		inv->ip += tmpushort - sizeof(ushort);
 		break;
 
 	case OP_LOOP:
 		// emit Is (branch back)
 		tmpushort = *((ushort*)inv->ip);
-		inv->ip -= tmpushort;
+		inv->ip -= tmpushort - sizeof(ushort);
 		break;
 
 	case OP_FREE:
@@ -1673,6 +1673,9 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 		_rt_release_invocation(inv);
 		return ret;
 	}
+
+	// dump params
+	//_cle_read(param,0);
 
 	// set param-tree
 	inv->vars->ptr = *param;
