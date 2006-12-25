@@ -481,6 +481,7 @@ static struct _rt_s_inv_ref
 static struct _rt_s_assign_ref
 {
 	union _rt_stack* var;
+	long _fill;
 };
 
 static struct _rt_s_assign_many
@@ -727,7 +728,8 @@ static void _rt_new_value(task* t, union _rt_stack* sp)
 static void _rt_print_int_hex(int theint, char* output)
 {
 	int i = sizeof(int) * 2;
-	output += i;
+	output += i - 1;
+	*(output + 1) = '\0';
 	while(i-- != 0)
 	{
 		char d = theint & 0xF;
@@ -771,7 +773,7 @@ recheck:
 	case STACK_INT: {
 		int tmp = sp->sint.value;
 		_rt_new_value(t,sp);
-		sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2);
+		sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2 + 1);
 		sp->value.value->length = sizeof(int)*2;
 		_rt_print_int_hex(tmp,sp->value.value->data);
 		return 0;
@@ -811,7 +813,7 @@ recheck:
 				return __LINE__;
 
 			_rt_new_value(t,sp);
-			sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2);
+			sp->value.value->data = (uchar*)tk_malloc(sizeof(int)*2 + 1);
 			sp->value.value->length = sizeof(int)*2;
 			_rt_print_int_hex(tmp,sp->value.value->data);
 		}
@@ -1039,7 +1041,7 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 					int tmp;
 					if(st_get(&root,(char*)&tmp,sizeof(int)) == 0)
 					{
-						char buffer[sizeof(int) * 2];
+						char buffer[sizeof(int) * 2 + 1];
 						_rt_print_int_hex(tmp,buffer);
 						t->output->data(t,buffer,sizeof(buffer));
 					}
@@ -1069,7 +1071,7 @@ static uint _rt_do_out_tree(task* t, st_ptr* config, union _rt_stack* from)
 	case STACK_PTR:
 		return _rt_direct_tree(t,config,from->ptr);
 	case STACK_INT:{
-		char buffer[sizeof(int) * 2];
+		char buffer[sizeof(int) * 2 + 1];
 		uint ret;
 		_rt_print_int_hex(from->sint.value,buffer);
 		ret = t->output->data(t,buffer,sizeof(buffer));
@@ -1516,7 +1518,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp++;
 		inv->sp->chk.is_ptr = 0;
 		inv->sp->chk.type = STACK_MANY;
-		inv->sp->many.remaining_depth = tmpuchar;
+		inv->sp->many.remaining_depth = tmpuchar - 1;
 		inv->sp->many.ref = &(inv->sp - 1)->ref;
 		inv->ip += tmpuchar;
 		break;
