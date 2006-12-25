@@ -458,7 +458,7 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 		count++;
 		_cmp_stack(cst,count);
 		_cmp_expr(cst,TP_ANY,PURE_EXPR);
-		_cmp_emitIc(cst,OP_CAV,count);			// clear-var-assign
+		_cmp_emitIs(cst,OP_CAV,cst->code_next - coff + 1 + sizeof(ushort));			// clear-var-assign
 		_cmp_stack(cst,-count);
 		if(cst->c != ';' && cst->c != '}') err(__LINE__)
 		_cmp_nextc(cst);
@@ -838,7 +838,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			_cmp_op_clear(cst);
 			if((nest & NEST_EXPR) == 0 && (state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)) && cst->s_top > 1)
 			{
-				_cmp_emit0(cst,type <= TP_TREE? OP_OUTLT : OP_OUTL);
+				_cmp_emit0(cst,type == TP_STR? OP_OUTL : OP_OUTLT);
 				_cmp_stack(cst,-1);
 			}
 			if(cst->c == '}')

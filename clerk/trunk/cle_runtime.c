@@ -307,7 +307,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_RVAR:
 		case OP_CVAR:
 		case OP_LVAR:
-		case OP_CAV:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);
@@ -363,6 +362,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			break;
 
 		case OP_LOOP:
+		case OP_CAV:
 			// emit Is (branch back)
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
@@ -486,7 +486,8 @@ static struct _rt_s_assign_ref
 
 static struct _rt_s_assign_many
 {
-	struct _rt_s_assign_ref* ref;
+	//struct _rt_s_assign_ref* ref;
+	void*  _pfill;
 	ushort _fill;
 	uchar  _type;
 	uchar  remaining_depth;
@@ -906,9 +907,9 @@ static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, 
 		st_insert(t,tmpptr,name,length);
 		break;
 	case STACK_MANY:
-		if(_rt_get_type(sp->many.ref->var) == STACK_NULL)
-			st_empty(t,&sp->many.ref->var->ptr);
-		*tmpptr = sp->many.ref->var->ptr;
+		if(_rt_get_type(sp - sp->many.remaining_depth) == STACK_NULL)
+			st_empty(t,&(sp - sp->many.remaining_depth)->ptr);
+		*tmpptr = (sp - sp->many.remaining_depth)->ptr;
 		st_insert(t,tmpptr,name,length);
 		break;
 	case STACK_DIRECT_OUT:
@@ -955,13 +956,11 @@ static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_s
 	case STACK_REF:
 		return _rt_do_concat(t,config,to->ref.var,from);
 	case STACK_MANY:
-		ret = _rt_do_concat(t,config,to->many.ref->var,from);
+		ret = _rt_do_concat(t,config,to - to->many.remaining_depth,from);
 		if(ret) return ret;
 		to->many.remaining_depth--;
-		if(to->many.remaining_depth == 0)
-			_rt_make_assign_ref(to,to->many.ref->var);
-		else
-			to->many.ref--;
+		if(to->many.remaining_depth == 1)
+			_rt_make_assign_ref(to,to - 1);
 		return 0;
 	// BELOW: from might be an expr -> FIX: dont copy-copy
 	case STACK_PTR:
@@ -1506,25 +1505,29 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		*inv->sp = inv->vars[*inv->ip++];
 		break;
 	case OP_AVARS:
-		tmpint = tmpuchar = *inv->ip++;
-		{
-			uchar* list = inv->ip + tmpint - 1;
-			while(tmpint-- > 0)
-			{
-				inv->sp++;
-				_rt_make_assign_ref(inv->sp,inv->vars + *list--);
-			}
-		}
+		tmpint = *inv->ip++;
+		inv->ip += tmpint;
 		inv->sp++;
+		memset(inv->sp,0,tmpint * sizeof(union _rt_stack));
+		inv->sp += tmpint;
 		inv->sp->chk.is_ptr = 0;
 		inv->sp->chk.type = STACK_MANY;
-		inv->sp->many.remaining_depth = tmpuchar - 1;
-		inv->sp->many.ref = &(inv->sp - 1)->ref;
-		inv->ip += tmpuchar;
+		inv->sp->many.remaining_depth = tmpint;
 		break;
 	case OP_CAV:
-		// emitIc
-		inv->sp -= *inv->ip++;
+		// emitIs
+		tmpushort = *((ushort*)inv->ip);
+		inv->ip += sizeof(ushort);
+		{
+			uchar* op_avars = inv->ip - tmpushort + 1;
+			tmpint = *op_avars;
+			op_avars += tmpint;
+			inv->sp--;
+			while(tmpint-- != 0)
+			{
+				*(inv->vars + *op_avars--) = *inv->sp--;
+			}
+		}
 		break;
 
 	case OP_OVARS:
@@ -1558,16 +1561,15 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		switch(_rt_get_type(inv->sp - 1))
 		{
 		case STACK_MANY: // set and roll
-			if((inv->sp - 1)->many.remaining_depth != 0)
+			if((inv->sp - 1)->many.remaining_depth > 1)
 			{
-				struct _rt_s_assign_many* many = &(inv->sp - 1)->many;
-				*(many->ref->var) = *inv->sp;
-				many->ref--;
-				many->remaining_depth--;
+				*(inv->sp - 1 - (inv->sp - 1)->many.remaining_depth)
+					= *inv->sp;
+				(inv->sp - 1)->many.remaining_depth--;
 				break;
 			}
-			else	// last: change to STACK_REF and fall-through
-				(inv->sp - 1)->ref = *(inv->sp - 1)->many.ref;
+			else	// last: change to STACK_REF and fall-
+				_rt_make_assign_ref(inv->sp - 1,inv->sp - 2);
 		case STACK_REF: // set ref
 			if(_rt_get_type((inv->sp - 1)->ref.var) == STACK_NULL)
 				*(inv->sp - 1)->ref.var = *inv->sp;	// first time just copy
