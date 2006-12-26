@@ -1006,7 +1006,7 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 	if(ret == 0)
 	{
 		char  head[HEAD_SIZE];
-		uint gret = st_get(&root,head,sizeof(head));
+		int gret = st_get(&root,head,sizeof(head));
 
 		while(gret <= 0 && head[0] == 0)	// while-> could be a list
 		{
@@ -1054,7 +1054,7 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 				return t->output->pop(t);	// ignore (functions)
 			}
 
-			gret = st_get(&pt,head,sizeof(head));
+			gret = st_get(&root,head,sizeof(head));
 		}
 	}
 
@@ -1121,7 +1121,7 @@ static uint _rt_copy_tree(task* t, st_ptr* config, st_ptr* to, st_ptr* from)
 	if(ret == 0)
 	{
 		char  head[HEAD_SIZE];
-		uint gret = st_get(from,head,sizeof(head));
+		int gret = st_get(from,head,sizeof(head));
 
 		while(gret <= 0 && head[0] == 0)	// while-> could be a list
 		{
@@ -1358,10 +1358,11 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 
 			if(tmpptr.key == 0 || st_move(&tmpptr,inv->ip,tmpushort))
 				return __LINE__;
+			inv->ip += tmpushort;
 
 			tmpint = _rt_create_invocation(t,&inv->sp->ptr,tmpptr,&cl);
 			cl->parent = inv;
-			*cl->sp = *(inv->sp - 1);	// copy assign-to
+			*cl->sp = *(inv->sp - 1);	// copy target
 
 			_rt_make_inv_ref(inv->sp,cl);
 		}
