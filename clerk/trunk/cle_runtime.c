@@ -702,11 +702,14 @@ static void _rt_next_list(task* t, union _rt_stack* sp, union _rt_stack* nxt)
 		last->next = 0;
 
 		elm = (union _rt_stack*)(last + 1);
-		*elm = *sp;
+		// stack is a ref-to-list element
+		*elm = *sp->ref.var;
 
-		sp->chk.is_ptr = 0;
-		sp->chk.type = STACK_LIST;
-		sp->list.list = last;
+		sp->ref.var->chk.is_ptr = 0;
+		sp->ref.var->chk.type = STACK_LIST;
+		sp->ref.var->list.list = last;
+
+		*sp = *sp->ref.var;
 	}
 
 	last = (struct _rt_list*)tk_malloc(sizeof(struct _rt_list) + sizeof(union _rt_stack));
@@ -714,7 +717,7 @@ static void _rt_next_list(task* t, union _rt_stack* sp, union _rt_stack* nxt)
 	last->next = 0;
 
 	elm = (union _rt_stack*)(last + 1);
-	*elm = *sp;
+	*elm = *nxt;
 
 	sp->list.list->last->next = last;
 	sp->list.list->last = last;
@@ -1091,7 +1094,7 @@ static uint _rt_do_out_tree(task* t, st_ptr* config, union _rt_stack* from)
 		{
 			uint ret = _rt_do_out_tree(t,config,(union _rt_stack*)(list + 1));
 			if(ret) return ret;
-			list = from->list.list->next;
+			list = list->next;
 		}
 		return 0;
 		}
