@@ -82,6 +82,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_SETP";
 	case OP_DOCALL:
 		return "OP_DOCALL";
+	case OP_DOCALL_N:
+		return "OP_DOCALL_N";
 	case OP_WIDX:
 		return "OP_WIDX";
 	case OP_WVAR0:
@@ -124,8 +126,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_STR";
 	case OP_CALL:
 		return "OP_CALL";
-	case OP_CALL_N:
-		return "OP_CALL_N";
 	case OP_POP:
 		return "OP_POP";
 	case OP_POPW:
@@ -178,6 +178,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_NULL";
 	case OP_CLEAR:
 		return "OP_CLEAR";
+	case OP_AVAR:
+		return "OP_AVAR";
 
 	default:
 		return "OP_ILLEGAL";
@@ -251,6 +253,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		{
 		case OP_NOOP:
 		case OP_DOCALL:
+		case OP_DOCALL_N:
 		case OP_POP:
 		case OP_POPW:
 		case OP_WIDX:
@@ -287,7 +290,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			return;
 
 		case OP_CALL:
-		case OP_CALL_N:
 		case OP_DMVW:
 		case OP_MVW:
 		case OP_MV:
@@ -307,6 +309,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_RVAR:
 		case OP_CVAR:
 		case OP_LVAR:
+		case OP_AVAR:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);
@@ -1344,11 +1347,6 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			inv->pipe_fwrd = 0;
 		}
 		break;
-	case OP_CALL_N:
-		*(inv->sp + 2) = *inv->sp;	// dub
-		_rt_make_null(inv->sp++);	// blank
-		_rt_make_assign_ref(inv->sp,inv->sp - 1);
-		inv->sp++;
 	case OP_CALL:
 		{
 			struct _rt_invocation* cl;
@@ -1362,7 +1360,6 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 
 			tmpint = _rt_create_invocation(t,&inv->sp->ptr,tmpptr,&cl);
 			cl->parent = inv;
-			*cl->sp = *(inv->sp - 1);	// copy target
 
 			_rt_make_inv_ref(inv->sp,cl);
 		}
@@ -1370,8 +1367,18 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_DOCALL:
 		{
 			struct _rt_invocation* cl = inv->sp->inv.inv;
-			inv->pipe_fwrd = cl;
 			inv->sp--;
+			*cl->sp = *inv->sp;	// copy target
+			inv->pipe_fwrd = cl;
+			inv = cl;
+		}
+		break;
+	case OP_DOCALL_N:	// nested call
+		{
+			struct _rt_invocation* cl = inv->sp->inv.inv;
+			inv->pipe_fwrd = cl;
+			_rt_make_null(inv->sp);	// blank
+			_rt_make_assign_ref(cl->sp,inv->sp);
 			inv = cl;
 		}
 		break;
@@ -1504,6 +1511,9 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 	case OP_LVAR:
 		inv->sp++;
 		*inv->sp = inv->vars[*inv->ip++];
+		break;
+	case OP_AVAR:
+		_rt_make_assign_ref(++inv->sp,inv->vars + *inv->ip++);
 		break;
 	case OP_AVARS:
 		tmpint = *inv->ip++;
@@ -1669,10 +1679,6 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	struct _rt_invocation* inv;
 	// create invocation
 	int ret = _rt_create_invocation(t,root,*fun,&inv);
-
-	if(ret == 0 && inv->fun->max_params != 1)
-		ret = __LINE__;
-
 	if(ret)
 	{
 		_rt_release_invocation(inv);
@@ -1682,8 +1688,10 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	// dump params
 	//_cle_read(param,0);
 
-	// set param-tree
-	inv->vars->ptr = *param;
+	if(param && inv->fun->max_params != 0)
+		// set param-tree
+		inv->vars->ptr = *param;
+
 	// mark for output-handler
 	inv->sp->chk.type = STACK_DIRECT_OUT;
 	inv->sp->chk.is_ptr = 0;
