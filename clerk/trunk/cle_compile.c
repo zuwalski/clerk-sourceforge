@@ -523,15 +523,20 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 	}
 	else
 	{
+		cst->code_next = coff;			// undo avars
+
 		if(count != 0)
 		{
-			cst->code[coff++] = OP_OVARS;	// change to output-vars
-			cst->code[coff] = count;
-			cst->code_next--;
+			if(count < 0xFF)
+			{
+				int i;
+				uchar buffer[256];
+				memcpy(buffer,coff,++count);
+				for(i = 0; i < count; i++)
+					_cmp_emitIc(cst,OP_OVAR,buffer[i]);
+			}
 		}
-		else
-			cst->code_next = coff;			// undo avars
-		if(var)
+		else if(var)
 		{
 			_cmp_emitIc(cst,OP_LVAR,var->id);
 			_cmp_stack(cst,1);

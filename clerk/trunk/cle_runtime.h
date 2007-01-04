@@ -39,7 +39,7 @@ enum cle_opcode
 	OP_DOCALL_N,
 	OP_AVAR,
 	OP_AVARS,
-	OP_OVARS,
+	OP_OVAR,
 	OP_LVAR,
 	OP_POP,
 	OP_POPW,
@@ -82,6 +82,7 @@ enum cle_opcode
 	OP_LNUM,
 	OP_NULL,
 	OP_CLEAR,
+	OP_ERROR,
 
 	OP_OP_MAX
 };
