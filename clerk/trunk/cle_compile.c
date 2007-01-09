@@ -31,8 +31,8 @@
 #define ST_CALL 1024
 
 #define PROC_EXPR 0
-#define NEST_EXPR 1
-#define PURE_EXPR 2
+#define PURE_EXPR 1
+#define NEST_EXPR 2
 
 #define TP_ANY 0
 #define TP_NUM 1
@@ -45,6 +45,7 @@ static struct _cmp_state
 	FILE* f;
 	char* opbuf;
 	char* code;
+	char* lastop;
 	st_ptr root;
 	st_ptr strs;
 	st_ptr cur_string;
@@ -195,12 +196,14 @@ static uint _cmp_name(struct _cmp_state* cst)
 static void _cmp_emit0(struct _cmp_state* cst, uchar opc)
 {
 	_cmp_check_code(cst,cst->code_next + 1);
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 }
 
 static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort len)
 {
 	_cmp_check_code(cst,cst->code_next + len + 1 + sizeof(ushort));
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&len,sizeof(ushort));
 	cst->code_next += sizeof(ushort);
@@ -211,6 +214,7 @@ static void _cmp_emitS(struct _cmp_state* cst, uchar opc, char* param, ushort le
 static void _cmp_emitIc(struct _cmp_state* cst, uchar opc, uchar imm)
 {
 	_cmp_check_code(cst,cst->code_next + 2);
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm;
 }
@@ -218,6 +222,7 @@ static void _cmp_emitIc(struct _cmp_state* cst, uchar opc, uchar imm)
 static void _cmp_emitIc2(struct _cmp_state* cst, uchar opc, uchar imm1, uchar imm2)
 {
 	_cmp_check_code(cst,cst->code_next + 3);
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm1;
 	cst->code[cst->code_next++] = imm2;
@@ -226,6 +231,7 @@ static void _cmp_emitIc2(struct _cmp_state* cst, uchar opc, uchar imm1, uchar im
 static void _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
 {
 	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(ushort));
 	cst->code_next += sizeof(ushort);
@@ -234,6 +240,7 @@ static void _cmp_emitIs(struct _cmp_state* cst, uchar opc, ushort imm)
 static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort imm2)
 {
 	_cmp_check_code(cst,cst->code_next + 2 + sizeof(ushort));
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	cst->code[cst->code_next++] = imm1;
 	memcpy(cst->code + cst->code_next,(char*)&imm2,sizeof(ushort));
@@ -243,6 +250,7 @@ static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort i
 static void _cmp_emitII(struct _cmp_state* cst, uchar opc, int imm)
 {
 	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
+	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
 	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(int));
 	cst->code_next += sizeof(int);
@@ -665,9 +673,10 @@ static void _cmp_new(struct _cmp_state* cst)
 
 #define chk_typ(a) if(type != 0 && ((a) & type) == 0) err(__LINE__) type=(a);
 
+// in nested exprs dont out the first element, but out all following (concating to the first)
 #define chk_out() if(state & (ST_ALPHA|ST_STR|ST_VAR)) \
-	{chk_typ(TP_STR) if(nest & NEST_EXPR) _cmp_op_push(cst,OP_CAT,0); \
-	else{_cmp_op_clear(cst);_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
+	{chk_typ(TP_STR) _cmp_op_clear(cst); if(nest & NEST_EXPR && (nest & PURE_EXPR == 0)) nest = (PURE_EXPR|NEST_EXPR); \
+	else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 
 // direct call doesnt leave anything on the stack - force it
 // if the next instr. needs the return-value
@@ -678,7 +687,6 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_typ(TP_NUM)\
 			chk_state(ST_ALPHA|ST_VAR|ST_NUM|ST_CALL)\
 			chk_call()\
-			if(state & (ST_ALPHA|ST_VAR)) _cmp_emit0(cst,OP_LNUM);\
 			_cmp_op_push(cst,opc,prec);\
 			state = ST_NUM_OP;\
 
@@ -767,12 +775,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			state = ST_ALPHA;
 			break;
 		case '[':
-			if(state == ST_CONF)
-			{
-				_cmp_emit0(cst,OP_CONF);
-				_cmp_stack(cst,1);
-			}
-			else if(state == ST_0)
+			if(state == ST_0)
 			{
 				_cmp_emit0(cst,OP_FUN);
 				_cmp_stack(cst,1);
@@ -810,11 +813,8 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					switch(state)
 					{
 					case ST_DOT:
-						_cmp_emitIc(cst,OP_RVAR,var->id);
-						break;
 					case ST_CONF:
-						_cmp_emitIc(cst,OP_CVAR,var->id);
-						_cmp_stack(cst,1);
+						_cmp_emitIc(cst,OP_RVAR,var->id);
 						break;
 					default:
 						_cmp_emitIc(cst,OP_LVAR,var->id);
@@ -868,6 +868,8 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 		case '\\':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_CALL)
 			chk_out()
+			_cmp_emit0(cst,OP_CONF);
+			_cmp_stack(cst,1);
 			state = ST_CONF;
 			break;
 		case ' ':
@@ -903,20 +905,13 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				switch(_cmp_keyword(cst->opbuf + cst->top))
 				{
 				case -1:	// alpha 
+					if(state & (ST_DOT|ST_CONF) == 0)
+					{
+						_cmp_emit0(cst,OP_FUN);
+						_cmp_stack(cst,1);
+					}
 					if(cst->c == '(')	// fun-call?
 					{
-						switch(state)
-						{
-						case ST_DOT:
-							break;
-						case ST_CONF:
-							_cmp_emit0(cst,OP_CONF);
-							_cmp_stack(cst,1);
-							break;
-						default:
-							_cmp_emit0(cst,OP_FUN);
-							_cmp_stack(cst,1);
-						}
 						if(nest & NEST_EXPR || state & ST_NUM_OP)
 						{
 							_cmp_call(cst,len,NEST_EXPR);
@@ -930,21 +925,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					}
 					else
 					{
-						uchar op;
-						switch(state)
-						{
-						case ST_DOT:
-							op = OP_MV;
-							break;
-						case ST_CONF:
-							op = OP_CMV;
-							_cmp_stack(cst,1);
-							break;
-						default:
-							op = OP_FMV;
-							_cmp_stack(cst,1);
-						}
-						_cmp_emitS(cst,op,cst->opbuf + cst->top,len);
+						_cmp_emitS(cst,OP_MV,cst->opbuf + cst->top,len);
 						state = ST_ALPHA;
 					}
 					continue;
