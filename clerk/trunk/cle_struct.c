@@ -677,7 +677,6 @@ char* st_get_all(st_ptr* pt, uint* length)
 	key* me       = GOKEY(pt->pg,pt->key);
 	key* nxt      = 0;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint nlength  = 128;
 	uint rlength  = 0;
 	uint boffset  = 0;
 	uint klen;
@@ -703,21 +702,34 @@ char* st_get_all(st_ptr* pt, uint* length)
 		klen >>= 3;
 		if(klen > 0)
 		{
+			uint max = klen;
+			for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
+
 			if(klen + boffset > rlength)
 			{
-				nlength = klen > nlength? klen : nlength;
-				buffer = (char*)tk_realloc(buffer,nlength);
-				rlength = nlength;
-				nlength <<= 1;
+				rlength += klen > GET_ALL_BUFFER? klen : GET_ALL_BUFFER;
+				buffer = (char*)tk_realloc(buffer,rlength);
 			}
 
 			memcpy(buffer + boffset,ckey,klen);
 			boffset += klen;
+
+			if(max != klen)	// stop at zero-term
+			{
+				pt->pg = pg;
+				pt->key = (uint)me - (uint)&pg->pg;
+				pt->offset = klen << 3;
+				*length = boffset;
+				return buffer;
+			}
 		}
 
 		// no next key! or trying to read past split?
 		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
 		{
+			pt->pg = pg;
+			pt->key = (uint)me - (uint)&pg->pg;
+			pt->offset = nxt? nxt->offset : me->length;
 			*length = boffset;
 			return buffer;
 		}

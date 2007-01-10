@@ -675,12 +675,13 @@ static void _cmp_new(struct _cmp_state* cst)
 
 // in nested exprs dont out the first element, but out all following (concating to the first)
 #define chk_out() if(state & (ST_ALPHA|ST_STR|ST_VAR)) \
-	{chk_typ(TP_STR) _cmp_op_clear(cst); if(nest & NEST_EXPR && (nest & PURE_EXPR == 0)) nest = (PURE_EXPR|NEST_EXPR); \
+	{chk_typ(TP_STR) _cmp_op_clear(cst); if(nest & NEST_EXPR && (nest & PURE_EXPR == 0)) \
+	{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
 	else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 
 // direct call doesnt leave anything on the stack - force it
 // if the next instr. needs the return-value
-#define chk_call() if(state == ST_CALL && *(cst->code + cst->code_next - 1) == OP_DOCALL)\
+#define chk_call() if(state == ST_CALL && *cst->lastop == OP_DOCALL)\
 	{*(cst->code + cst->code_next - 1) = OP_DOCALL_N;_cmp_stack(cst,1);}
 
 #define num_op(opc,prec) \
@@ -775,12 +776,10 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			state = ST_ALPHA;
 			break;
 		case '[':
-			if(state == ST_0)
+			if(state == ST_CALL)
 			{
-				_cmp_emit0(cst,OP_FUN);
-				_cmp_stack(cst,1);
+				chk_call()
 			}
-			else chk_call()
 			else
 			{
 				chk_state(ST_ALPHA|ST_VAR)

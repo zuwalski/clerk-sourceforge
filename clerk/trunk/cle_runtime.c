@@ -172,6 +172,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_AVAR";
 	case OP_ERROR:
 		return "OP_ERROR";
+	case OP_CAT:
+		return "OP_CAT";
 
 	default:
 		return "OP_ILLEGAL";
@@ -268,6 +270,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_EQ:
 		case OP_NULL:
 		case OP_CLEAR:
+		case OP_CAT:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -1049,46 +1052,42 @@ static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_s
 }
 
 
-static uint _rt_compare(struct _rt_invocation* inv, union _rt_stack* sp)
+static void _rt_move_out(struct _rt_invocation** inv, task* t, union _rt_stack* sp, cdat path, uint length)
 {
-	uint type = _rt_get_type(sp);
-	if(_rt_get_type(sp - 1) != type)
-		return _rt_sys_error(inv,__LINE__);
-
-	switch(type)
+	st_ptr base = sp->ptr;
+	if(sp->chk.is_ptr == 0 || st_move(&sp->ptr,path,length))
+		_rt_make_null(sp);	// not found
+	else	// check for header...
 	{
-	case STACK_INT:
-		return (sp->sint.value - (sp - 1)->sint.value);
-	case STACK_VALUE:
-		return memcmp(sp->value.value->data,(sp - 1)->value.value->data,
-			sp->value.value->length > (sp - 1)->value.value->length? sp->value.value->length : (sp - 1)->value.value->length);
-	}
-	return _rt_sys_error(inv,__LINE__);
-}
+		st_ptr ptr = sp->ptr;
+		uchar header[HEAD_SIZE];
+		if(st_get(&ptr,header,HEAD_SIZE) >= 0 || header[0] != 0)
+			return;
 
-static uint _rt_equal(union _rt_stack* sp)
-{
-	uint type = _rt_get_type(sp);
-	if(_rt_get_type(sp - 1) == type)
-	switch(type)
-	{
-	case STACK_NULL:
-		return 1;
-	case STACK_INT:
-		return (sp->sint.value == (sp - 1)->sint.value);
-	case STACK_VALUE:
-		return (sp->value.value == (sp - 1)->value.value || 0 == memcmp(sp->value.value->data,(sp - 1)->value.value->data,
-			sp->value.value->length > (sp - 1)->value.value->length? sp->value.value->length : (sp - 1)->value.value->length));
-	case STACK_PTR:
-		if(sp->ptr.key == (sp - 1)->ptr.key &&
-			sp->ptr.pg == (sp - 1)->ptr.pg &&
-			sp->ptr.offset == (sp - 1)->ptr.offset)
-			return 1;
-		return (st_is_empty(&sp->ptr) && st_is_empty(&(sp - 1)->ptr));
-	case STACK_LIST:
-		return (sp->list.list == (sp - 1)->list.list);
+		switch(header[1])
+		{
+		case 'E':{
+			struct _rt_invocation* ret_inv;
+
+			_rt_create_invocation(t,&base,ptr,&ret_inv);
+
+			*ret_inv->sp = *(sp - 1);	// copy target
+			ret_inv->parent = *inv;
+			*inv = ret_inv;
+			}
+			break;
+		case 'I':{
+			int val;
+			char buffer[sizeof(int)*2 + 1];
+			st_get(&ptr,(char*)&val,sizeof(int));
+			_rt_print_int_hex(val,buffer);
+
+			}
+			break;
+		case 'S':
+			break;
+		}
 	}
-	return 0;
 }
 
 static void _rt_move(struct _rt_invocation** inv, task* t, union _rt_stack* sp, cdat path, uint length)
@@ -1145,6 +1144,48 @@ static void _rt_move_str(struct _rt_invocation** inv, task* t, union _rt_stack* 
 	default:
 		_rt_sys_error(*inv,__LINE__);
 	}
+}
+
+static uint _rt_compare(struct _rt_invocation* inv, union _rt_stack* sp)
+{
+	uint type = _rt_get_type(sp);
+	if(_rt_get_type(sp - 1) != type)
+		return _rt_sys_error(inv,__LINE__);
+
+	switch(type)
+	{
+	case STACK_INT:
+		return (sp->sint.value - (sp - 1)->sint.value);
+	case STACK_VALUE:
+		return memcmp(sp->value.value->data,(sp - 1)->value.value->data,
+			sp->value.value->length > (sp - 1)->value.value->length? sp->value.value->length : (sp - 1)->value.value->length);
+	}
+	return _rt_sys_error(inv,__LINE__);
+}
+
+static uint _rt_equal(union _rt_stack* sp)
+{
+	uint type = _rt_get_type(sp);
+	if(_rt_get_type(sp - 1) == type)
+	switch(type)
+	{
+	case STACK_NULL:
+		return 1;
+	case STACK_INT:
+		return (sp->sint.value == (sp - 1)->sint.value);
+	case STACK_VALUE:
+		return (sp->value.value == (sp - 1)->value.value || 0 == memcmp(sp->value.value->data,(sp - 1)->value.value->data,
+			sp->value.value->length > (sp - 1)->value.value->length? sp->value.value->length : (sp - 1)->value.value->length));
+	case STACK_PTR:
+		if(sp->ptr.key == (sp - 1)->ptr.key &&
+			sp->ptr.pg == (sp - 1)->ptr.pg &&
+			sp->ptr.offset == (sp - 1)->ptr.offset)
+			return 1;
+		return (st_is_empty(&sp->ptr) && st_is_empty(&(sp - 1)->ptr));
+	case STACK_LIST:
+		return (sp->list.list == (sp - 1)->list.list);
+	}
+	return 0;
 }
 
 static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, const uint length, const uchar push)
@@ -1441,6 +1482,18 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		}
 		break;
 
+	case OP_CAT:
+		if(_rt_get_type(inv->sp) != STACK_VALUE)
+			_rt_sys_error(inv,__LINE__);
+		else if(inv->sp->value.value->ref)
+		{
+			struct _rt_value* val = inv->sp->value.value;
+			_rt_new_value(t,inv->sp);
+			inv->sp->value.value->data = tk_malloc(val->length);
+			inv->sp->value.value->length = val->length;
+			memcpy(inv->sp->value.value->data,val->data,val->length);
+		}
+		break;
 	case OP_OVAR:
 		// emit Ic
 		_rt_err(inv,_rt_do_out(t,config,inv->sp,inv->vars + *inv->ip++,0));

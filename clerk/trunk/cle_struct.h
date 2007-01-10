@@ -20,6 +20,8 @@
 
 #define OVERFLOW_GROW (16*64)
 
+#define GET_ALL_BUFFER 256
+
 #define IT_GROW_SIZE 16
 
 /* Defs */

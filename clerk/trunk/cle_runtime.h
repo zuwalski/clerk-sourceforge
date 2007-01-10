@@ -78,6 +78,7 @@ enum cle_opcode
 	OP_NULL,
 	OP_CLEAR,
 	OP_ERROR,
+	OP_CAT,
 
 	OP_OP_MAX
 };
