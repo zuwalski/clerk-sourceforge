@@ -529,22 +529,17 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 		cst->code_next = coff;			// undo avars
 		_cmp_nextc(cst);
 	}
+	else if(count != 0)
+	{
+		if(cst->c != ';') err(__LINE__)
+		cst->code[coff++] = OP_OVARS;
+		cst->code[coff++] = count + 1;
+	}
 	else
 	{
 		cst->code_next = coff;			// undo avars
 
-		if(count != 0)
-		{
-			if(count < 0xFF)
-			{
-				int i;
-				uchar buffer[256];
-				memcpy(buffer,coff,++count);
-				for(i = 0; i < count; i++)
-					_cmp_emitIc(cst,OP_OVAR,buffer[i]);
-			}
-		}
-		else if(var)
+		if(var)
 		{
 			_cmp_emitIc(cst,OP_LVAR,var->id);
 			_cmp_stack(cst,1);
@@ -675,7 +670,7 @@ static void _cmp_new(struct _cmp_state* cst)
 
 // in nested exprs dont out the first element, but out all following (concating to the first)
 #define chk_out() if(state & (ST_ALPHA|ST_STR|ST_VAR)) \
-	{chk_typ(TP_STR) _cmp_op_clear(cst); if(nest & NEST_EXPR && (nest & PURE_EXPR == 0)) \
+	{chk_typ(TP_STR) _cmp_op_clear(cst); if(nest == NEST_EXPR) \
 	{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
 	else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 

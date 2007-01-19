@@ -130,8 +130,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FREE";
 	case OP_AVARS:
 		return "OP_AVARS";
-	case OP_OVAR:
-		return "OP_OVAR";
+	case OP_OVARS:
+		return "OP_OVARS";
 	case OP_ADD:
 		return "OP_ADD";
 	case OP_SUB:
@@ -300,7 +300,6 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_RVAR:
 		case OP_LVAR:
 		case OP_AVAR:
-		case OP_OVAR:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);
@@ -308,6 +307,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			break;
 
 		case OP_AVARS:
+		case OP_OVARS:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d {",_rt_opc_name(opc),tmpuchar);
@@ -1002,44 +1002,56 @@ static uint _rt_do_copy(task* t, st_ptr* config, st_ptr* to, union _rt_stack* fr
 	return 0;
 }
 
-static uint _rt_do_concat(task* t, st_ptr* config, union _rt_stack* result, union _rt_stack* cat)
+static uint _rt_do_concat(task* t, union _rt_stack* result, union _rt_stack* cat)
 {
-	result->value.value->data = (uchar*)tk_realloc(result->value.value->data,
-		result->value.value->length + cat->value.value->length - 1);
+	if(_rt_get_type(cat) != STACK_VALUE)
+		return __LINE__;
+
+	if(result->value.value->ref)
+	{
+		struct _rt_value* val = result->value.value;
+		_rt_new_value(t,result);
+		result->value.value->data = tk_malloc(val->length + cat->value.value->length - 1);
+		result->value.value->length = val->length;
+		memcpy(result->value.value->data,val->data,val->length);
+	}
+	else
+		result->value.value->data = (uchar*)tk_realloc(result->value.value->data,
+			result->value.value->length + cat->value.value->length - 1);
 
 	memcpy(result->value.value->data + result->value.value->length - 1,
-		cat->value.value->data,cat->value.value->length - 1);
+		cat->value.value->data,cat->value.value->length);
 
+	result->value.value->length += cat->value.value->length - 1;
 	return 0;
 }
 
-static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_stack* from, const uchar last)
+static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, const uchar last)
 {
 	int ret;
 	switch(_rt_get_type(to))
 	{
 	case STACK_VALUE:
-		return _rt_do_concat(t,config,to,from);
+		return _rt_do_concat(t,to,from);
 	case STACK_REF:
-		return _rt_do_concat(t,config,to->ref.var,from);
+		return _rt_do_concat(t,to->ref.var,from);
 	case STACK_MANY:
-		ret = _rt_do_concat(t,config,to - to->many.remaining_depth,from);
-		if(ret) return ret;
+		ret = _rt_do_concat(t,to - to->many.remaining_depth,from);
+		if(ret || last == 0) return ret;
 		to->many.remaining_depth--;
 		if(to->many.remaining_depth == 1)
 			_rt_make_assign_ref(to,to - 1);
 		return 0;
-	// BELOW: dont copy-copy
 	case STACK_PTR:
-		ret = _rt_load_value(t,config,from);
-		if(ret) return ret;
+		if(_rt_get_type(from) != STACK_VALUE)
+			return __LINE__;
 		st_append(t,&to->ptr,from->value.value->data,from->value.value->length);
 		if(last)
 			st_append(t,&to->ptr,"\0",1);
 		return 0;
 	case STACK_DIRECT_OUT:
-		ret = _rt_load_value(t,config,from);
-		if(ret) return ret;
+		if(_rt_get_type(from) != STACK_VALUE)
+			return __LINE__;
 		if(last && to->chk.data)
 		{
 			ret = t->output->next(t);
@@ -1049,45 +1061,6 @@ static uint _rt_do_out(task* t, st_ptr* config, union _rt_stack* to, union _rt_s
 		return t->output->data(t,from->value.value->data,from->value.value->length);
 	}
 	return __LINE__;
-}
-
-
-static void _rt_move_out(struct _rt_invocation** inv, task* t, union _rt_stack* sp, cdat path, uint length)
-{
-	st_ptr base = sp->ptr;
-	if(sp->chk.is_ptr == 0 || st_move(&sp->ptr,path,length))
-		_rt_make_null(sp);	// not found
-	else	// check for header...
-	{
-		st_ptr ptr = sp->ptr;
-		uchar header[HEAD_SIZE];
-		if(st_get(&ptr,header,HEAD_SIZE) >= 0 || header[0] != 0)
-			return;
-
-		switch(header[1])
-		{
-		case 'E':{
-			struct _rt_invocation* ret_inv;
-
-			_rt_create_invocation(t,&base,ptr,&ret_inv);
-
-			*ret_inv->sp = *(sp - 1);	// copy target
-			ret_inv->parent = *inv;
-			*inv = ret_inv;
-			}
-			break;
-		case 'I':{
-			int val;
-			char buffer[sizeof(int)*2 + 1];
-			st_get(&ptr,(char*)&val,sizeof(int));
-			_rt_print_int_hex(val,buffer);
-
-			}
-			break;
-		case 'S':
-			break;
-		}
-	}
 }
 
 static void _rt_move(struct _rt_invocation** inv, task* t, union _rt_stack* sp, cdat path, uint length)
@@ -1241,6 +1214,9 @@ static uint _rt_insert_str(task* t, st_ptr* tmpptr, union _rt_stack* ptr, union 
 	return __LINE__;
 }
 
+#define CHK_NUMOP() \
+	if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT)) break
+
 static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 {
 	st_ptr tmpptr;
@@ -1269,32 +1245,27 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		break;
 
 	case OP_ADD:
-		if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT))
-			break;
+		CHK_NUMOP();
 		(inv->sp - 1)->sint.value += inv->sp->sint.value;
 		inv->sp--;
 		break;
 	case OP_SUB:
-		if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT))
-			break;
+		CHK_NUMOP();
 		(inv->sp - 1)->sint.value -= inv->sp->sint.value;
 		inv->sp--;
 		break;
 	case OP_MUL:
-		if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT))
-			break;
+		CHK_NUMOP();
 		(inv->sp - 1)->sint.value *= inv->sp->sint.value;
 		inv->sp--;
 		break;
 	case OP_DIV:
-		if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT))
-			break;
+		CHK_NUMOP();
 		(inv->sp - 1)->sint.value /= inv->sp->sint.value;
 		inv->sp--;
 		break;
 	case OP_REM:
-		if(_rt_err(inv,_rt_get_type(inv->sp) != STACK_INT || _rt_get_type(inv->sp - 1) != STACK_INT))
-			break;
+		CHK_NUMOP();
 		(inv->sp - 1)->sint.value %= inv->sp->sint.value;
 		inv->sp--;
 		break;
@@ -1494,16 +1465,20 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			memcpy(inv->sp->value.value->data,val->data,val->length);
 		}
 		break;
-	case OP_OVAR:
+	case OP_OVARS:
 		// emit Ic
-		_rt_err(inv,_rt_do_out(t,config,inv->sp,inv->vars + *inv->ip++,0));
+		{
+			uint count = *inv->ip++;
+			while(count-- != 0)
+				_rt_err(inv,_rt_do_out(t,inv->sp,inv->vars + *inv->ip++,0));
+		}
 		break;
 	case OP_OUT:
-		_rt_err(inv,_rt_do_out(t,config,inv->sp - 1,inv->sp,0));
+		_rt_err(inv,_rt_do_out(t,inv->sp - 1,inv->sp,0));
 		inv->sp--;
 		break;
 	case OP_OUTL: // [OUT Last]
-		_rt_err(inv,_rt_do_out(t,config,inv->sp - 1,inv->sp,1));
+		_rt_err(inv,_rt_do_out(t,inv->sp - 1,inv->sp,1));
 		inv->sp--;
 		break;
 	case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
