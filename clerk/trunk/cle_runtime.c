@@ -174,6 +174,10 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_ERROR";
 	case OP_CAT:
 		return "OP_CAT";
+	case OP_CMV:
+		return "OP_CMV";
+	case OP_FMV:
+		return "OP_FMV";
 
 	default:
 		return "OP_ILLEGAL";
@@ -286,6 +290,8 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_DMVW:
 		case OP_MVW:
 		case OP_MV:
+		case OP_CMV:
+		case OP_FMV:
 			// emit s
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
@@ -587,7 +593,7 @@ static uint _rt_load_function(task* t, st_ptr root, struct _rt_function** ret_fu
 	if(st_get(&root,head,sizeof(head)) > 0)
 		return __LINE__;
 
-	if(head[0] != 0 && (head[1] != 'F' || head[1] != 'E'))
+	if(head[0] != 0 || (head[1] != 'F' && head[1] != 'E'))
 		return __LINE__;
 
 	strings = root;
@@ -1029,6 +1035,17 @@ static uint _rt_do_concat(task* t, union _rt_stack* result, union _rt_stack* cat
 static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, const uchar last)
 {
 	int ret;
+	if(_rt_get_type(from) == STACK_LIST){
+		struct _rt_list* list = from->list.list;
+		while(list)
+		{
+			uint ret = _rt_do_out(t,to,(union _rt_stack*)(list + 1),last);
+			if(ret) return ret;
+			list = list->next;
+		}
+		return 0;
+	}
+
 	switch(_rt_get_type(to))
 	{
 	case STACK_VALUE:
@@ -1236,12 +1253,10 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		inv->sp--;
 		break;
 	case OP_CONF:
-		inv->sp++;
-		inv->sp->ptr = *config;
+		(++inv->sp)->ptr = *config;
 		break;
 	case OP_FUN:
-		inv->sp++;
-		inv->sp->ptr = inv->context;
+		(++inv->sp)->ptr = inv->context;
 		break;
 
 	case OP_ADD:
@@ -1404,13 +1419,20 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		_rt_err(inv,_rt_insert_str(t,&tmpptr,inv->sp,inv->vars + *inv->ip++,1));
 		break;
 
-	case OP_MV:{
-		uchar* str;
-		ushort len = *((ushort*)inv->ip);
-		inv->ip += sizeof(ushort);
-		str = inv->ip;
-		inv->ip += len;
-		_rt_move(&inv,t,inv->sp,str,len);
+	case OP_CMV:
+		(++inv->sp)->ptr = *config;
+		goto do_move;
+	case OP_FMV:
+		(++inv->sp)->ptr = inv->context;
+	case OP_MV:
+do_move:
+		{
+			uchar* str;
+			ushort len = *((ushort*)inv->ip);
+			inv->ip += sizeof(ushort);
+			str = inv->ip;
+			inv->ip += len;
+			_rt_move(&inv,t,inv->sp,str,len);
 		}
 		break;
 	case OP_RIDX:
