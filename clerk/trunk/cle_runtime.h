@@ -65,6 +65,7 @@ enum cle_opcode
 	OP_DIV,
 	OP_REM,
 	OP_IMM,
+	OP_BNZ,
 	OP_BZ,
 	OP_BR,
 	OP_GE,
@@ -81,6 +82,7 @@ enum cle_opcode
 	OP_CAT,
 	OP_CMV,
 	OP_FMV,
+	OP_NOT,
 
 	OP_OP_MAX
 };

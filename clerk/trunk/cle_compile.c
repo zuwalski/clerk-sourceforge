@@ -103,7 +103,7 @@ static struct _cmp_op
 #define PEEK_OP(o) ((struct _cmp_op*)(cst->opbuf + (o)))
 
 static const char* keywords[] = {
-	"function","body","new","var","if","else","while","null",0
+	"function","body","new","var","if","else","while","null","and","or","not","stream",0
 };
 
 static void print_err(int line)
@@ -859,13 +859,6 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			chk_call()
 			state = ST_DOT;
 			break;
-		case '\\':
-			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_CALL)
-			chk_out()
-			_cmp_emit0(cst,OP_CONF);
-			_cmp_stack(cst,1);
-			state = ST_CONF;
-			break;
 		case ' ':
 		case '\t':
 		case '\n':
@@ -899,13 +892,13 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				switch(_cmp_keyword(cst->opbuf + cst->top))
 				{
 				case -1:	// alpha 
-					if(state & (ST_DOT|ST_CONF) == 0)
-					{
-						_cmp_emit0(cst,OP_FUN);
-						_cmp_stack(cst,1);
-					}
 					if(cst->c == '(')	// fun-call?
 					{
+						if(state & ST_DOT == 0)
+						{
+							_cmp_emit0(cst,OP_FUN);
+							_cmp_stack(cst,1);
+						}
 						if(nest & NEST_EXPR || state & ST_NUM_OP)
 						{
 							_cmp_call(cst,len,NEST_EXPR);
@@ -917,9 +910,23 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 							state = ST_CALL;
 						}
 					}
-					else
+					else if(cst->c == ':')	// load from config
+					{
+						if(state == ST_DOT) err(__LINE__)
+						_cmp_emitS(cst,OP_CMV,cst->opbuf + cst->top,len);
+						_cmp_stack(cst,1);
+						state = ST_DOT;
+						break;
+					}
+					else if(state & ST_DOT)
 					{
 						_cmp_emitS(cst,OP_MV,cst->opbuf + cst->top,len);
+						state = ST_ALPHA;
+					}
+					else
+					{
+						_cmp_emitS(cst,OP_FMV,cst->opbuf + cst->top,len);
+						_cmp_stack(cst,1);
 						state = ST_ALPHA;
 					}
 					continue;
@@ -975,7 +982,7 @@ do_else:
 
 					continue;		// end-outer-expr-as-well
 				case 6:		// while
-					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM_OP|ST_IF|ST_CALL)
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_IF|ST_CALL)
 					chk_out()
 					if(whitespace(cst->c)) _cmp_whitespace(cst);
 					if(cst->c != '(') err(__LINE__)
@@ -998,6 +1005,27 @@ do_else:
 					chk_state(ST_0|ST_NUM_OP)
 					_cmp_emit0(cst,OP_NULL);
 					_cmp_stack(cst,1);
+					continue;
+				case 8:		// and
+					chk_state(ST_ALPHA|ST_STR|ST_VAR|ST_IF|ST_CALL)
+					coff = cst->code_next;
+					_cmp_emitIs(cst,OP_BZ,0);
+					type = _cmp_expr(cst,TP_NUM,NEST_EXPR);
+					_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));
+					state = ST_0;
+					continue;
+				case 9:		// or
+					chk_state(ST_ALPHA|ST_STR|ST_VAR|ST_IF|ST_CALL)
+					coff = cst->code_next;
+					_cmp_emitIs(cst,OP_BNZ,0);
+					type = _cmp_expr(cst,TP_NUM,NEST_EXPR);
+					_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));
+					state = ST_0;
+					continue;
+				case 10:	// not
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_IF|ST_CALL)
+					type = _cmp_expr(cst,TP_NUM,NEST_EXPR);
+					_cmp_emit0(cst,OP_NOT);
 					continue;
 				default:
 					err(__LINE__)

@@ -144,6 +144,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_REM";
 	case OP_IMM:
 		return "OP_IMM";
+	case OP_BNZ:
+		return "OP_BNZ";
 	case OP_BZ:
 		return "OP_BZ";
 	case OP_BR:
@@ -178,6 +180,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CMV";
 	case OP_FMV:
 		return "OP_FMV";
+	case OP_NOT:
+		return "OP_NOT";
 
 	default:
 		return "OP_ILLEGAL";
@@ -275,6 +279,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 		case OP_NULL:
 		case OP_CLEAR:
 		case OP_CAT:
+		case OP_NOT:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -351,6 +356,7 @@ static void _rt_dump_function(st_ptr app, st_ptr* root)
 			printf("%-10s %d %04d\n",_rt_opc_name(opc),tmpuchar,tmpushort + (uint)bptr - (uint)bptr2);
 			break;
 
+		case OP_BNZ:
 		case OP_BZ:
 		case OP_BR:
 			// emit Is (branch forward)
@@ -471,6 +477,7 @@ static struct _rt_invocation
 	uchar* ip;
 	st_ptr context;
 	uint   error;
+	uchar  in_expr;
 };
 
 static struct _rt_s_int
@@ -825,6 +832,7 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 
 					ret_inv->sp->chk.type = STACK_DIRECT_OUT;
 					ret_inv->sp->chk.is_ptr = 0;
+					ret_inv->in_expr = 1;
 
 					_rt_invoke(ret_inv,t,config);
 
@@ -936,6 +944,7 @@ static uint _rt_copy_tree(task* t, st_ptr* config, st_ptr* to, st_ptr* from)
 				{
 					struct _rt_invocation* ret_inv;
 					_rt_create_invocation(t,0,*from,&ret_inv);
+					ret_inv->in_expr = 1;
 
 					_rt_make_assign_ref(ret_inv->sp,(union _rt_stack*)to);
 
@@ -994,10 +1003,11 @@ static uint _rt_do_copy(task* t, st_ptr* config, st_ptr* to, union _rt_stack* fr
 		struct _rt_list* list = from->list.list;
 		while(list)
 		{
-			uint ret = _rt_do_copy(t,config,to,(union _rt_stack*)(list + 1));
-			if(ret) return ret;
+			uint ret;
 			if(!st_is_empty(to))
 				st_insert(t,to,HEAD_NEXT,HEAD_SIZE);
+			ret = _rt_do_copy(t,config,to,(union _rt_stack*)(list + 1));
+			if(ret) return ret;
 			list = list->next;
 		}
 		}
@@ -1039,7 +1049,7 @@ static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, cons
 		struct _rt_list* list = from->list.list;
 		while(list)
 		{
-			uint ret = _rt_do_out(t,to,(union _rt_stack*)(list + 1),last);
+			uint ret = _rt_do_out(t,to,(union _rt_stack*)(list + 1),last && list->next == 0);
 			if(ret) return ret;
 			list = list->next;
 		}
@@ -1094,13 +1104,16 @@ static void _rt_move(struct _rt_invocation** inv, task* t, union _rt_stack* sp, 
 
 		switch(header[1])
 		{
-		case 'E':{
+		case 'E':
+		case 'F':
+			{
 			struct _rt_invocation* ret_inv;
 
 			_rt_create_invocation(t,&base,ptr,&ret_inv);
 
 			_rt_make_assign_ref(ret_inv->sp,sp);
 			ret_inv->parent = *inv;
+			ret_inv->in_expr = 1;
 			*inv = ret_inv;
 			}
 			break;
@@ -1327,6 +1340,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			inv->ip += tmpushort;
 
 			tmpint = _rt_create_invocation(t,&inv->sp->ptr,tmpptr,&cl);
+			cl->in_expr = inv->in_expr;
 			cl->parent = inv;
 
 			_rt_make_inv_ref(inv->sp,cl);
@@ -1523,10 +1537,11 @@ do_move:
 				_rt_next_list(t,inv->sp - 1,inv->sp);
 			break;
 		case STACK_PTR:	// copy-to
-			if(_rt_err(inv,_rt_do_copy(t,config,&(inv->sp - 1)->ptr,inv->sp)))
-				break;
 			if(!st_is_empty(&(inv->sp - 1)->ptr))
 				st_insert(t,&(inv->sp - 1)->ptr,HEAD_NEXT,HEAD_SIZE);
+
+			if(_rt_err(inv,_rt_do_copy(t,config,&(inv->sp - 1)->ptr,inv->sp)))
+				break;
 			break;
 		case STACK_DIRECT_OUT: // output
 			_rt_err(inv,_rt_do_out_tree(t,config,inv->sp));
@@ -1537,6 +1552,8 @@ do_move:
 		inv->sp--;
 		break;
 	case OP_CLEAR:
+		if(inv->in_expr)	// no updates in expr (or call-from-expr)
+			return __LINE__;
 		st_delete(t,&inv->sp->ptr,0,0);	// all clear before assign
 		break;
 
@@ -1565,6 +1582,24 @@ do_move:
 			inv->ip += tmpushort;
 		break;
 
+	case OP_NOT:
+		tmpuchar = _rt_get_type(inv->sp);
+		_rt_make_int(inv->sp,(tmpuchar == STACK_NULL ||
+			(tmpuchar == STACK_INT && inv->sp->sint.value == 0) ||
+			(tmpuchar == STACK_PTR && st_is_empty(&inv->sp->ptr)))? 1 : 0);
+		break;
+	case OP_BNZ:
+		// emit Is (branch forward conditional)
+		tmpushort = *((ushort*)inv->ip);
+		inv->ip += sizeof(ushort);
+		tmpuchar = _rt_get_type(inv->sp);
+
+		if((tmpuchar == STACK_INT && inv->sp->sint.value != 0) ||
+			(tmpuchar == STACK_PTR && !st_is_empty(&inv->sp->ptr)) ||
+			 tmpuchar != STACK_NULL)
+			inv->ip += tmpushort;
+		inv->sp--;
+		break;
 	case OP_BZ:
 		// emit Is (branch forward conditional)
 		tmpushort = *((ushort*)inv->ip);
@@ -1632,6 +1667,8 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 	inv->sp->chk.type = STACK_DIRECT_OUT;
 	inv->sp->chk.is_ptr = 0;
 	inv->sp->chk.data = 0;
+
+	inv->in_expr = 0;
 
 	t->output->start(t);	// begin output
 	// .. and invoke
