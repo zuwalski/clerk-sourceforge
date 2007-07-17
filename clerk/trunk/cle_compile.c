@@ -594,7 +594,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			_cmp_emit0(cst,OP_WIDX);
 			state = ST_ALPHA;
 			break;
-		case '$':
+		case '$':							// EXIT
 			{
 				struct _cmp_var* var = _cmp_var(cst);
 				if(var)
@@ -613,14 +613,14 @@ static void _cmp_new(struct _cmp_state* cst)
 			}
 			state = ST_VAR;
 			continue;
-		case ';':
+		case ';':							// ADD ',' List constructor
 			chk_state(ST_ALPHA|ST_VAR)
 			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);
 			if(level == 0) return;
 			state = ST_0;
 			break;
-		case '.':
+		case '.':							// ONLY Alpha -> build path incl dots
 			chk_state(ST_ALPHA|ST_VAR)
 			state = ST_DOT;
 			break;
@@ -743,13 +743,13 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			_cmp_op_push(cst,OP_LT,1);
 			continue;
 		case '=':
-			if(nest & NEST_EXPR)
+			if(nest & NEST_EXPR)			// EXIT -> '==' for eq
 			{
 				chk_state(ST_ALPHA|ST_VAR|ST_NUM|ST_CALL)
 				_cmp_op_push(cst,OP_EQ,1);
 				state = ST_NUM_OP;
 			}
-			else
+			else						// NO assign to static struct eg. st_apha = expr
 			{
 				if(nest) err(__LINE__)	// assign
 				chk_state(ST_ALPHA|ST_VAR)
@@ -762,7 +762,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			}
 			break;
 
-		case '(':
+		case '(':							// st_alpha|st_var -> function-call
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_CALL)
 			chk_out()
 			_cmp_op_push(cst,0,0xFF);
@@ -826,7 +826,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			_cmp_str(cst,state == ST_STR);
 			state = ST_STR;
 			continue;
-		case '{':
+		case '{':					// state != st_0 -> new-constructor
 			chk_state(ST_0)
 			level++;
 			cst->glevel++;
@@ -834,7 +834,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			break;
 		case '}':
 		case ';':
-		case ',':
+		case ',':					// ',' list-constructor
 			_cmp_op_clear(cst);
 			if((nest & NEST_EXPR) == 0 && (state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)))
 			{

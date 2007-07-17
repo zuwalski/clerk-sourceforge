@@ -64,7 +64,7 @@ typedef struct cle_output
 	event_pop   pop;
 	event_push  push;
 	event_name  name;
-	event_data  data;
+//	event_data  data;
 	event_next  next;
 } cle_output;
 

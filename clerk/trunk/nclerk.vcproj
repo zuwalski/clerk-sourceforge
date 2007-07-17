@@ -163,6 +163,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_input.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_iterate.c"
 				>
 			</File>
