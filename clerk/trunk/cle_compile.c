@@ -587,21 +587,45 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 static void _cmp_for(struct _cmp_state* cst)
 {
 	uint count = 0;
+	uint coff  = cst->code_next;
+	_cmp_emitIc(cst,OP_AVARS,0);	// for-assign-vars
+
 	do
 	{
 		if(whitespace(cst->c)) _cmp_whitespace(cst);
 
 		if(cst->c == '$')
 		{
-			count++;
+			uint len;
+			_cmp_nextc(cst);
+			len = _cmp_name(cst);
+			if(len > 0)
+			{
+				struct _cmp_var* var = _cmp_find_var(cst,len);
+				if(var == 0)
+					var = _cmp_def_var(cst);
+
+				_cmp_check_code(cst,cst->code_next + 1);
+				cst->code[cst->code_next++] = var? var->id : 0;
+
+				count++;
+			}
+			else
+			{
+				err(__LINE__)
+				break;
+			}
 		}
+		else err(__LINE__)
 
 		if(whitespace(cst->c)) _cmp_whitespace(cst);
 	}
 	while(cst->c == ',');
 	if(cst->c != '=') err(__LINE__)
-	if(count == 0) err(__LINE__)
+	cst->code[coff + 1] = count;
+
 	_cmp_nextc(cst);
+	if(_cmp_expr(cst,TP_ANY,NEST_EXPR) != 'd') err(__LINE__)
 }
 
 static void _cmp_it_expr(struct _cmp_state* cst)
@@ -1014,8 +1038,10 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					chk_state(ST_DOT)
 					{
 						uint loop_coff = cst->code_next;
+						cst->glevel++;
 						_cmp_it_expr(cst);
 						_cmp_fwd_loop(cst,type,loop_coff,nest,OP_BZ);	// OP_EACH
+						_cmp_free_var(cst);
 					}
 					state = ST_0;
 					break;
@@ -1023,8 +1049,10 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					{
 						uint loop_coff = cst->code_next;
+						cst->glevel++;
 						_cmp_for(cst);
 						_cmp_fwd_loop(cst,type,loop_coff,nest,OP_BZ);	// OP_FOR
+						_cmp_free_var(cst);
 					}
 					state = ST_0;
 					break;
