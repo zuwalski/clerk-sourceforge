@@ -86,7 +86,7 @@ uint cle_out_initstdout(cle_output* out)
 {
 	out->data  = _std_out_data;
 	out->end   = _std_out_end;
-	out->name  = _std_out_name;
+//	out->name  = _std_out_name;
 	out->next  = _std_out_next;
 	out->pop   = _std_out_pop;
 	out->push  = _std_out_push;

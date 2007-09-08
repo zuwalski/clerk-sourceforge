@@ -53,7 +53,7 @@ typedef int (*event_start)(task*);
 typedef int (*event_end)(task*);
 typedef int (*event_pop)(task*);
 typedef int (*event_push)(task*);
-typedef int (*event_name)(task*,cdat,uint);
+//typedef int (*event_name)(task*,cdat,uint);
 typedef int (*event_data)(task*,cdat,uint);
 typedef int (*event_next)(task*);
 
@@ -63,8 +63,8 @@ typedef struct cle_output
 	event_end   end;
 	event_pop   pop;
 	event_push  push;
-	event_name  name;
-//	event_data  data;
+//	event_name  name;
+	event_data  data;
 	event_next  next;
 } cle_output;
 
@@ -114,6 +114,8 @@ uint it_prev_eq(st_ptr* pt, it_ptr* it);
 
 /* Task functions */
 task* tk_create_task(task* parent, cle_output* out);
+
+cle_output* tk_getoutput(task* t);
 
 void tk_drop_task(task* t);
 

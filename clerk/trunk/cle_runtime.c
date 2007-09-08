@@ -804,7 +804,7 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 	{
 		if(it.kdata[0])	// skip headers
 		{
-			ret = t->output->name(t,it.kdata,it.kused);
+			ret = t->output->data(t,it.kdata,it.kused);
 			if(ret) break;
 			ret = t->output->push(t);
 			if(ret) break;
@@ -1214,7 +1214,7 @@ static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, 
 		break;
 	case STACK_DIRECT_OUT:
 		// gen. name-event
-		tmpint = t->output->name(t,name,length);
+		tmpint = t->output->data(t,name,length);
 		if(tmpint) return tmpint;
 		if(push)
 		{
@@ -1410,7 +1410,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			break;
 		case STACK_DIRECT_OUT:
 			// gen. name-event
-			_rt_err(inv,t->output->name(t,str,len));
+			_rt_err(inv,t->output->data(t,str,len));
 			break;
 		default:
 			_rt_sys_error(inv,__LINE__);

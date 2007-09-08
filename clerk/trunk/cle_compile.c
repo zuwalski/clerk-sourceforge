@@ -109,6 +109,7 @@ static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","send",
 	"var","new","each","for","break","and","or","not","null",
 	"handle","raise","switch","case","default",0
+//	"application","type","extends","as","num","text","time","tree","list","data","event",0
 };
 
 #define KW_MAX_LEN 6
@@ -149,11 +150,13 @@ static struct _cmp_buildin
 };
 
 static const struct _cmp_buildin buildins[] = {
+	{"event",0,OP_NULL,0,0},			// register event-handler on object
+	{"void",OP_NULL,0,0,0},				// throw away values
 	{"recv",OP_NULL,0,0,0},				// recieve data-structure from event-queue
-	{"get",OP_NULL,0,0,0},				// recieve next piece from event-queue
-	{"delete",OP_NULL,OP_NULL,0,0},		// delete object or delete sub-tree
-	{"first",OP_NULL,0,0,0},
-	{"last",OP_NULL,0,0,0}
+	{"get",OP_NULL,0,OP_NULL,0},		// (raw)recieve next piece from event-queue
+	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
+	{"first",0,OP_NULL,0,0},
+	{"last",0,OP_NULL,0,0}
 };
 
 static void print_err(int line)
@@ -212,10 +215,10 @@ static int _cmp_keyword(const char* buffer)
 	for(i = 0; keywords[i]; i++)
 	{
 		if(strcmp(buffer,keywords[i]) == 0)
-		return i;
+		return i + 1;
 	}
 
-	return -1;
+	return 0;
 }
 
 static const struct _cmp_buildin* _cmp_buildins(const char* buffer)
@@ -688,10 +691,66 @@ static void _cmp_for(struct _cmp_state* cst)
 	if(_cmp_expr(cst,TP_ANY,NEST_EXPR) != 'd') err(__LINE__)
 }
 
-static void _cmp_it_expr(struct _cmp_state* cst)
-{}
-
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
+
+/*
+* path.+|-$bindvar{path_must_exsist;other.$endvar;+|-*.$x;}
+*/
+static void _cmp_it_expr(struct _cmp_state* cst)
+{
+	uint state = ST_0;
+	uint level = 0;
+
+	while(1)
+	{
+		switch(cst->c)
+		{
+		case '+':
+		case '-':
+			chk_state(ST_0|ST_DOT)
+			break;
+		case '{':
+			chk_state(ST_0|ST_ALPHA|ST_VAR)
+			level++;
+			state = ST_0;
+			break;
+		case '}':
+			chk_state(ST_0)
+			if(level > 0) level--;
+			else err(__LINE__)
+			if(level == 0) return;
+			state = ST_0;
+			break;
+		case ';':
+			chk_state(ST_ALPHA|ST_VAR)
+			if(level == 0) return;
+			state = ST_0;
+			break;
+		case '.':
+			chk_state(ST_ALPHA|ST_VAR)
+			state = ST_DOT;
+			break;
+		case '$':
+			chk_state(ST_0|ST_DOT)
+			state = ST_VAR;
+			break;
+		case '*':
+			chk_state(ST_0|ST_DOT)
+			break;
+		default:
+			if(alpha(cst->c))
+			{
+				uint len = _cmp_name(cst);
+				if(len <= KW_MAX_LEN && _cmp_keyword(cst->opbuf + cst->top) != 0) err(__LINE__)
+			}
+			else
+			{
+				err(__LINE__)
+				return;
+			}
+		}
+	}
+}
 
 static void _cmp_new(struct _cmp_state* cst)
 {
@@ -754,7 +813,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			if(alpha(cst->c))
 			{
 				uint len = _cmp_name(cst);
-				if(len <= KW_MAX_LEN && _cmp_keyword(cst->opbuf + cst->top) != -1) err(__LINE__)
+				if(len <= KW_MAX_LEN && _cmp_keyword(cst->opbuf + cst->top) != 0) err(__LINE__)
 				switch(state)
 				{
 				case ST_0:
@@ -932,7 +991,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				chk_state(ST_0|ST_STR)
 				chk_out()
 				_cmp_op_push(cst,0,0xFF);
-				_cmp_next(cst);
+				_cmp_nextc(cst);
 				if(_cmp_expr(cst,type,NEST_EXPR) != ')') err(__LINE__)
 			}
 			state = ST_ALPHA;
@@ -946,7 +1005,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				_cmp_stack(cst,1);
 			}
 			_cmp_op_push(cst,0,0xFF);
-			_cmp_next(cst);
+			_cmp_nextc(cst);
 			if(_cmp_expr(cst,TP_STR|TP_NUM,NEST_EXPR) != ']') err(__LINE__);
 			_cmp_emit0(cst,OP_RIDX);
 			_cmp_stack(cst,-1);
@@ -1174,6 +1233,11 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					_cmp_stack(cst,-1);
 					state = ST_0;
 					continue;
+				case KW_SWITCH:
+				case KW_CASE:
+				case KW_DEFAULT:
+					err(__LINE__)
+					continue;
 				default:
 					if(cst->c == ':')	// load from config
 					{
@@ -1285,7 +1349,7 @@ static int _cmp_header(struct _cmp_state* cst)
 			if(cst->c == '=')
 			{
 				_cmp_stack(cst,1);
-				_cmp_next(cst);
+				_cmp_nextc(cst);
 				_cmp_expr(cst,TP_ANY,PURE_EXPR);
 				// update branch-offset
 				_cmp_update_imm(cst,coff + 2,cst->code_next - coff - 2 - sizeof(ushort));

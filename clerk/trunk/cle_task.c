@@ -152,3 +152,8 @@ void tk_drop_task(task* t)
 
 	tk_mfree(t);
 }
+
+cle_output* tk_getoutput(task* t)
+{
+	return t->output;
+}
