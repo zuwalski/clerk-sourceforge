@@ -66,8 +66,6 @@ typedef struct ptr
 typedef struct task
 {
 	page_wrap* stack;
-	void* outputdata;
-	cle_output* output;
 } task;
 
 #define GOKEY(pag,off) ((key*)((char*)&((pag)->pg) + (off)))

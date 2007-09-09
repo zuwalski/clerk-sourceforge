@@ -795,7 +795,7 @@ static void _rt_free_value(union _rt_stack* sp)
 
 static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 {
-	it_ptr it;
+/*	it_ptr it;
 	st_ptr pt;
 	uint ret = 0;
 
@@ -871,7 +871,8 @@ static uint _rt_direct_tree(task* t, st_ptr* config, st_ptr root)
 		}
 	}
 
-	return ret? ret : t->output->pop(t);
+	return ret? ret : t->output->pop(t);*/
+	return 0;
 }
 
 static uint _rt_do_out_tree(task* t, st_ptr* config, union _rt_stack* from)
@@ -884,16 +885,16 @@ static uint _rt_do_out_tree(task* t, st_ptr* config, union _rt_stack* from)
 		return _rt_direct_tree(t,config,from->ptr);
 	case STACK_INT:{
 		char buffer[sizeof(int) * 2 + 1];
-		uint ret;
+		uint ret = 0;
 		_rt_print_int_hex(from->sint.value,buffer);
-		ret = t->output->data(t,buffer,sizeof(buffer));
+//		ret = t->output->data(t,buffer,sizeof(buffer));
 		if(ret) return ret;
-		return t->output->pop(t);
+//		return t->output->pop(t);
 		}
 	case STACK_VALUE:{
-		uint ret = t->output->data(t,from->value.value->data,from->value.value->length);
-		if(ret) return ret;
-		return t->output->pop(t);
+//		uint ret = t->output->data(t,from->value.value->data,from->value.value->length);
+//		if(ret) return ret;
+//		return t->output->pop(t);
 		}
 	case STACK_LIST:{
 		struct _rt_list* list = from->list.list;
@@ -1044,7 +1045,7 @@ static uint _rt_do_concat(task* t, union _rt_stack* result, union _rt_stack* cat
 
 static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, const uchar last)
 {
-	int ret;
+	int ret = 0;
 	if(_rt_get_type(from) == STACK_LIST){
 		struct _rt_list* list = from->list.list;
 		while(list)
@@ -1081,11 +1082,11 @@ static uint _rt_do_out(task* t, union _rt_stack* to, union _rt_stack* from, cons
 			return __LINE__;
 		if(last && to->chk.data)
 		{
-			ret = t->output->next(t);
+//			ret = t->output->next(t);
 			if(ret) return ret;
 		}
 		to->chk.data = 1;
-		return t->output->data(t,from->value.value->data,from->value.value->length);
+//		return t->output->data(t,from->value.value->data,from->value.value->length);
 	}
 	return __LINE__;
 }
@@ -1193,7 +1194,7 @@ static uint _rt_equal(union _rt_stack* sp)
 
 static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, const uint length, const uchar push)
 {
-	int tmpint;
+	int tmpint = 0;
 	switch(_rt_get_type(sp))
 	{
 	case STACK_PTR:
@@ -1214,11 +1215,11 @@ static uint _rt_insert(task* t, st_ptr* tmpptr, union _rt_stack* sp, cdat name, 
 		break;
 	case STACK_DIRECT_OUT:
 		// gen. name-event
-		tmpint = t->output->data(t,name,length);
+//		tmpint = t->output->data(t,name,length);
 		if(tmpint) return tmpint;
 		if(push)
 		{
-			tmpint = t->output->push(t);
+//			tmpint = t->output->push(t);
 			if(tmpint) return tmpint;
 		}
 		tmpptr->key = 0;
@@ -1378,7 +1379,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 		if(_rt_get_type(inv->sp) == STACK_DIRECT_OUT)
 		{
 			// gen. pop-event.
-			tmpint = t->output->pop(t);
+//			tmpint = t->output->pop(t);
 			if(tmpint) return tmpint;
 		}
 		else
@@ -1410,7 +1411,7 @@ static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config)
 			break;
 		case STACK_DIRECT_OUT:
 			// gen. name-event
-			_rt_err(inv,t->output->data(t,str,len));
+//			_rt_err(inv,t->output->data(t,str,len));
 			break;
 		default:
 			_rt_sys_error(inv,__LINE__);
@@ -1670,13 +1671,13 @@ int rt_do_call(task* t, st_ptr* app, st_ptr* root, st_ptr* fun, st_ptr* param)
 
 	inv->in_expr = 0;
 
-	t->output->start(t);	// begin output
+//	t->output->start(t);	// begin output
 	// .. and invoke
 	ret = _rt_invoke(inv,t,app);
 
 	if(ret)
 		_rt_release_invocation(inv);
-	else
-		t->output->end(t);		// end output
+//	else
+//		t->output->end(t);		// end output
 	return ret;
 }
