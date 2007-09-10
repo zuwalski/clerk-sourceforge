@@ -209,6 +209,7 @@ static void _cmp_check_code(struct _cmp_state* cst, uint top)
 	}
 }
 
+// TODO: replace by static-hash
 static int _cmp_keyword(const char* buffer)
 {
 	int i;
@@ -221,6 +222,7 @@ static int _cmp_keyword(const char* buffer)
 	return 0;
 }
 
+// TODO: replace by static-hash
 static const struct _cmp_buildin* _cmp_buildins(const char* buffer)
 {
 	int i;
