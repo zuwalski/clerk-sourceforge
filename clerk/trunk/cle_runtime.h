@@ -20,13 +20,6 @@
 
 #define ERROR_MAX 20
 
-#define HEAD_SIZE 2
-#define HEAD_FUNCTION "\0F"
-#define HEAD_EXPR "\0E"
-#define HEAD_INT "\0I"
-#define HEAD_STR "\0S"
-#define HEAD_NEXT "\0N"
-
 enum cle_opcode
 {
 	OP_ILLEGAL = 0,

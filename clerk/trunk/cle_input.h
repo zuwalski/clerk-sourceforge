@@ -18,20 +18,56 @@
 
 #include "cle_clerk.h"
 
+/* event-description struct */
+typedef struct cle_input
+{
+	void* internaldata;
+	cdat instance;
+	uint inst_len;
+	cdat appid;
+	uint app_len;
+	cdat eventid;
+	uint evnt_len;
+	cdat sessionid;
+	uint ses_len;
+}
+cle_input;
+
+/* event input functions */
+typedef struct _ipt_internal _ipt;
+
+int cle_data(_ipt* inpt, cdat data, uint length);
+int cle_pop(_ipt* inpt);
+int cle_push(_ipt* inpt);
+int cle_end(_ipt* inpt, cdat code, uint length);
+_ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata);
+int cle_next(_ipt* inpt);
+
+typedef struct sys_handler_data
+{
+	cle_output* response;
+	void* respdata;
+	void* data;
+	task* t;
+	st_ptr instance;
+	uint next_call;
+}
+sys_handler_data;
+
 /* system extension-handlers */
 typedef struct cle_syshandler
 {
 	const char* handlerid;
 	uint id_length;
 
-	void* (*do_setup)(cle_output*,void*,cdat,uint);
-	int (*do_next)(void*,st_ptr*);
-	int (*do_end)(void*,cdat,uint);
+	int (*do_setup)(sys_handler_data*);
+	int (*do_next)(sys_handler_data*,st_ptr,uint);
+	int (*do_end)(sys_handler_data*,cdat,uint);
 
 	struct cle_syshandler* next;
 }
 cle_syshandler;
 
-void cle_add_sys_handler(cle_syshandler* handler);
+int cle_add_sys_handler(cle_syshandler* handler);
 
 #endif

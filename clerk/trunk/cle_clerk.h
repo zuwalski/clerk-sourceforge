@@ -48,24 +48,14 @@ typedef struct it_ptr
 } it_ptr;
 
 /* output interface begin */
-
-typedef int (*event_start)(task*);
-typedef int (*event_end)(task*);
-typedef int (*event_pop)(task*);
-typedef int (*event_push)(task*);
-//typedef int (*event_name)(task*,cdat,uint);
-typedef int (*event_data)(task*,cdat,uint);
-typedef int (*event_next)(task*);
-
 typedef struct cle_output
 {
-	event_start start;
-	event_end   end;
-	event_pop   pop;
-	event_push  push;
-//	event_name  name;
-	event_data  data;
-	event_next  next;
+	int (*start)(void*);
+	int (*end)(void*,cdat,uint);
+	int (*pop)(void*);
+	int (*push)(void*);
+	int (*data)(void*,cdat,uint);
+	int (*next)(void*);
 } cle_output;
 
 /* output interface end */
@@ -138,5 +128,16 @@ void unimplm();
 extern uint page_size;
 extern uint resize_count;
 extern uint overflow_size;
+
+#define HEAD_SIZE 2
+#define HEAD_FUNCTION "\0F"
+#define HEAD_EXPR "\0E"
+#define HEAD_INT "\0I"
+#define HEAD_STR "\0S"
+#define HEAD_NEXT "\0N"
+
+#define HEAD_TYPE "\0T"
+#define HEAD_APPS  "\0A"
+
 
 #endif

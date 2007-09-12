@@ -15,6 +15,7 @@
 */
 #include "cle_runtime.h"
 #include "cle_struct.h"
+#include "cle_input.h"
 
 #define BUFFER_GROW 256
 
@@ -1463,4 +1464,41 @@ int cmp_expr(FILE* f, task* t, st_ptr* ref)
 
 	_cmp_end(&cst);
 	return getc(f);				// OUT!
+}
+
+/*
+** SYSTEM-HANDLERS FOR INPUT-SYSTEM
+**
+** compiler needs to handle the following system-events:
+** - set field (sf)
+** eventid names type
+** 1.next: path.typename
+** 2.next: field.path
+** 3.next: data [(... -> function, =... -> expr, 0-9 -> number else: text]
+** x.next error
+*/
+
+static int _cmp_do_next(sys_handler_data* hd, st_ptr pt, uint depth)
+{
+	switch(hd->next_call)
+	{
+	case 0:		// type
+		// the type MUST exist
+	case 1:		// field
+		// if field doesnt exsist - create it
+	case 2:		// value
+		// parse and compile fieldvalue
+		break;
+	default:
+		return -1;
+	}
+
+	return 0;
+}
+
+static cle_syshandler handle_sf = {"sf",2,0,_cmp_do_next,0,0};
+
+int cmp_setup()
+{
+	return cle_add_sys_handler(&handle_sf);
 }

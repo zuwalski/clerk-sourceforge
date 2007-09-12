@@ -40,37 +40,34 @@ typedef struct cle_output
 } cle_output;
 */
 
-int _std_out_start(task* t)
+int _std_out_start(void* d)
 {
 	puts("Output start:");
 	return 0;
 }
 
-int _std_out_end(task* t)
+int _std_out_end(void* d, cdat code, uint length)
 {
-	puts("Output end:");
+	if(length)
+		printf("Output end (%s)\n",code);
+	else
+		puts("Output end:");
 	return 0;
 }
 
-int _std_out_pop(task* t)
+int _std_out_pop(void* d)
 {
 	puts("}");
 	return 0;
 }
 
-int _std_out_push(task* t)
+int _std_out_push(void* d)
 {
 	puts("{");
 	return 0;
 }
 
-int _std_out_name(task* t, cdat data, uint length)
-{
-	puts(data);
-	return 0;
-}
-
-int _std_out_data(task* t, cdat data, uint length)
+int _std_out_data(void* d, cdat data, uint length)
 {
 	printf("%s",data);
 	return 0;
@@ -86,7 +83,6 @@ uint cle_out_initstdout(cle_output* out)
 {
 	out->data  = _std_out_data;
 	out->end   = _std_out_end;
-//	out->name  = _std_out_name;
 	out->next  = _std_out_next;
 	out->pop   = _std_out_pop;
 	out->push  = _std_out_push;
