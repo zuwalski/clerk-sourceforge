@@ -21,7 +21,7 @@
 */
 
 // structs
-static struct _ptr_stack
+struct _ptr_stack
 {
 	struct _ptr_stack* prev;
 	st_ptr pt;
@@ -72,7 +72,6 @@ static int instance_setup = 1;
 
 _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 {
-	struct _handler_list* handlers;
 	_ipt* ipt;
 	task* t;
 
@@ -82,11 +81,6 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 
 	if(inpt->eventid == 0 || inpt->evnt_len == 0)
 		return 0;
-
-	// first: Does anyone want this event? And are the sender allowed?
-	// if not just throw it away
-
-	// ...
 
 	// TEST TEST TEST TEST
 	if(instance_setup)
@@ -114,6 +108,9 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 	ipt->sys.response = (response != 0)? response : &_def_output_handler;
 	ipt->sys.respdata = responsedata;
 
+	// first: Does anyone want this event? And are the sender allowed?
+	// if not just throw it away
+
 	// check for system-events. Application-name 0-length
 	if(inpt->app_len == 0)
 	{
@@ -136,9 +133,22 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 
 		ipt->system = handler;
 	}
-	// application event-handlers
+	// application event-handlers/filters
 	else
 	{
+		st_ptr app = ipt->sys.instance;
+		if(!st_move(&app,HEAD_APPS,HEAD_SIZE))
+		{
+			if(!st_move(&app,inpt->appid,inpt->app_len))
+			{
+				if(!st_move(&app,HEAD_EVENT,HEAD_SIZE))
+				{
+					if(!st_move(&app,inpt->eventid,inpt->evnt_len))
+					{
+					}
+				}
+			}
+		}
 	}
 
 	// create blank toplevel element

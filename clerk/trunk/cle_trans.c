@@ -18,14 +18,14 @@
 
 #define BUFFERSIZE (PAGE_SIZE/2)
 
-static struct _ptr_stack
+struct _ptr_stack
 {
 	struct _ptr_stack* prev;
 	st_ptr pt;
 	uint code;
 };
 
-static struct _the_stack
+struct _the_stack
 {
 	struct _ptr_stack* ps;
 	struct _ptr_stack* psfree;

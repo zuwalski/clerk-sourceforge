@@ -40,7 +40,7 @@
 #define TP_TREE 2
 #define TP_STR 4
 
-static struct _cmp_state
+struct _cmp_state
 {
 	task* t;
 	FILE* f;
@@ -88,7 +88,7 @@ static struct _cmp_state
 	ushort stringidx;
 };
 
-static struct _cmp_var
+struct _cmp_var
 {
 	uint prev;
 	uint id;
@@ -98,7 +98,7 @@ static struct _cmp_var
 };
 #define PEEK_VAR(v) ((struct _cmp_var*)(cst->opbuf + (v)))
 
-static struct _cmp_op
+struct _cmp_op
 {
 	uint  prev;
 	uchar opc;
@@ -141,7 +141,7 @@ enum cmp_keywords {
 	KW_DEFAULT
 };
 
-static struct _cmp_buildin
+struct _cmp_buildin
 {
 	const char* id;
 	uint opcode_0;

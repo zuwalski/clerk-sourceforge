@@ -18,7 +18,7 @@
 #include "cle_clerk.h"
 #include "cle_struct.h"
 
-static struct _st_lkup_res
+struct _st_lkup_res
 {
 	page_wrap* pg;
 	key*	prev;

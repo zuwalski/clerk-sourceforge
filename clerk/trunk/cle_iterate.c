@@ -20,7 +20,7 @@
 
 /* ---------- iterator -------------- */
 
-static struct _st_lkup_it_res
+struct _st_lkup_it_res
 {
 	page_wrap* pg;
 	page_wrap* low_pg;

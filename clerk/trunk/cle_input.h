@@ -21,17 +21,32 @@
 /* event-description struct */
 typedef struct cle_input
 {
-	void* internaldata;
-	cdat instance;
-	uint inst_len;
 	cdat appid;
 	uint app_len;
 	cdat eventid;
 	uint evnt_len;
-	cdat sessionid;
-	uint ses_len;
 }
 cle_input;
+
+// session
+typedef struct cle_session
+{
+	int dummy;
+}
+cle_session;
+
+cle_session* cle_get_session(cdat sessionid, uint length);
+cle_session* cle_create_session();
+void cle_end_session(cle_session* ses);
+
+// instance
+typedef struct cle_instance
+{
+	int dummy;
+}
+cle_instance;
+
+cle_instance* cle_get_instance(cdat instanceid, uint length);
 
 /* event input functions */
 typedef struct _ipt_internal _ipt;

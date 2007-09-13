@@ -26,7 +26,7 @@
 	[...] <- values
 */
 // code-header
-static struct _body_
+struct _body_
 {
 	char body;
 	uchar maxparams;
@@ -451,7 +451,7 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 static union _rt_stack;
 static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config);
 
-static struct _rt_function
+struct _rt_function
 {
 	uchar* code;
 	st_ptr root;
@@ -462,13 +462,13 @@ static struct _rt_function
 	uchar  max_vars;
 };
 
-static struct _rt_buffer
+struct _rt_buffer
 {
 	uchar* data;
 	uint   length;
 };
 
-static struct _rt_invocation
+struct _rt_invocation
 {
 	struct _rt_invocation* parent;
 	struct _rt_function* fun;
@@ -480,23 +480,23 @@ static struct _rt_invocation
 	uchar  in_expr;
 };
 
-static struct _rt_s_int
+struct _rt_s_int
 {
 	int value;
 };
 
-static struct _rt_s_inv_ref
+struct _rt_s_inv_ref
 {
 	struct _rt_invocation* inv;
 };
 
-static struct _rt_s_assign_ref
+struct _rt_s_assign_ref
 {
 	union _rt_stack* var;
 	long _fill;
 };
 
-static struct _rt_s_assign_many
+struct _rt_s_assign_many
 {
 	//struct _rt_s_assign_ref* ref;
 	void*  _pfill;
@@ -505,30 +505,30 @@ static struct _rt_s_assign_many
 	uchar  remaining_depth;
 };
 
-static struct _rt_list
+struct _rt_list
 {
 	struct _rt_list* last;
 	struct _rt_list* next;
 };
 
-static struct _rt_s_list
+struct _rt_s_list
 {
 	struct _rt_list* list;
 };
 
-static struct _rt_value
+struct _rt_value
 {
 	uchar* data;
 	uint   length;
 	uint   ref;
 };
 
-static struct _rt_s_value
+struct _rt_s_value
 {
 	struct _rt_value* value;
 };
 
-static struct _rt_s_check
+struct _rt_s_check
 {
 	void*  part_pointer;
 	ushort is_ptr;		// place-of-key (if == 0 => special type: see _rt_stack)
@@ -536,7 +536,7 @@ static struct _rt_s_check
 	uchar  data;		// other stuff
 };
 
-static enum _rt_s_types
+enum _rt_s_types
 {
 	STACK_NULL = 0,
 	STACK_PTR,
@@ -549,7 +549,7 @@ static enum _rt_s_types
 	STACK_DIRECT_OUT
 };
 
-static union _rt_stack
+union _rt_stack
 {
 	struct _rt_s_assign_many many;
 	struct _rt_s_assign_ref ref;
@@ -653,7 +653,7 @@ static void _rt_free_se(union _rt_stack* sp, uint count)
 	memset(sp,0,sizeof(union _rt_stack) * count);
 }
 
-static struct _rt_invocation* _rt_release_invocation(struct _rt_invocation* inv)
+struct _rt_invocation* _rt_release_invocation(struct _rt_invocation* inv)
 {
 	struct _rt_invocation* parent = inv->parent;
 	
