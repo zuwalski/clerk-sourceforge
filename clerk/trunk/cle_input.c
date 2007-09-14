@@ -137,17 +137,17 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 	else
 	{
 		st_ptr app = ipt->sys.instance;
-		if(!st_move(&app,HEAD_APPS,HEAD_SIZE))
+
+		if(st_move(&app,HEAD_APPS,HEAD_SIZE))
+			return 0;
+		else if(st_move(&app,inpt->appid,inpt->app_len))
+			return 0;
+		else if(st_move(&app,HEAD_EVENT,HEAD_SIZE))
+			return 0;
+		else if(st_move(&app,inpt->eventid,inpt->evnt_len))
+			return 0;
+		else
 		{
-			if(!st_move(&app,inpt->appid,inpt->app_len))
-			{
-				if(!st_move(&app,HEAD_EVENT,HEAD_SIZE))
-				{
-					if(!st_move(&app,inpt->eventid,inpt->evnt_len))
-					{
-					}
-				}
-			}
 		}
 	}
 

@@ -70,9 +70,29 @@ static void _do_clean(struct _parameters* param)
 static int _do_nt(sys_handler_data* hd, cdat code, uint length)
 {
 	struct _parameters* param = (struct _parameters*)hd->data;
+	int rcode = 0;
+
+	if(hd->next_call == 0 || hd->next_call > 2)
+		rcode = -1;
+	else
+	{
+		st_ptr tps = hd->instance;
+		// create type
+		st_insert(hd->t,&tps,HEAD_TYPE,HEAD_SIZE);
+
+		if(!st_insert(hd->t,&tps,param->value[0],param->vallen[0]))
+			rcode = -2;	// already exsists
+		// extends typename
+		else if(hd->next_call == 2)
+		{
+			st_insert(hd->t,&tps,HEAD_EXTENDS,HEAD_SIZE);
+
+			st_insert(hd->t,&tps,param->value[1],param->vallen[1]);
+		}
+	}
 
 	_do_clean(param);
-	return 0;
+	return rcode;
 }
 
 // move type (end handler)
@@ -81,7 +101,7 @@ static int _do_mt(sys_handler_data* hd, cdat code, uint length)
 	struct _parameters* param = (struct _parameters*)hd->data;
 
 	_do_clean(param);
-	return 0;
+	return -1;			// NOT IMPL.
 }
 
 // move field (end handler)
@@ -90,16 +110,33 @@ static int _do_mf(sys_handler_data* hd, cdat code, uint length)
 	struct _parameters* param = (struct _parameters*)hd->data;
 
 	_do_clean(param);
-	return 0;
+	return -1;			// NOT IMPL.
 }
 
 // delete field (end handler)
 static int _do_df(sys_handler_data* hd, cdat code, uint length)
 {
 	struct _parameters* param = (struct _parameters*)hd->data;
+	int rcode = 0;
+
+	if(hd->next_call == 2)
+	{
+		st_ptr tp = hd->instance;
+
+		if(st_move(&tp,HEAD_TYPE,HEAD_SIZE))
+			rcode = -2;
+		else if(st_move(&tp,param->value[0],param->vallen[0]))
+			rcode = -3;
+		else
+		{
+			st_delete(hd->t,&tp,param->value[1],param->vallen[1]);
+		}
+	}
+	else
+		rcode = -1;
 
 	_do_clean(param);
-	return 0;
+	return rcode;
 }
 
 // delete type
