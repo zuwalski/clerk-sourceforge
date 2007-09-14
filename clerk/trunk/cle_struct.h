@@ -37,14 +37,14 @@ typedef struct page
 	ushort waste;
 } page;
 
-typedef struct page_wrap
+struct page_wrap
 {
 	struct page_wrap* next;
 	overflow* ovf;
 	void*     page_adr;
 	/* from page-header */
 	page pg;
-} page_wrap;
+};
 
 typedef struct key
 {
@@ -63,10 +63,10 @@ typedef struct ptr
 	void*  pg;
 } ptr;
 
-typedef struct task
+struct task
 {
 	page_wrap* stack;
-} task;
+};
 
 #define GOKEY(pag,off) ((key*)((char*)&((pag)->pg) + (off)))
 #define GOPTR(pg,off) ((key*)((char*)(pg)->ovf + (((off) - PAGE_SIZE)<<4)))

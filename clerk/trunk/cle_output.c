@@ -54,7 +54,7 @@ int _std_out_data(void* d, cdat data, uint length)
 	return 0;
 }
 
-int _std_out_next(task* t)
+int _std_out_next(void* t)
 {
 	puts(" , ");
 	return 0;

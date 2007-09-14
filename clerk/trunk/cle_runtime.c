@@ -448,8 +448,7 @@ int rt_do_read(st_ptr* out, st_ptr* app, st_ptr root)
 
 // -------------- RUNTIME -------------------------------------------------------
 
-static union _rt_stack;
-static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config);
+union _rt_stack;
 
 struct _rt_function
 {
@@ -586,6 +585,8 @@ static void _rt_make_null(union _rt_stack* sp)
 {
 	memset(sp,0,sizeof(union _rt_stack));
 }
+
+static uint _rt_invoke(struct _rt_invocation* inv, task* t, st_ptr* config);
 
 #define _rt_get_type(sp) ((sp)->chk.is_ptr? STACK_PTR : (sp)->chk.type)
 
