@@ -18,6 +18,7 @@
 #include "cle_input.h"
 
 #define BUFFER_GROW 256
+#define READ_BUFFER 1000
 
 #define ST_0 1
 #define ST_ALPHA 2
@@ -40,10 +41,17 @@
 #define TP_TREE 2
 #define TP_STR 4
 
+struct _cmp_buffer
+{
+	st_ptr src;
+	uint current,max;
+	char buffer[READ_BUFFER];
+};
+
 struct _cmp_state
 {
+	struct _cmp_buffer* src;
 	task* t;
-	FILE* f;
 	char* opbuf;
 	char* code;
 	char* lastop;
@@ -167,13 +175,40 @@ static void print_err(int line)
 
 #define err(line) {cst->err++;print_err(line);}
 
-static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest);
+static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest);
+
+static int _cmp_next_bf(struct _cmp_buffer* bf)
+{
+	if(bf->current >= bf->max)
+	{
+		bf->max = st_get(&bf->src,bf->buffer,READ_BUFFER);
+
+		bf->current = 1;
+
+		return (bf->max > 0)? bf->buffer[0] : -1;
+	}
+
+	return bf->buffer[bf->current++];
+}
 
 static int _cmp_nextc(struct _cmp_state* cst)
 {
-	cst->c = getc(cst->f);
+	if(cst->c >= 0)
+		cst->c = _cmp_next_bf(cst->src);
+
 	return cst->c;
 }
+
+static int _cmp_comment_bf(struct _cmp_buffer* bf)
+{
+	int c;
+	do {
+		c = _cmp_next_bf(bf);
+	} while(c > 0 && c != '\n' && c != '\r');
+	return c;
+}
+
+#define _cmp_comment(cst) _cmp_comment_bf(cst->src)
 
 static void _cmp_check_buffer(struct _cmp_state* cst, uint top)
 {
@@ -457,7 +492,7 @@ static void _cmp_str(struct _cmp_state* cst, uint app)
 		cst->stringidx++;
 	}
 	
-	app = cle_string(cst->f,cst->t,&cst->cur_string,cst->c,&cst->c,app);
+//	app = cle_string(cst->f,cst->t,&cst->cur_string,cst->c,&cst->c,app);
 	if(app) err(app);
 }
 
@@ -740,6 +775,9 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 		case '*':
 			chk_state(ST_0|ST_DOT)
 			break;
+		case '#':
+			_cmp_comment(cst);
+			break;
 		default:
 			if(alpha(cst->c))
 			{
@@ -807,6 +845,9 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_state(ST_ALPHA)
 			state = ST_DOT;
 			break;
+		case '#':
+			_cmp_comment(cst);
+			break;
 		case ' ':
 		case '\t':
 		case '\n':
@@ -862,7 +903,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			_cmp_op_push(cst,opc,prec);\
 			state = ST_NUM_OP;\
 
-static uint _cmp_block_expr(struct _cmp_state* cst, uint type, uchar nest)
+static int _cmp_block_expr(struct _cmp_state* cst, uint type, uchar nest)
 {
 	uint exittype;
 	cst->glevel++;
@@ -885,7 +926,7 @@ static void _cmp_fwd_loop(struct _cmp_state* cst, uint type, uint loop_coff, uch
 	_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));
 }
 
-static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
+static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 {
 	uint state = ST_0;
 
@@ -895,6 +936,10 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 	{
 		switch(cst->c)
 		{
+		case -1:
+			chk_state(ST_0)
+			if(cst->glevel != 0) err(__LINE__)
+			return -1;
 		case '+':
 			num_op(OP_ADD,4)
 			break;
@@ -1041,6 +1086,9 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 			chk_call()
 			state = ST_DOT;
 			break;
+		case '#':
+			_cmp_comment(cst);
+			break;
 		case ' ':
 		case '\t':
 		case '\n':
@@ -1152,7 +1200,7 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					if(whitespace(cst->c)) _cmp_whitespace(cst);
 					state = _cmp_var_assign(cst,ST_DEF);
 					continue;
-				case KW_NEW:					// .new | new typename(param_list)
+				case KW_NEW:					// .new | new typename(param_list) | new $var(param_list)
 					chk_state(ST_DOT)
 					_cmp_emit0(cst,OP_NULL);	// OP_NEW
 					continue;
@@ -1313,16 +1361,6 @@ static uint _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 static int _cmp_header(struct _cmp_state* cst)
 {
 	st_ptr params;
-	uint len;
-
-	_cmp_nextc(cst);
-
-	// get function name
-	len = _cmp_name(cst);
-	if(!len) return(__LINE__);
-
-	// insert name 
-	st_insert(cst->t,&cst->root,cst->opbuf + cst->top,len);
 
 	// clean and mark expr
 	st_update(cst->t,&cst->root,HEAD_FUNCTION,HEAD_SIZE);
@@ -1333,9 +1371,6 @@ static int _cmp_header(struct _cmp_state* cst)
 
 	params = cst->root;
 	st_insert(cst->t,&params,"P",2);
-
-	// get parameters (MUST follow name like Name(...))
-	if(cst->c != '(') return(__LINE__);
 
 	_cmp_whitespace(cst);
 	if(cst->c == '$')
@@ -1377,12 +1412,12 @@ static int _cmp_header(struct _cmp_state* cst)
 }
 
 // setup _cmp_state
-static void _cmp_init(struct _cmp_state* cst, FILE* f, task* t, st_ptr* ref)
+static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, st_ptr* ref)
 {
 	memset(cst,0,sizeof(struct _cmp_state));	// clear struct. MOST vars have default 0 value
 	// none-0 defaults:
+	cst->src = bf;
 	cst->t = t;
-	cst->f = f;
 	cst->root = *ref;
 	cst->s_max = cst->s_top = 1;	// output-context
 
@@ -1417,12 +1452,12 @@ static void _cmp_end(struct _cmp_state* cst)
 	tk_mfree(cst->code);
 }
 
-int cmp_function(FILE* f, task* t, st_ptr* ref)
+static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 {
 	struct _cmp_state cst;
 	int ret;
 
-	_cmp_init(&cst,f,t,ref);
+	_cmp_init(&cst,bf,t,ref);
 
 	// create header:
 	ret = _cmp_header(&cst);
@@ -1431,7 +1466,7 @@ int cmp_function(FILE* f, task* t, st_ptr* ref)
 		st_ptr anno = cst.root;
 		// create annotations
 		st_insert(t,&anno,"A",2);
-		ret = cle_write(f,t,&anno,0,1);
+//		ret = cle_write(f,t,&anno,0,1);
 		if(ret == 0)
 		{
 			_cmp_nextc(&cst);
@@ -1443,14 +1478,13 @@ int cmp_function(FILE* f, task* t, st_ptr* ref)
 	else cst.err++;
 
 	_cmp_end(&cst);
-	return getc(f);				// OUT!
 }
 
-int cmp_expr(FILE* f, task* t, st_ptr* ref)
+static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 {
 	struct _cmp_state cst;
 
-	_cmp_init(&cst,f,t,ref);
+	_cmp_init(&cst,bf,t,ref);
 
 	// clean and mark expr
 	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
@@ -1460,10 +1494,67 @@ int cmp_expr(FILE* f, task* t, st_ptr* ref)
 	st_insert(t,&cst.strs,"S",2);
 
 	_cmp_nextc(&cst);
-	if(_cmp_block_expr(&cst,TP_ANY,PURE_EXPR) != 'e') {cst.err++; print_err(__LINE__);}
+	if(_cmp_block_expr(&cst,TP_ANY,PURE_EXPR) != -1) {cst.err++; print_err(__LINE__);}
 
 	_cmp_end(&cst);
-	return getc(f);				// OUT!
+}
+
+static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, st_ptr* ref)
+{
+	struct _cmp_buffer bf;
+	// setup buffer
+	bf.src = *src;
+	bf.current = bf.max = 0;
+
+	// read header and find first primary token...
+	while(1)
+	{
+		switch(_cmp_next_bf(&bf))
+		{
+		case '#':
+			_cmp_comment_bf(&bf);
+			continue;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			continue;
+		case '=':	// expr
+			cmp_expr(&bf,t,ref);
+			return 0;
+		case '(':	// function
+			cmp_function(&bf,t,ref);
+			break;
+		case '\"':	// string
+			break;
+		case ':':	// attr-def
+			break;
+		case '0':	// number ...
+		default:
+			return -1;
+		}
+		break;
+	}
+
+	// only whitespace & comments allowed after 'body'
+	while(1)
+	{
+		switch(_cmp_next_bf(&bf))
+		{
+		case -1:
+			return 0;
+		case '#':
+			_cmp_comment_bf(&bf);
+			break;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			break;
+		default:
+			return -1;
+		}
+	}
 }
 
 /*
@@ -1474,29 +1565,71 @@ int cmp_expr(FILE* f, task* t, st_ptr* ref)
 ** eventid names type
 ** 1.next: path.typename
 ** 2.next: field.path
-** 3.next: data [(... -> function, =... -> expr, 0-9 -> number else: text]
+** 3.next: data [(... -> function, =... -> expr, 0-9 -> number else: " text]
 ** x.next error
 */
 
+struct _field
+{
+	st_ptr ptr;
+};
+
+static int _do_setup(sys_handler_data* hd)
+{
+	struct _field* param = (struct _field*)tk_malloc(sizeof(struct _field));
+	hd->data = param;
+
+	param->ptr = hd->instance;
+	return 0;
+}
+
+int _do_end(sys_handler_data* hd, cdat code, uint length)
+{
+	tk_mfree(hd->data);
+	return 0;
+}
+
 static int _cmp_do_next(sys_handler_data* hd, st_ptr pt, uint depth)
 {
+	struct _field* param = (struct _field*)hd->data;
+	char* data;
+	uint length;
+	int rcode = 0;
+
+	if(depth != 0 || hd->next_call > 2)
+		return -1;
+
 	switch(hd->next_call)
 	{
 	case 0:		// type
 		// the type MUST exist
+		if(st_move(&param->ptr,HEAD_TYPE,HEAD_SIZE))
+			return -1;
+
+		data = st_get_all(&pt,&length);
+
+		if(st_move(&param->ptr,data,length))
+			rcode = -1;
+
+		tk_mfree(data);
+		break;
 	case 1:		// field
 		// if field doesnt exsist - create it
+		data = st_get_all(&pt,&length);
+
+		st_insert(hd->t,&param->ptr,data,length);
+
+		tk_mfree(data);
+		break;
 	case 2:		// value
 		// parse and compile fieldvalue
-		break;
-	default:
-		return -1;
+		return _cmp_do_cmp(&pt,hd->response,hd->respdata,hd->t,&param->ptr);
 	}
 
-	return 0;
+	return rcode;
 }
 
-static cle_syshandler handle_sf = {"sf",2,0,_cmp_do_next,0,0};
+static cle_syshandler handle_sf = {"sf",2,_do_setup,_cmp_do_next,_do_end,0};
 
 int cmp_setup()
 {
