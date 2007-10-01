@@ -296,6 +296,44 @@ static uint _cmp_name(struct _cmp_state* cst)
 	return op - cst->top;
 }
 
+/* "test ""test"" 'test'" | 'test ''test'' "test"' */
+static int _cmp_string(struct _cmp_state* cst, st_ptr* out, int c, int* nxtchar, uchar append)
+{
+/*	char buffer[BUFFERSIZE];
+	int ic = 0,i = 0;
+
+	if(!append)
+		st_update(cst->t,out,HEAD_STR,HEAD_SIZE);
+
+	while(1)
+	{
+		ic = getc(f);
+		if(ic == c)
+		{
+			ic = getc(f);
+			if(ic != c)
+				break;
+		}
+		else if(ic <= 0)
+			return(__LINE__);
+
+		buffer[i++] = ic;
+		if(i == BUFFERSIZE)
+		{
+			if(st_append(cst->t,out,buffer,i))
+				return(__LINE__);
+			i = 0;
+		}
+	}
+
+	buffer[i++] = '\0';
+	if(st_append(t,out,buffer,i))
+		return(__LINE__);
+
+	*nxtchar = ic;*/
+	return 0;
+}
+
 static void _cmp_emit0(struct _cmp_state* cst, uchar opc)
 {
 	_cmp_check_code(cst,cst->code_next + 1);
@@ -1357,6 +1395,86 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 	}
 }
 
+/*
+ read annocations:
+ key ( value )
+ key.key ( (val) )
+ key
+ ...
+ do
+*/
+static int _cmp_annotations(struct _cmp_state* cst, st_ptr root)
+{
+	while(1)
+	{
+		st_ptr tmp = root;
+
+		while(1)
+		{
+			uint len;
+			_cmp_whitespace(cst);
+
+			len = _cmp_name(cst);
+
+			if(len == 0)
+				return __LINE__;
+			else if(len <= KW_MAX_LEN) 
+			{
+				switch(_cmp_keyword(cst->opbuf + cst->top))
+				{
+				case 0:
+					break;
+				case KW_DO:
+					return 0;
+				default:
+					return __LINE__;
+				}
+			}
+
+			// insert key
+			st_insert(cst->t,&tmp,cst->opbuf + cst->top,len);
+
+			// eat white...
+			if(whitespace(cst->c)) _cmp_whitespace(cst);
+
+			if(cst->c != '.')
+				break;
+			// more key
+		}
+
+		// value-copy
+		if(cst->c == '(')
+		{
+			uint level = 1;
+			cst->c = '=';
+			do
+			{
+				int i;
+				char buffer[100];
+
+				for(i = 0; i < sizeof(buffer) && level != 0; i++)
+				{
+					buffer[i] = cst->c;
+
+					switch(_cmp_nextc(cst))
+					{
+					case -1:
+						return __LINE__;
+					case '(':
+						level++;
+						break;
+					case ')':
+						level--;
+					}
+				}
+
+				st_append(cst->t,&tmp,buffer,i);
+			}
+			while(level != 0);
+		}
+	}
+}
+
 // setup call-site and funspace
 static int _cmp_header(struct _cmp_state* cst)
 {
@@ -1466,7 +1584,7 @@ static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 		st_ptr anno = cst.root;
 		// create annotations
 		st_insert(t,&anno,"A",2);
-//		ret = cle_write(f,t,&anno,0,1);
+		ret = _cmp_annotations(&cst,anno);
 		if(ret == 0)
 		{
 			_cmp_nextc(&cst);
@@ -1631,7 +1749,7 @@ static int _cmp_do_next(sys_handler_data* hd, st_ptr pt, uint depth)
 
 static cle_syshandler handle_sf = {"sf",2,_do_setup,_cmp_do_next,_do_end,0};
 
-int cmp_setup()
+void cmp_setup()
 {
-	return cle_add_sys_handler(&handle_sf);
+	cle_add_sys_handler(&handle_sf);
 }

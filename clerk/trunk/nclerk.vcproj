@@ -175,10 +175,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_output.c"
-				>
-			</File>
-			<File
 				RelativePath=".\cle_runtime.c"
 				>
 			</File>
@@ -195,11 +191,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_trans.c"
+				RelativePath=".\cle_type.c"
 				>
 			</File>
 			<File
-				RelativePath=".\cle_type.c"
+				RelativePath=".\cle_util.c"
 				>
 			</File>
 			<File
@@ -218,10 +214,6 @@
 			</File>
 			<File
 				RelativePath=".\cle_input.h"
-				>
-			</File>
-			<File
-				RelativePath=".\cle_output.h"
 				>
 			</File>
 			<File

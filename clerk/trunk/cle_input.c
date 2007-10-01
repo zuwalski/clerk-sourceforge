@@ -56,12 +56,10 @@ static cle_output _def_output_handler = {
 // calls should be single threaded during setup/app.init
 static cle_syshandler* _sys_handler = 0;
 
-int cle_add_sys_handler(cle_syshandler* handler)
+void cle_add_sys_handler(cle_syshandler* handler)
 {
 	handler->next = _sys_handler;
 	_sys_handler = handler;
-
-	return 0;
 }
 
 // input-functions

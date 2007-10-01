@@ -1,5 +1,5 @@
 /* 
-   Copyright 2005-2006 Lars Szuwalski
+   Copyright 2005-2007 Lars Szuwalski
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -58,6 +58,8 @@ int cle_end(_ipt* inpt, cdat code, uint length);
 _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata);
 int cle_next(_ipt* inpt);
 
+// system-event-handlers
+
 typedef struct sys_handler_data
 {
 	cle_output* response;
@@ -83,6 +85,11 @@ typedef struct cle_syshandler
 }
 cle_syshandler;
 
-int cle_add_sys_handler(cle_syshandler* handler);
+void cle_add_sys_handler(cle_syshandler* handler);
+
+/* initializers */
+void app_setup();
+void typ_setup();
+void cmp_setup();
 
 #endif

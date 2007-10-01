@@ -1,5 +1,5 @@
 /* 
-   Copyright 2005-2006 Lars Szuwalski
+   Copyright 2005-2007 Lars Szuwalski
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -17,8 +17,12 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "cle_clerk.h"
-#include "cle_output.h"
+/*
+	IMPLEMENTS A CLERK-CLIENT BASED ON THE STANDARD TERMINAL
+	SORT OF A READ-EVAL-PRINT-LOOP (REPL)
+*/
+
+#include "cle_input.h"
 
 void unimplm()
 {
@@ -29,120 +33,73 @@ uint page_size = 0;	// TEST
 uint resize_count = 0;	// TEST
 uint overflow_size = 0;	// TEST
 
-
-clock_t stop0,stop,stop1,start,stop0a;
-double duration;
-
-#define DEFRUNS 2000000
-
-int main_0(int argc, char *argv[])
+// terminal output-functions
+static int _def_start(void* d) 
 {
-	st_ptr pt,tmp;
-	task* t = tk_create_task(0);
-
-	st_empty(t,&pt);
-
-	st_prepend(t,&pt,"11",3,0);
-
-	st_prt_page(&pt);
-
-	st_prepend(t,&pt,"22",3,0);
-
-	st_prt_page(&pt);
-
-	system("PAUSE");	
+	puts("start:\n");
 	return 0;
 }
 
-int main_1(int argc, char *argv[])
+static int _def_end(void* d,cdat code, uint len)
 {
-	st_ptr pt,tmp;
-	it_ptr it;
-	task* t = tk_create_task(0);
-	uint i,its;
-	uint nofound;
-	char test[8] = "0000000";
-
-	start = clock();
-
-	st_empty(t,&pt);
-
-	//for(i = 0; i < DEFRUNS; i++)
-	//{
-	//	st_ptr pt1 = pt;
-	//	uint* ui = (uint*)test;
-	//	*ui = i;
-	//	st_insert(t,&pt1,test,8);
-	//}
-
-	stop0 = clock();
-
-	//for(i = 0; i < DEFRUNS; i++)
-	//{
-	//	st_ptr pt1 = pt;
-	//	sprintf_s(test,sizeof(test),"%d",i);
-	//	st_insert(t,&pt1,test,8);
-	//}
-	it_create(&it,&pt);
-
-	for(i = 0; i <DEFRUNS; i++)
-	{
-		it_new(t,&it,&tmp);
-	}
-
-	stop0a = clock();
-
-	nofound = 0;
-	//for(i = 0; i < DEFRUNS; i++)
-	//{
-	//	sprintf_s(test,sizeof(test),"%d",i);
-	//	if(!st_exsist(&pt,test,8))
-	//		nofound++;
-	//		//printf("not found: %d\n",i);
-	//}
-
-	stop = clock();
-
-	it_create(&it,&pt);
-
-	its = 0;
-	while(it_next(0,&it))
-		its++;
-
-	stop1 = clock();
-	duration = (double)(stop0 - start) / CLOCKS_PER_SEC;
-
-	printf("nofound: %d\n",nofound);
-	printf("runs: %d\ntime: %f\npage_size: %d (%d)\nresize_count: %d\noverflow_size: %d\n",DEFRUNS,duration,page_size,PAGE_SIZE,resize_count,overflow_size);
-
-	printf("Size total: %d Kbytes\n",(PAGE_SIZE * page_size + overflow_size)/1024);
-
-	duration = (double)(stop0a - stop0) / CLOCKS_PER_SEC;
-	printf("Insert (sprintf): %f\n",duration);
-
-	duration = (double)(stop - stop0a) / CLOCKS_PER_SEC;
-	printf("Lookup: %f\n",duration);
-
-	duration = (double)(stop1 - stop) / CLOCKS_PER_SEC;
-	printf("Sort: %f\nEntries: %d\n",duration,its);
-
-	system("PAUSE");	
+	printf("\nend (%s)\n",code);
 	return 0;
 }
+
+static int _def_pop(void* d)
+{
+	puts("}");
+	return 0;
+}
+
+static int _def_push(void* d)
+{
+	puts("{");
+	return 0;
+}
+
+static int _def_data(void* d,cdat data, uint len)
+{
+	printf("%s",data);
+	return 0;
+}
+
+static int _def_next(void* d)
+{
+	puts("next:\n");
+	return 0;
+}
+
+static cle_output _default_output = {_def_start,_def_end,_def_pop,_def_push,_def_data,_def_next};
 
 int main(int argc, char *argv[])
 {
-	cle_output out;
-	st_ptr pt;
-	task* t;
+	// setup sys-handlers
+	app_setup();
+	typ_setup();
+	cmp_setup();
 
-	cle_out_initstdout(&out);
-	t = tk_create_task(0);
+	while(1)
+	{
+		cle_input inpt;
+		_ipt* ipt;
+		char linebuffer[256];
 
-	st_empty(t,&pt);
+		// get application-name
+		inpt.app_len = 0;
+		inpt.appid = 0;
+		// TESTING only internal handlers here...
 
-	puts("Input-system running:\n");
-	printf("End-code: %d\n", cle_trans(stdin,t,&pt));
+		// get event-name
+		inpt.evnt_len = 0;
+		inpt.eventid = 0;
+		
+		ipt = cle_start(&inpt,&_default_output,0);
+
+		fgets(linebuffer,sizeof(linebuffer),stdin);
+
+		cle_end(ipt,0,0);
+	}
 
 	system("PAUSE");	
 	return 0;
