@@ -35,6 +35,8 @@ struct _ipt_internal
 	cle_syshandler* system;
 	sys_handler_data sys;
 
+	st_ptr current;
+
 	uint maxdepth;
 	uint depth;
 };
@@ -90,7 +92,7 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 
 	// setup for work
 	t = tk_create_task(0);
-	ipt = (_ipt*)tk_malloc(sizeof(_ipt));
+	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
 
 	ipt->free = 0;
 	ipt->system = 0;
@@ -155,6 +157,8 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 	st_empty(t,&ipt->top->pt);
 	ipt->top->prev = 0;
 
+	ipt->current = ipt->top->pt;
+
 	return ipt;
 }
 
@@ -179,24 +183,6 @@ int cle_end(_ipt* ipt, cdat code, uint length)
 	else
 	{}
 
-	while(ipt->top)
-	{
-		struct _ptr_stack* elm = ipt->top;
-		ipt->top = ipt->top->prev;
-
-		tk_mfree(elm);
-	}
-
-	while(ipt->free)
-	{
-		struct _ptr_stack* elm = ipt->free;
-		ipt->free = ipt->free->prev;
-
-		tk_mfree(elm);
-	}
-
-	tk_mfree(ipt);
-
 	tk_drop_task(t);
 
 	return rcode;
@@ -214,12 +200,13 @@ int cle_push(_ipt* ipt)
 		ipt->free = elm->prev;
 	}
 	else
-		elm = (struct _ptr_stack*)tk_malloc(sizeof(struct _ptr_stack));
+		elm = (struct _ptr_stack*)tk_alloc(ipt->sys.t,sizeof(struct _ptr_stack));
 
 	elm->pt = ipt->top->pt;
 
 	elm->prev = ipt->top;
 	ipt->top = elm;
+	ipt->current = ipt->top->pt;
 
 	ipt->depth++;
 	if(ipt->depth > ipt->maxdepth) ipt->maxdepth = ipt->depth;
@@ -238,6 +225,7 @@ int cle_pop(_ipt* ipt)
 
 	elm = ipt->top;
 	ipt->top = ipt->top->prev;
+	ipt->current = ipt->top->pt;
 
 	elm->prev = ipt->free;
 	ipt->free = elm;
@@ -251,7 +239,7 @@ int cle_data(_ipt* ipt, cdat data, uint length)
 	if(ipt == 0)
 		return -1;
 
-	return -st_append(ipt->sys.t,&ipt->top->pt,data,length);
+	return -st_append(ipt->sys.t,&ipt->current,data,length);
 }
 
 int cle_next(_ipt* ipt)
@@ -282,5 +270,7 @@ int cle_next(_ipt* ipt)
 
 	// done processing .. clear and ready for next
 	st_empty(ipt->sys.t,&ipt->top->pt);
+	ipt->current = ipt->top->pt;
+
 	return rcode;
 }

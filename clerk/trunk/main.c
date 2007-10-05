@@ -36,69 +36,122 @@ uint overflow_size = 0;	// TEST
 // terminal output-functions
 static int _def_start(void* d) 
 {
-	puts("start:\n");
+	puts("start:");
 	return 0;
 }
 
 static int _def_end(void* d,cdat code, uint len)
 {
-	printf("\nend (%s)\n",code);
+	if(len > 0)
+		printf("\nend (%.*s):\n",len,code);
+	else
+		puts("end():");
 	return 0;
 }
 
 static int _def_pop(void* d)
 {
-	puts("}");
+	puts("\n}");
 	return 0;
 }
 
 static int _def_push(void* d)
 {
-	puts("{");
+	puts("\n{");
 	return 0;
 }
 
 static int _def_data(void* d,cdat data, uint len)
 {
-	printf("%s",data);
+	printf("%.*s",len,data);
 	return 0;
 }
 
 static int _def_next(void* d)
 {
-	puts("next:\n");
+	puts("\nnext:");
 	return 0;
 }
 
 static cle_output _default_output = {_def_start,_def_end,_def_pop,_def_push,_def_data,_def_next};
 
+static int trim(char* str)
+{
+	int l;
+	if(str == 0)
+		return 0;
+
+	for(l = 0; str[l] != 0; l++)
+	{
+		if(str[l] == ' ' || str[l] == '\t' || str[l] == '\r' || str[l] == '\n')
+		{
+			str[l] = 0;
+			break;
+		}
+	}
+
+	return l;
+}
+
 int main(int argc, char *argv[])
 {
+	int i;
 	// setup sys-handlers
 	app_setup();
 	typ_setup();
 	cmp_setup();
 
-	while(1)
+	for(i = 1; i < argc; i++)
 	{
 		cle_input inpt;
 		_ipt* ipt;
-		char linebuffer[256];
+		FILE* testfile;
 
 		// get application-name
 		inpt.app_len = 0;
 		inpt.appid = 0;
 		// TESTING only internal handlers here...
 
-		// get event-name
-		inpt.evnt_len = 0;
-		inpt.eventid = 0;
-		
-		ipt = cle_start(&inpt,&_default_output,0);
+		testfile = fopen(argv[i],"r");
 
-		fgets(linebuffer,sizeof(linebuffer),stdin);
+		if(testfile)
+		{
+			char* str;
+			char linebuffer[256];
 
-		cle_end(ipt,0,0);
+			str = fgets(linebuffer,sizeof(linebuffer),testfile);
+			if(str)
+			{
+				// get event-name 1.line
+				inpt.evnt_len = trim(str);
+				inpt.eventid = str;
+
+				ipt = cle_start(&inpt,&_default_output,0);
+
+				while(1)
+				{
+					str = fgets(linebuffer,sizeof(linebuffer),testfile);
+
+					if(!str)
+						break;
+					
+					if(str[0] == '#')
+						cle_next(ipt);
+					else 
+					{
+						int len = trim(str);
+						if(len > 0)
+							cle_data(ipt,str,len);
+					}
+				}
+			}
+
+			cle_end(ipt,0,0);
+
+			fclose(testfile);
+		}
+		else
+			printf("failed to open %s\n",argv[i]);
 	}
 
 	system("PAUSE");	
