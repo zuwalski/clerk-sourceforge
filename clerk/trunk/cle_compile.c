@@ -165,7 +165,8 @@ static const struct _cmp_buildin buildins[] = {
 	{"get",OP_NULL,0,OP_NULL,0},		// (raw)recieve next piece from event-queue
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
 	{"first",0,OP_NULL,0,0},
-	{"last",0,OP_NULL,0,0}
+	{"last",0,OP_NULL,0,0},
+	{0,0,0,0,0}	// STOP
 };
 
 static void print_err(int line)
@@ -262,7 +263,7 @@ static int _cmp_keyword(const char* buffer)
 static const struct _cmp_buildin* _cmp_buildins(const char* buffer)
 {
 	int i;
-	for(i = 0; i < sizeof(buildins); i++)
+	for(i = 0; buildins[i].id; i++)
 	{
 		if(strcmp(buffer,buildins[i].id) == 0)
 		return &buildins[i];

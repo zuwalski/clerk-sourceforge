@@ -1,3 +1,36 @@
 nt
-test.type
-#
+test.type3
+@
+!
+nt
+test.type2
+@
+!
+nt
+test.type1
+@
+!
+lt
+@
+!
+na
+test.app1
+@
+!
+la
+@
+!
+sf
+test.type1
+@
+fun1
+@
+
+($a)
+a.b.c (1)
+b.d (some text (goes) here)
+
+do
+	if $a > 1 do $a end
+end
+@

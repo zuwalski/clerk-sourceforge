@@ -83,7 +83,7 @@ static int trim(char* str)
 
 	for(l = 0; str[l] != 0; l++)
 	{
-		if(str[l] == ' ' || str[l] == '\t' || str[l] == '\r' || str[l] == '\n')
+		if(str[l] == '\r' || str[l] == '\n')
 		{
 			str[l] = 0;
 			break;
@@ -119,34 +119,40 @@ int main(int argc, char *argv[])
 			char* str;
 			char linebuffer[256];
 
-			str = fgets(linebuffer,sizeof(linebuffer),testfile);
-			if(str)
+			do
 			{
-				// get event-name 1.line
-				inpt.evnt_len = trim(str);
-				inpt.eventid = str;
-
-				ipt = cle_start(&inpt,&_default_output,0);
-
-				while(1)
+				str = fgets(linebuffer,sizeof(linebuffer),testfile);
+				if(str)
 				{
-					str = fgets(linebuffer,sizeof(linebuffer),testfile);
+					// get event-name 1.line
+					inpt.evnt_len = trim(str);
+					inpt.eventid = str;
 
-					if(!str)
-						break;
-					
-					if(str[0] == '#')
-						cle_next(ipt);
-					else 
+					ipt = cle_start(&inpt,&_default_output,0);
+
+					while(1)
 					{
-						int len = trim(str);
-						if(len > 0)
-							cle_data(ipt,str,len);
+						str = fgets(linebuffer,sizeof(linebuffer),testfile);
+
+						if(!str)
+							break;
+						
+						if(str[0] == '@')
+							cle_next(ipt);
+						else if(str[0] == '!')
+							break;
+						else 
+						{
+							int len = trim(str);
+							if(len > 0)
+								cle_data(ipt,str,len);
+						}
 					}
 				}
-			}
 
-			cle_end(ipt,0,0);
+				cle_end(ipt,0,0);
+			}
+			while(str && str[0] == '!');
 
 			fclose(testfile);
 		}
