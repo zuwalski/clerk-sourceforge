@@ -31,6 +31,6 @@ a.b.c (1)
 b.d (some text (goes) here)
 
 do
-	if $a > 1 do $a end
+	if $a > 1 do $b end
 end
 @

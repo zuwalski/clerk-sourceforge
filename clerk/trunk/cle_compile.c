@@ -50,6 +50,9 @@ struct _cmp_buffer
 
 struct _cmp_state
 {
+	cle_output* response;
+	void* data;
+
 	struct _cmp_buffer* src;
 	task* t;
 	char* opbuf;
@@ -169,12 +172,26 @@ static const struct _cmp_buildin buildins[] = {
 	{0,0,0,0,0}	// STOP
 };
 
-static void print_err(int line)
+static char str_err[] = "[cmp]err ";
+
+static void print_err(struct _cmp_state* cst, int line)
 {
-	printf("[cmp]error on line %d\n",line);
+	char bf[6];
+	int i;
+	cst->response->data(cst->data,str_err,sizeof(str_err));
+
+	for(i = 4; i != 0 && line > 0; i--)
+	{
+		bf[i] = '0' + (line % 10);
+		line /= 10;
+	}
+
+	bf[5] = '\n';
+	i++;
+	cst->response->data(cst->data,bf + i,sizeof(bf) - i);
 }
 
-#define err(line) {cst->err++;print_err(line);}
+#define err(line) {cst->err++;print_err(cst,line);}
 
 static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest);
 
@@ -1531,7 +1548,7 @@ static int _cmp_header(struct _cmp_state* cst)
 }
 
 // setup _cmp_state
-static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, st_ptr* ref)
+static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
 {
 	memset(cst,0,sizeof(struct _cmp_state));	// clear struct. MOST vars have default 0 value
 	// none-0 defaults:
@@ -1539,6 +1556,9 @@ static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, s
 	cst->t = t;
 	cst->root = *ref;
 	cst->s_max = cst->s_top = 1;	// output-context
+
+	cst->response = response;
+	cst->data = data;
 
 	cst->glevel = -1;
 	// begin code
@@ -1571,12 +1591,12 @@ static void _cmp_end(struct _cmp_state* cst)
 	tk_mfree(cst->code);
 }
 
-static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref)
+static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
 {
 	struct _cmp_state cst;
 	int ret;
 
-	_cmp_init(&cst,bf,t,ref);
+	_cmp_init(&cst,bf,t,ref,response,data);
 
 	// create header:
 	ret = _cmp_header(&cst);
@@ -1590,7 +1610,7 @@ static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 		{
 			_cmp_nextc(&cst);
 			// compile body
-			if(_cmp_block_expr(&cst,TP_ANY,PROC_EXPR) != 'e') {cst.err++; print_err(__LINE__);}
+			if(_cmp_block_expr(&cst,TP_ANY,PROC_EXPR) != 'e') {cst.err++; print_err(&cst,__LINE__);}
 		}
 		else cst.err++;
 	}
@@ -1599,11 +1619,11 @@ static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 	_cmp_end(&cst);
 }
 
-static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref)
+static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
 {
 	struct _cmp_state cst;
 
-	_cmp_init(&cst,bf,t,ref);
+	_cmp_init(&cst,bf,t,ref,response,data);
 
 	// clean and mark expr
 	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
@@ -1613,7 +1633,7 @@ static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref)
 	st_insert(t,&cst.strs,"S",2);
 
 	_cmp_nextc(&cst);
-	if(_cmp_block_expr(&cst,TP_ANY,PURE_EXPR) != -1) {cst.err++; print_err(__LINE__);}
+	if(_cmp_block_expr(&cst,TP_ANY,PURE_EXPR) != -1) {cst.err++; print_err(&cst,__LINE__);}
 
 	_cmp_end(&cst);
 }
@@ -1639,10 +1659,10 @@ static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, s
 		case '\r':
 			continue;
 		case '=':	// expr
-			cmp_expr(&bf,t,ref);
+			cmp_expr(&bf,t,ref,response,data);
 			return 0;
 		case '(':	// function
-			cmp_function(&bf,t,ref);
+			cmp_function(&bf,t,ref,response,data);
 			break;
 		case '\"':	// string
 			break;

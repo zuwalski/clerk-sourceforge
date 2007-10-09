@@ -143,7 +143,7 @@ int main(int argc, char *argv[])
 							break;
 						else 
 						{
-							int len = trim(str);
+							int len = strlen(str);
 							if(len > 0)
 								cle_data(ipt,str,len);
 						}

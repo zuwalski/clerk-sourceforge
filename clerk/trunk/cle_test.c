@@ -17,6 +17,7 @@
 #include "cle_clerk.h"
 #include "cle_struct.h"
 #include <stdio.h>
+#include "cle_input.h"
 
 static FILE* f;
 static void print_struct(page_wrap* pg, const key* me, int ind)
