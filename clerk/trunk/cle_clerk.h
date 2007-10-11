@@ -16,8 +16,6 @@
 #ifndef __CLE_CLERK_H__
 #define __CLE_CLERK_H__
 
-#include <stdio.h>
-
 #define PAGE_SIZE 2048
 
 typedef unsigned int uint;
@@ -116,8 +114,6 @@ void* tk_realloc(void* mem, uint size);
 void tk_mfree(void* mem);
 
 /* test */
-
-void st_prt_page(st_ptr* pt);
 
 void unimplm();
 

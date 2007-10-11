@@ -31,6 +31,17 @@ a.b.c (1)
 b.d (some text (goes) here)
 
 do
-	if $a > 1 do $b end
+	if $a > 1 do
+		$a
+	elseif $a == 0 do
+		123
+	end
 end
 @
+!
+dump
+test.type1
+@
+fun1
+@
+!

@@ -92,4 +92,6 @@ void app_setup();
 void typ_setup();
 void cmp_setup();
 
+void tst_setup();
+
 #endif

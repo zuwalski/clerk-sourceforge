@@ -224,6 +224,10 @@
 				RelativePath=".\cle_struct.h"
 				>
 			</File>
+			<File
+				RelativePath=".\cle_test.h"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="Resource Files"

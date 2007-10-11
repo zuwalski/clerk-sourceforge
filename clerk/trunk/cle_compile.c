@@ -165,7 +165,6 @@ static const struct _cmp_buildin buildins[] = {
 	{"event",0,OP_NULL,0,0},			// register event-handler on object
 	{"void",OP_NULL,0,0,0},				// throw away values
 	{"recv",OP_NULL,0,0,0},				// recieve data-structure from event-queue
-	{"get",OP_NULL,0,OP_NULL,0},		// (raw)recieve next piece from event-queue
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
@@ -986,7 +985,8 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 {
 	uint state = ST_0;
 
-	_cmp_emit0(cst,OP_NULL);	// OP_DEBUG (file-ptr)
+	if(*cst->lastop != OP_DEBUG)
+		_cmp_emit0(cst,OP_DEBUG);	// OP_DEBUG (file-ptr)
 
 	while(1)
 	{
@@ -1177,7 +1177,11 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				switch(len > KW_MAX_LEN? 0 :_cmp_keyword(cst->opbuf + cst->top))
 				{
 				case KW_DO:
-					if(nest == NEST_EXPR) return 'd';
+					if(nest == NEST_EXPR)
+					{
+						_cmp_op_clear(cst);
+						return 'd';
+					}
 					//chk_state(ST_0)
 					if(_cmp_block_expr(cst,type,nest) != 'e') err(__LINE__)
 					state = ST_0;
@@ -1414,7 +1418,7 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 }
 
 /*
- read annocations:
+ read annotations:
  key ( value )
  key.key ( (val) )
  key
@@ -1722,7 +1726,7 @@ static int _do_setup(sys_handler_data* hd)
 	return 0;
 }
 
-int _do_end(sys_handler_data* hd, cdat code, uint length)
+static int _do_end(sys_handler_data* hd, cdat code, uint length)
 {
 	tk_mfree(hd->data);
 	return 0;

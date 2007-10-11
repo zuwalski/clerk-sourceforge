@@ -100,6 +100,7 @@ int main(int argc, char *argv[])
 	app_setup();
 	typ_setup();
 	cmp_setup();
+	tst_setup();
 
 	for(i = 1; i < argc; i++)
 	{
@@ -148,9 +149,9 @@ int main(int argc, char *argv[])
 								cle_data(ipt,str,len);
 						}
 					}
-				}
 
-				cle_end(ipt,0,0);
+					cle_end(ipt,0,0);
+				}
 			}
 			while(str && str[0] == '!');
 
