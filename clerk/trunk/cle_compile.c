@@ -124,7 +124,7 @@ static const char* keywords[] = {
 //	"application","type","extends","as","num","text","time","tree","list","data","event",0
 };
 
-#define KW_MAX_LEN 6
+#define KW_MAX_LEN 7
 
 enum cmp_keywords {
 	KW_DO = 1,
@@ -946,6 +946,13 @@ static void _cmp_new(struct _cmp_state* cst)
 	{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
 	else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 
+#define end_expr() 	_cmp_op_clear(cst);\
+					if(state == ST_NUM)\
+					{\
+						_cmp_emit0(cst,OP_OUTLT);\
+						_cmp_stack(cst,-1);\
+					}
+
 // direct call doesnt leave anything on the stack - force it
 // if the next instr. needs the return-value
 #define chk_call() if(*cst->lastop == OP_DOCALL)\
@@ -1177,7 +1184,7 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 				switch(len > KW_MAX_LEN? 0 :_cmp_keyword(cst->opbuf + cst->top))
 				{
 				case KW_DO:
-					if(nest == NEST_EXPR)
+					if(nest & NEST_EXPR)
 					{
 						_cmp_op_clear(cst);
 						return 'd';
@@ -1187,6 +1194,7 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					state = ST_0;
 					continue;
 				case KW_END:
+					end_expr()
 					return 'e';
 				case KW_IF:	// if expr do bexpr [elseif expr do bexpr [else bexpr]] end
 					while(1)
@@ -1218,8 +1226,10 @@ static int _cmp_expr(struct _cmp_state* cst, uint type, uchar nest)
 					}
 					continue;
 				case KW_ELSEIF:
+					end_expr()
 					return 'i';
 				case KW_ELSE:
+					end_expr()
 					return 'l';
 				case KW_WHILE:	// while expr do bexpr end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
@@ -1564,7 +1574,7 @@ static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, s
 	cst->response = response;
 	cst->data = data;
 
-	cst->glevel = -1;
+	cst->glevel = 0;
 	// begin code
 	_cmp_emit0(cst,OP_BODY);
 	cst->code_next += sizeof(ushort)*2 + 3;

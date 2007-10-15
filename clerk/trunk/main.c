@@ -141,7 +141,10 @@ int main(int argc, char *argv[])
 						if(str[0] == '@')
 							cle_next(ipt);
 						else if(str[0] == '!')
+						{
+							cle_next(ipt);
 							break;
+						}
 						else 
 						{
 							int len = strlen(str);
