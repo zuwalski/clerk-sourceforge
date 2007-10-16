@@ -26,7 +26,7 @@ b.d (some text (goes) here)
 
 do
 	if $a > 1 do
-		123
+		1 + 2 * 3 / $a
 	elseif $a == 0 do
 		$a
 	end
@@ -36,4 +36,32 @@ dump
 test.type1
 @
 fun1
+!
+sf
+test.type1
+@
+fun2
+@
+
+($a)
+do
+	var $b = 0;
+	while $a > 0 do
+		var $c = 
+			repeat
+				$a and $b or $c;
+				break
+			until $a == 0 end;
+	
+		do
+			var $d = 0;
+			break
+		end
+	end
+end
+!
+dump
+test.type1
+@
+fun2
 !
