@@ -915,19 +915,34 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 			break;
 		case '$':
 			chk_state(ST_0|ST_DOT)
+			{
+				uint len;
+				_cmp_nextc(cst);
+				len = _cmp_name(cst);
+				if(len > 0)
+				{
+					struct _cmp_var* var = _cmp_find_var(cst,len);
+					if(var == 0)
+						var = _cmp_def_var(cst);
+				}
+			}
 			state = ST_VAR;
 			break;
 		case '*':
 			chk_state(ST_0|ST_DOT)
+			state = ST_ALPHA;
 			break;
 		case '#':
 			_cmp_comment(cst);
 			break;
 		default:
+			chk_state(ST_0|ST_DOT)
 			if(alpha(cst->c))
 			{
 				uint len = _cmp_name(cst);
 				if(len <= KW_MAX_LEN && _cmp_keyword(cst->opbuf + cst->top) != 0) err(__LINE__)
+
+				state = ST_ALPHA;
 			}
 			else
 			{
@@ -953,6 +968,7 @@ static void _cmp_new(struct _cmp_state* cst)
 		{
 		case '=':
 			chk_state(ST_ALPHA)
+			_cmp_nextc(cst);
 			if(_cmp_expr(cst,0,PURE_EXPR) != ';') err(__LINE__)
 			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);
@@ -976,11 +992,13 @@ static void _cmp_new(struct _cmp_state* cst)
 			break;
 		case '[':
 			chk_state(ST_0|ST_ALPHA)
+			_cmp_nextc(cst);
 			if(_cmp_expr(cst,0,NEST_EXPR) != ']') err(__LINE__);
 			_cmp_emit0(cst,OP_WIDX);
 			state = ST_ALPHA;
 			break;
 		case ',':
+		case ';':
 			chk_state(ST_ALPHA)
 			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);

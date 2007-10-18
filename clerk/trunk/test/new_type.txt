@@ -65,3 +65,19 @@ test.type1
 @
 fun2
 !
+sf
+test.type1
+@
+fun3
+@
+($a)
+do
+	$a{a,b= 1+1;c{v}[5]}
+end
+
+!
+dump
+test.type1
+@
+fun3
+!
