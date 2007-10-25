@@ -262,6 +262,9 @@ static void _rt_dump_function(st_ptr* root)
 		return;
 	}
 
+	tmpptr = strings;
+	_cle_read(&tmpptr,0);
+
 	tmpptr = *root;
 	if(st_move(&tmpptr,"B",2))
 	{
@@ -331,7 +334,6 @@ static void _rt_dump_function(st_ptr* root)
 		case OP_CLEAR:
 		case OP_CAT:
 		case OP_NOT:
-		case OP_DEBUG:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -392,7 +394,7 @@ static void _rt_dump_function(st_ptr* root)
 			{
 				uint slen = 0;
 				char* str = st_get_all(&tmpptr,&slen);
-				printf("%-10s %s\n",_rt_opc_name(opc),str + HEAD_SIZE);
+				printf("%-10s %.*s\n",_rt_opc_name(opc),slen > HEAD_SIZE? slen - HEAD_SIZE : 0,str + HEAD_SIZE);
 				tk_mfree(str);
 			}
 			bptr += sizeof(ushort);
@@ -411,6 +413,7 @@ static void _rt_dump_function(st_ptr* root)
 		case OP_BNZ:
 		case OP_BZ:
 		case OP_BR:
+		case OP_DEBUG:
 			// emit Is (branch forward)
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);

@@ -703,7 +703,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 		if(klen > 0)
 		{
 			uint max = klen;
-			for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
+			//for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
 
 			if(klen + boffset > rlength)
 			{

@@ -21,6 +21,8 @@ fun1
 @
 
 ($a)
+a.b
+c.d
 a.b.c (1)
 b.d (some text (goes) here)
 
@@ -49,7 +51,7 @@ do
 	while $a > 0 do
 		var $c = 
 			repeat
-				$a and $b or $c;
+				$a and $b or $c
 				break
 			until $a == 0 end;
 	
@@ -70,9 +72,9 @@ test.type1
 @
 fun3
 @
-($a)
+($a,$b)
 do
-	$a{a,b= 1+1;c{v}[5]}
+	$a{a,b= 1+1;c{v}['a' 'b' $b]}
 end
 
 !
