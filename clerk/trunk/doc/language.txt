@@ -1,0 +1,25 @@
+
+
+do		*
+end		*
+if		
+elseif
+else
+while
+repeat
+until
+send
+var
+new
+each
+for
+break
+and
+or
+not
+null
+handle
+raise
+switch
+case
+default

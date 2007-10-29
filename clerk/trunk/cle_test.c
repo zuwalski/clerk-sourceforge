@@ -244,6 +244,7 @@ static void _rt_dump_function(st_ptr* root)
 	st_ptr strings,tmpptr;
 	char* bptr,*bptr2;
 	int len,tmpint;
+	uint opc = 0;
 	ushort tmpushort;
 	uchar tmpuchar;
 	uchar tmpuchar2;
@@ -263,7 +264,7 @@ static void _rt_dump_function(st_ptr* root)
 	}
 
 	tmpptr = strings;
-	_cle_read(&tmpptr,0);
+//	_cle_read(&tmpptr,0);
 
 	tmpptr = *root;
 	if(st_move(&tmpptr,"B",2))
@@ -300,7 +301,7 @@ static void _rt_dump_function(st_ptr* root)
 
 	while(len > 0)
 	{
-		uint opc = *bptr;
+		opc = *bptr;
 		printf("%04d  ",(uint)bptr - (uint)bptr2);
 		len--;
 		bptr++;
@@ -334,18 +335,19 @@ static void _rt_dump_function(st_ptr* root)
 		case OP_CLEAR:
 		case OP_CAT:
 		case OP_NOT:
+		case OP_END:
+		case OP_CALL:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
-		case OP_END:
+/*		case OP_END:
 			// emit0
 			puts("OP_END\nEND_OF_FUNCTION\n");
 			if(len != 0)
 				printf("!!! Remaining length: %d\n",len);
 			tk_mfree(bptr2);
 			return;
-
-		case OP_CALL:
+*/
 		case OP_DMVW:
 		case OP_MVW:
 		case OP_MV:
@@ -455,7 +457,9 @@ static void _rt_dump_function(st_ptr* root)
 	}
 
 	tk_mfree(bptr2);
-	err(__LINE__);
+	puts("\nEND_OF_FUNCTION\n");
+	if(opc != OP_END)
+		err(__LINE__);
 }
 
 int rt_do_read(st_ptr root)
@@ -534,8 +538,8 @@ static int _tst_end(sys_handler_data* hd, cdat code, uint length)
 	return 0;
 }
 
-static char no_such_type[] = "no such type";
-static char no_such_field[] = "no such field";
+static char no_such_type[] = "no such type\n";
+static char no_such_field[] = "no such field\n";
 
 static int _tst_do_next(sys_handler_data* hd, st_ptr pt, uint depth)
 {

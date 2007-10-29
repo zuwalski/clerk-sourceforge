@@ -35,6 +35,8 @@
 #define PROC_EXPR 0
 #define PURE_EXPR 1
 #define NEST_EXPR 2
+#define ASGN_EXPR 4
+#define FOR_EXPR 8
 
 struct _cmp_buffer
 {
@@ -476,25 +478,10 @@ static struct _cmp_var* _cmp_find_var(struct _cmp_state* cst, uint length)
 	return 0;
 }
 
-static struct _cmp_var* _cmp_def_var(struct _cmp_state* cst)
+static struct _cmp_var* _cmp_new_var(struct _cmp_state* cst, uint len)
 {
 	struct _cmp_var* var;
-	uint begin,len,top = cst->top;
-
-	if(cst->c != '$') err(__LINE__)
-	_cmp_nextc(cst);
-	len = _cmp_name(cst);
-	if(len == 0)
-	{
-		err(__LINE__)
-		return 0;
-	}
-
-	if(_cmp_find_var(cst,len))
-	{
-		err(__LINE__)
-		return 0;
-	}
+	uint begin,top = cst->top;
 
 	cst->top += len;	// res.name
 	begin = _cmp_push_struct(cst,sizeof(struct _cmp_var));
@@ -512,6 +499,28 @@ static struct _cmp_var* _cmp_def_var(struct _cmp_state* cst)
 	cst->v_top++;
 	if(cst->v_top > cst->v_max) cst->v_max = cst->v_top;
 	return var;
+}
+
+static struct _cmp_var* _cmp_def_var(struct _cmp_state* cst)
+{
+	uint len;
+
+	if(cst->c != '$') err(__LINE__)
+	_cmp_nextc(cst);
+	len = _cmp_name(cst);
+	if(len == 0)
+	{
+		err(__LINE__)
+		return 0;
+	}
+
+	if(_cmp_find_var(cst,len))
+	{
+		err(__LINE__)
+		return 0;
+	}
+
+	return _cmp_new_var(cst,len);
 }
 
 static void _cmp_free_var(struct _cmp_state* cst)
@@ -533,10 +542,9 @@ static void _cmp_free_var(struct _cmp_state* cst)
 	if(count != 0)
 	{
 		if(cst->glevel != 0)	// free on glevel==0 done by OP_END
-		{
 			_cmp_emitIc2(cst,OP_FREE,count,from);
-			cst->v_top -= count;
-		}
+
+		cst->v_top -= count;
 
 		if(nxtvar)
 		{
@@ -565,6 +573,8 @@ static void _cmp_compute_free_var(struct _cmp_state* cst, uint to_glevel)
 
 	if(count != 0 && cst->glevel != 0)
 		_cmp_emitIc2(cst,OP_FREE,count,from);
+
+	cst->v_top -= count;
 }
 
 static struct _cmp_var* _cmp_var(struct _cmp_state* cst)
@@ -723,7 +733,8 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 	_cmp_emit0(cst,OP_CALL);
 	_cmp_op_push(cst,0,0xFF);
 
-	do {
+	while(1)
+	{
 		uint stack = cst->s_top;
 		term = _cmp_expr(cst,0,NEST_EXPR);	// construct parameters
 		if(stack != cst->s_top)
@@ -732,7 +743,11 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 			_cmp_stack(cst,-1);
 		}
 		pcount++;
-	} while(term == ',');
+		if(term != ',')
+			break;
+
+		_cmp_nextc(cst);
+	}
 	if(term != ')') err(__LINE__)
 	else _cmp_nextc(cst);
 
@@ -779,7 +794,7 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 			cst->code_next = coff;			// undo avars
 			_cmp_emitIc(cst,OP_AVAR,var? var->id : 0);
 			_cmp_stack(cst,1);
-			if(_cmp_expr(cst,0,PURE_EXPR) != ';') err(__LINE__)
+			if(_cmp_expr(cst,0,ASGN_EXPR) != ';') err(__LINE__)
 			_cmp_emit0(cst,OP_POP);
 			_cmp_stack(cst,-1);
 		}
@@ -791,13 +806,12 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 			count++;
 			_cmp_stack(cst,count);
 			do {
-				term = _cmp_expr(cst,0,NEST_EXPR);
+				term = _cmp_expr(cst,0,ASGN_EXPR);
 			} while(term == ',');
 			if(term != ';') err(__LINE__)
 			_cmp_emitIs(cst,OP_CAV,cst->code_next - coff + 1 + sizeof(ushort));			// clear-var-assign
 			_cmp_stack(cst,-count);
 		}
-		if(cst->c != ';' && cst->c != '}') err(__LINE__)
 		_cmp_nextc(cst);
 	}
 	else if(state == ST_DEF)
@@ -833,7 +847,7 @@ static void _cmp_for(struct _cmp_state* cst)
 	uint coff  = cst->code_next;
 	_cmp_emitIc(cst,OP_AVARS,0);	// for-assign-vars
 
-	do
+	while(1)
 	{
 		if(whitespace(cst->c)) _cmp_whitespace(cst);
 
@@ -846,7 +860,7 @@ static void _cmp_for(struct _cmp_state* cst)
 			{
 				struct _cmp_var* var = _cmp_find_var(cst,len);
 				if(var == 0)
-					var = _cmp_def_var(cst);
+					var = _cmp_new_var(cst,len);
 
 				_cmp_check_code(cst,cst->code_next + 1);
 				cst->code[cst->code_next++] = var? var->id : 0;
@@ -862,19 +876,23 @@ static void _cmp_for(struct _cmp_state* cst)
 		else err(__LINE__)
 
 		if(whitespace(cst->c)) _cmp_whitespace(cst);
+		if(cst->c != ',')
+			break;
+
+		_cmp_nextc(cst);
 	}
-	while(cst->c == ',');
+
 	if(cst->c != '=') err(__LINE__)
 	cst->code[coff + 1] = count;
 
 	_cmp_nextc(cst);
-	if(_cmp_expr(cst,0,NEST_EXPR) != 'd') err(__LINE__)
+	if(_cmp_expr(cst,0,FOR_EXPR) != 'd') err(__LINE__)
 }
 
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
 
 /*
-* path.+|-$bindvar{path_must_exsist;other.$endvar;+|-*.$x;}
+* path.+|-$bindvar{path_must_exsist;other.$endvar;+|-*.$x;} do -> exit
 */
 static void _cmp_it_expr(struct _cmp_state* cst)
 {
@@ -896,15 +914,14 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 			state = ST_0;
 			break;
 		case '}':
-			chk_state(ST_0)
+			chk_state(ST_0|ST_ALPHA|ST_VAR)
 			if(level > 0) level--;
 			else err(__LINE__)
-			if(level == 0) return;
 			state = ST_0;
 			break;
 		case ';':
+		case ',':
 			chk_state(ST_ALPHA|ST_VAR)
-			if(level == 0) return;
 			state = ST_0;
 			break;
 		case '.':
@@ -912,7 +929,7 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 			state = ST_DOT;
 			break;
 		case '$':
-			chk_state(ST_0|ST_DOT)
+			chk_state(ST_0|ST_DOT|ST_NUM_OP)
 			{
 				uint len;
 				_cmp_nextc(cst);
@@ -921,11 +938,11 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 				{
 					struct _cmp_var* var = _cmp_find_var(cst,len);
 					if(var == 0)
-						var = _cmp_def_var(cst);
+						var = _cmp_new_var(cst,len);
 				}
 			}
 			state = ST_VAR;
-			break;
+			continue;
 		case '*':
 			chk_state(ST_0|ST_DOT|ST_NUM_OP)
 			state = ST_ALPHA;
@@ -933,14 +950,33 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 		case '#':
 			_cmp_comment(cst);
 			break;
+		case ' ':
+		case '\t':
+		case '\n':
+		case '\r':
+			break;
 		default:
-			chk_state(ST_0|ST_DOT|ST_NUM_OP)
 			if(alpha(cst->c))
 			{
 				uint len = _cmp_name(cst);
-				if(len <= KW_MAX_LEN && _cmp_keyword(cst->opbuf + cst->top) != 0) err(__LINE__)
+				if(len <= KW_MAX_LEN)
+				{
+					uint kw = _cmp_keyword(cst->opbuf + cst->top);
+					if(kw != 0)
+					{
+						if(kw != KW_DO)
+							err(__LINE__)
+						else if(level != 0)
+							err(__LINE__)
+						else chk_state(ST_0|ST_ALPHA|ST_VAR)
 
+						return;
+					}
+				}
+
+				chk_state(ST_0|ST_DOT|ST_NUM_OP)
 				state = ST_ALPHA;
+				continue;
 			}
 			else
 			{
@@ -948,6 +984,7 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 				return;
 			}
 		}
+		_cmp_nextc(cst);
 	}
 }
 
@@ -967,14 +1004,15 @@ static void _cmp_new(struct _cmp_state* cst)
 		case '=':
 			chk_state(ST_ALPHA)
 			_cmp_nextc(cst);
-			if(_cmp_expr(cst,0,PURE_EXPR) != ';') err(__LINE__)
+			if(_cmp_expr(cst,0,ASGN_EXPR) != ';') err(__LINE__)
 			_cmp_emit0(cst,OP_POPW);
 			_cmp_stack(cst,-1);
 			state = ST_0;
 			break;
 		case '{':
 			chk_state(ST_0|ST_ALPHA)
-			state = ST_0;
+			//state = ST_0;
+			state = ST_DOT;
 			level++;
 			break;
 		case '}':
@@ -989,7 +1027,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			state = ST_0;
 			break;
 		case '[':
-			chk_state(ST_0|ST_ALPHA)
+			chk_state(ST_0|ST_ALPHA|ST_DOT)
 			_cmp_nextc(cst);
 			if(_cmp_expr(cst,0,NEST_EXPR) != ']') err(__LINE__);
 			_cmp_emit0(cst,OP_WIDX);
@@ -1045,15 +1083,22 @@ static void _cmp_new(struct _cmp_state* cst)
 }
 
 // in nested exprs dont out the first element, but out all following (concating to the first)
-#define chk_out() if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)) \
-	{_cmp_op_clear(cst); if(nest == NEST_EXPR) \
-	{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
-	else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
+#define chk_out()\
+	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
+		_cmp_op_clear(cst);\
+		if(nest == NEST_EXPR) \
+		{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
+		else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
+
+#define end_expr_nest()\
+	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
+		_cmp_op_clear(cst);\
+		_cmp_emit0(cst,OP_OUT);\
+		_cmp_stack(cst,-1);}
 
 #define end_expr() \
-	_cmp_op_clear(cst);\
-	if((nest & NEST_EXPR) == 0 && (state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)))\
-	{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}
+	if(nest & NEST_EXPR) err(__LINE__)\
+	end_expr_nest()
 
 // direct call doesnt leave anything on the stack - force it
 // if the next instr. needs the return-value
@@ -1167,27 +1212,27 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			_cmp_op_push(cst,OP_LT,1);
 			continue;
 		case '=':
+			chk_call()
 			_cmp_nextc(cst);
 			if(cst->c == '=')
 			{
 				chk_state(ST_ALPHA|ST_VAR|ST_NUM)
 				_cmp_op_push(cst,OP_EQ,1);
 				state = ST_NUM_OP;
-				break;
 			}
 			else
 			{	
 				if(nest) err(__LINE__)
 				chk_state(ST_ALPHA)
 				_cmp_emit0(cst,OP_CLEAR);
-				if(_cmp_expr(cst,0,PURE_EXPR) != ';') err(__LINE__)
+				if(_cmp_expr(cst,0,ASGN_EXPR) != ';') err(__LINE__)
 				_cmp_emit0(cst,OP_POP);
 				_cmp_stack(cst,-1);
 				state = ST_0;
-				continue;
 			}
+			break;
 		case '$':	// var (all states ok)
-			if(state == ST_0 && !(nest & NEST_EXPR))
+			if(state == ST_0 && (nest & (NEST_EXPR|FOR_EXPR|ASGN_EXPR)) == 0)
 				state = _cmp_var_assign(cst,ST_0);
 			else
 			{
@@ -1213,14 +1258,17 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			continue;
 		case '(':
 			// st_alpha|st_var -> function-call
+			_cmp_nextc(cst);
 			if(state & (ST_ALPHA|ST_VAR))
+			{
+				chk_call()
 				_cmp_call(cst,nest);
+			}
 			else
 			{
-				chk_state(ST_0|ST_STR)
+				chk_state(ST_0|ST_STR|ST_NUM_OP)
 				chk_out()
 				_cmp_op_push(cst,0,0xFF);
-				_cmp_nextc(cst);
 				if(_cmp_expr(cst,0,NEST_EXPR) != ')') err(__LINE__)
 			}
 			state = ST_ALPHA;
@@ -1262,7 +1310,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		case ',':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 			_cmp_op_clear(cst);
-			if(state != ST_0)
+			if(state != ST_0 && (nest & NEST_EXPR) == 0)
 			{
 				_cmp_emit0(cst,OP_OUTLT);
 				_cmp_stack(cst,-1);
@@ -1307,9 +1355,12 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				switch(len > KW_MAX_LEN? 0 :_cmp_keyword(cst->opbuf + cst->top))
 				{
 				case KW_DO:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
-					if(nest & NEST_EXPR)
+					if((nest & NEST_EXPR) == 0 || (nest & PURE_EXPR))
+					{end_expr_nest()}
+					else
+						_cmp_op_clear(cst);
+					if(nest & (NEST_EXPR|FOR_EXPR))
 					{
 						_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 						return 'd';
@@ -1319,13 +1370,16 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					state = ST_0;
 					continue;
 				case KW_END:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
+					if((nest & NEST_EXPR) == 0 || (nest & PURE_EXPR))
+					{end_expr_nest()}
+					else
+						_cmp_op_clear(cst);
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'e';
 				case KW_IF:	// if expr do bexpr [elseif expr do bexpr [else bexpr]] end
-					end_expr()
-					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_NUM_OP)
+					end_expr_nest()
 					{
 						struct _skip_list sl;
 						_cmp_new_skiplist(cst,&sl);
@@ -1359,13 +1413,13 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					continue;
 				case KW_ELSEIF:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
+					end_expr_nest()
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'i';
 				case KW_ELSE:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
+					end_expr_nest()
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'l';
 				case KW_WHILE:	// while expr do bexpr end
@@ -1412,13 +1466,14 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					continue;
 				case KW_VAR:
 					chk_state(ST_0)
-					if(nest & NEST_EXPR) err(__LINE__)
+					if(nest & (NEST_EXPR|FOR_EXPR|ASGN_EXPR)) err(__LINE__)
 					if(whitespace(cst->c)) _cmp_whitespace(cst);
 					state = _cmp_var_assign(cst,ST_DEF);
 					continue;
-				case KW_NEW:					// .new | new typename(param_list) | new $var(param_list)
-					chk_state(ST_DOT)
+				case KW_NEW:					// new typename(param_list)
+					chk_state(ST_0)
 					_cmp_emit0(cst,OP_NULL);	// OP_NEW
+					state = ST_ALPHA;
 					continue;
 				case KW_EACH:	// .each it_expr do bexpr end
 					chk_state(ST_DOT)
@@ -1431,7 +1486,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					state = ST_0;
 					continue;
-				case KW_FOR:	// for var_list : expr do bexpr end
+				case KW_FOR:	// for var_list = expr do bexpr end
 					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					{
@@ -1490,18 +1545,15 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					chk_state(ST_0|ST_NUM_OP)
 					_cmp_emit0(cst,OP_NULL);
 					_cmp_stack(cst,1);
+					state = ST_NUM;
 					continue;
 				case KW_HANDLE:	// handle it_expr do bexpr end
-					chk_state(ST_0)
-					if(nest & NEST_EXPR) err(__LINE__)
-					if(cst->glevel) err(__LINE__)
-					_cmp_emit0(cst,OP_END);		// end func/expr here - begin handler-code
-					if(cst->first_handler == 0) cst->first_handler = cst->code_next;
-
-					_cmp_it_expr(cst);
-
-					// TODO: no match? Skip to next handler...
-					return _cmp_block_expr(cst,0,nest);
+					end_expr()
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+					if(nest) err(__LINE__)
+					if(cst->glevel != 1) err(__LINE__)
+					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
+					return 'h';
 				case KW_RAISE:	// raise {new}
 					chk_state(ST_0)
 					if(nest & NEST_EXPR) err(__LINE__)
@@ -1515,8 +1567,8 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					state = ST_0;
 					continue;
 				case KW_SWITCH:		// switch expr case const do bexpr | default bexpr | end
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+					end_expr_nest()
 					{
 						struct _skip_list sl;
 						uint term = _cmp_expr(cst,0,NEST_EXPR);
@@ -1546,13 +1598,13 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					state = ST_0;
 					continue;
 				case KW_CASE:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_BREAK)
+					end_expr_nest()
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'c';
 				case KW_DEFAULT:
-					end_expr()
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_BREAK)
+					end_expr_nest()
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'f';
 				default:
@@ -1736,7 +1788,7 @@ static int _cmp_header(struct _cmp_state* cst)
 			{
 				_cmp_stack(cst,1);
 				_cmp_nextc(cst);
-				_cmp_expr(cst,0,PURE_EXPR);
+				_cmp_expr(cst,0,NEST_EXPR);
 				// update branch-offset
 				_cmp_update_imm(cst,coff + 2,cst->code_next - coff - 2 - sizeof(ushort));
 				// mark optional
@@ -1772,7 +1824,6 @@ static void _cmp_init(struct _cmp_state* cst, struct _cmp_buffer* bf, task* t, s
 	cst->response = response;
 	cst->data = data;
 
-	cst->glevel = 0;
 	// begin code
 	_cmp_emit0(cst,OP_BODY);
 	cst->code_next += sizeof(ushort)*2 + 3;
@@ -1806,9 +1857,10 @@ static void _cmp_end(struct _cmp_state* cst)
 static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
 {
 	struct _cmp_state cst;
-	int ret;
+	int ret,codebegin;
 
 	_cmp_init(&cst,bf,t,ref,response,data);
+	codebegin = cst.code_next;
 
 	// create header:
 	ret = _cmp_header(&cst);
@@ -1820,9 +1872,32 @@ static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_outpu
 		ret = _cmp_annotations(&cst,anno);
 		if(ret == 0)
 		{
+			uint br_prev_handler = 0;
 			_cmp_nextc(&cst);
 			// compile body
-			if(_cmp_block_expr(&cst,0,PROC_EXPR) != 'e') {cst.err++; print_err(&cst,__LINE__);}
+			while(1)
+			{
+				ret = _cmp_block_expr(&cst,0,PROC_EXPR);
+				if(ret == 'e')
+					break;
+				else if(ret == 'h')	// (exception) handle it-expr do bexpr end|handle... 
+				{
+					_cmp_emit0(&cst,OP_END);		// end func/expr here - begin handler-code
+					if(cst.first_handler == 0) cst.first_handler = cst.code_next - codebegin;
+					else
+						_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
+
+					_cmp_it_expr(&cst);
+
+					br_prev_handler = cst.code_next;
+					_cmp_emitIs(&cst,OP_BR,0);
+				}
+				else
+				{cst.err++; print_err(&cst,__LINE__);break;}
+			}
+
+			if(br_prev_handler != 0)
+				_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
 		}
 		else cst.err++;
 	}

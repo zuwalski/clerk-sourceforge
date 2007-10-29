@@ -74,7 +74,11 @@ fun3
 @
 ($a,$b)
 do
-	$a{a,b= 1+1;c{v}['a' 'b' $b]}
+	$a{a,b= 1+1;c{['a' 'b' $b]}}
+handle a,$c do
+	$c
+handle v do
+	'end'
 end
 
 !
@@ -82,4 +86,26 @@ dump
 test.type1
 @
 fun3
+!
+sf
+test.type1
+@
+fun4
+@
+($a,$b)
+do
+	for $1,$2 = fun3($a,$b) do
+		fun3($1)
+	end
+	
+	$b.each a{+*.$1,-$2.$3} do
+		'each'
+	end
+end
+
+!
+dump
+test.type1
+@
+fun4
 !
