@@ -384,6 +384,37 @@ static uint _cmp_name(struct _cmp_state* cst)
 	return op - cst->top;
 }
 
+static uint _cmp_typename(struct _cmp_state* cst)
+{
+	uint begin = cst->top,lenall = 0;
+
+	while(1)
+	{
+		uint len;
+		if(whitespace(cst->c)) _cmp_whitespace(cst);
+
+		len = _cmp_name(cst);
+		if(len == 0)
+		{
+			cst->top = begin;
+			return 0;
+		}
+
+		cst->top += len;
+		lenall += len;
+
+		if(whitespace(cst->c)) _cmp_whitespace(cst);
+
+		if(cst->c != '.')
+			break;
+
+		_cmp_nextc(cst);
+	}
+
+	cst->top = begin;
+	return lenall;
+}
+
 static void _cmp_emit0(struct _cmp_state* cst, uchar opc)
 {
 	_cmp_check_code(cst,cst->code_next + 1);
@@ -730,7 +761,8 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 {
 	uint term,pcount = 0;
 
-	_cmp_emit0(cst,OP_CALL);
+	if(*cst->lastop != OP_NEW)
+		_cmp_emit0(cst,OP_CALL);
 	_cmp_op_push(cst,0,0xFF);
 
 	while(1)
@@ -1472,7 +1504,21 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					continue;
 				case KW_NEW:					// new typename(param_list)
 					chk_state(ST_0)
-					_cmp_emit0(cst,OP_NULL);	// OP_NEW
+					{
+						uint len = _cmp_typename(cst);
+						if(len == 0)
+						{
+							err(__LINE__)
+							break;
+						}
+
+						_cmp_emitS(cst,OP_NEW,cst->opbuf + cst->top,len);
+						_cmp_stack(cst,1);
+
+						if(cst->c != '(') err(__LINE__)
+						else
+							_cmp_call(cst,nest);
+					}
 					state = ST_ALPHA;
 					continue;
 				case KW_EACH:	// .each it_expr do bexpr end
@@ -1571,8 +1617,11 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					end_expr_nest()
 					{
 						struct _skip_list sl;
+						uint defh = 0;
 						uint term = _cmp_expr(cst,0,NEST_EXPR);
 						_cmp_new_skiplist(cst,&sl);
+
+						// emit mapnr defaulthandler
 
 						while(term != 'e')
 						{
@@ -1583,6 +1632,9 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 								term = _cmp_block_expr(cst,&sl,nest);
 								break;
 							case 'f':
+								if(defh == 0)
+									defh = cst->code_next;
+								else err(__LINE__)
 								term = _cmp_block_expr(cst,&sl,nest);
 								break;
 							case 'e':
@@ -1951,7 +2003,11 @@ static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, s
 		case '(':	// function
 			cmp_function(&bf,t,ref,response,data);
 			break;
-		case ':':	// attr-def
+		case ':':	// attr-def :type.name[card-min .. card-max]
+			break;
+		case '"':
+			break;
+		case '?':	// reverse def / mix-in
 			break;
 		case '0':	// number ...
 		default:

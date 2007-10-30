@@ -77,6 +77,7 @@ enum cle_opcode
 	OP_FMV,
 	OP_NOT,
 	OP_DEBUG,
+	OP_NEW,
 
 	OP_OP_MAX
 };

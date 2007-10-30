@@ -233,6 +233,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_NOT";
 	case OP_DEBUG:
 		return "OP_DEBUG";
+	case OP_NEW:
+		return "OP_NEW";
 
 	default:
 		return "OP_ILLEGAL";
@@ -353,6 +355,7 @@ static void _rt_dump_function(st_ptr* root)
 		case OP_MV:
 		case OP_CMV:
 		case OP_FMV:
+		case OP_NEW:
 			// emit s
 			tmpushort = *((ushort*)bptr);
 			bptr += sizeof(ushort);
