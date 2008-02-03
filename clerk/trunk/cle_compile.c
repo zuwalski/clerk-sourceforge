@@ -1,17 +1,19 @@
 /* 
-   Copyright 2005-2006 Lars Szuwalski
+    Clerk application and storage engine.
+    Copyright (C) 2008  Lars Szuwalski
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_runtime.h"
 #include "cle_struct.h"
@@ -134,7 +136,6 @@ static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","send",
 	"var","new","each","for","break","and","or","not","null",
 	"handle","raise","switch","case","default",0
-//	"application","type","extends","as","num","text","time","tree","list","data","event",0
 };
 
 #define KW_MAX_LEN 7
@@ -179,6 +180,7 @@ static const struct _cmp_buildin buildins[] = {
 	{"void",OP_NULL,0,0,0},				// throw away values
 	{"recv",OP_NULL,0,0,0},				// recieve data-structure from event-queue
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
+	{"extend",0,OP_NULL,0,0},			// set the super-type of a dynamic object
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
 	{0,0,0,0,0}	// STOP
@@ -1340,6 +1342,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			break;
 		case ';':
 		case ',':
+		case '}':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 			_cmp_op_clear(cst);
 			if(state != ST_0 && (nest & NEST_EXPR) == 0)
@@ -1977,6 +1980,119 @@ static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* r
 	_cmp_end(&cst);
 }
 
+/**
+	looks like an expr
+
+	text ?{expr} text
+*/
+static void cmp_mix(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
+{
+	struct _cmp_state cst;
+
+	_cmp_init(&cst,bf,t,ref,response,data);
+
+	// clean and mark expr
+	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
+	cst.strs = cst.root;
+
+	// strings
+	st_insert(t,&cst.strs,"S",2);
+
+	char buffer[BUFFER_GROW];
+	int i = 0;
+
+	while(1)
+	{
+		_cmp_nextc(&cst);
+
+		if(cst.c == '?')
+		{
+			_cmp_nextc(&cst);
+			if(cst.c == '{')
+			{
+				if(i)
+				{
+					if(st_append(cst->t,out,buffer,i)) err(__LINE__)
+					i = 0;
+				}
+
+				_cmp_nextc(&cst);
+				if(_cmp_expr(&cst,0,PURE_EXPR) != '}')
+					cst.err++;
+			}
+			else
+				buffer[i++] = '?';
+		}
+		else if(cst.c <= 0)
+			break;
+
+		buffer[i++] = cst.c;
+		if(i == BUFFER_GROW)
+		{
+			if(st_append(cst->t,out,buffer,i)) err(__LINE__)
+			i = 0;
+		}
+	}
+
+	_cmp_end(&cst);
+
+
+	/////////////////
+
+			cst->cur_string = cst->strs;
+		st_insert(cst->t,&cst->cur_string,(cdat)&cst->stringidx,sizeof(ushort));
+		_cmp_emitIs(cst,OP_STR,cst->stringidx);
+		_cmp_stack(cst,1);
+		cst->stringidx++;
+
+	char buffer[BUFFER_GROW];
+	int ic = 0,i = 0;
+
+	if(!append)
+		st_update(cst->t,out,HEAD_STR,HEAD_SIZE);
+
+	while(1)
+	{
+		ic = _cmp_nextc(cst);
+		if(ic == c)
+		{
+			ic = _cmp_nextc(cst);
+			if(ic != c)
+				break;
+		}
+		else if(ic <= 0)
+		{
+			err(__LINE__)
+			return;
+		}
+
+		buffer[i++] = ic;
+		if(i == BUFFER_GROW)
+		{
+			if(st_append(cst->t,out,buffer,i)) err(__LINE__)
+			i = 0;
+		}
+	}
+
+//	buffer[i++] = '\0';
+	if(st_append(cst->t,out,buffer,i)) err(__LINE__)
+
+		uint exittype;
+	cst->glevel++;
+	while(1)
+	{
+		exittype = _cmp_expr(cst,skips,nest);
+		if(exittype == ';') _cmp_nextc(cst);
+		else break;
+	}
+	_cmp_free_var(cst);
+
+
+	if(_cmp_block_expr(&cst,0,PURE_EXPR) != -1) {cst.err++; print_err(&cst,__LINE__);}
+
+	_cmp_end(&cst);
+}
+
 static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, st_ptr* ref)
 {
 	struct _cmp_buffer bf;
@@ -2006,9 +2122,8 @@ static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, s
 		case ':':	// attr-def :type.name[card-min .. card-max]
 			break;
 		case '"':
-			break;
-		case '?':	// reverse def / mix-in
-			break;
+			cmp_mix(&bf,t,ref,response,data);
+			return 0;
 		case '0':	// number ...
 		default:
 			return -1;

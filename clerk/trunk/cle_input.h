@@ -1,62 +1,35 @@
 /* 
-   Copyright 2005-2007 Lars Szuwalski
+    Clerk application and storage engine.
+    Copyright (C) 2008  Lars Szuwalski
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-       http://www.apache.org/licenses/LICENSE-2.0
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #ifndef __CLE_INPUT_H__
 #define __CLE_INPUT_H__
 
 #include "cle_clerk.h"
-
-/* event-description struct */
-typedef struct cle_input
-{
-	cdat appid;
-	uint app_len;
-	cdat eventid;
-	uint evnt_len;
-}
-cle_input;
-
-// session
-typedef struct cle_session
-{
-	int dummy;
-}
-cle_session;
-
-cle_session* cle_get_session(cdat sessionid, uint length);
-cle_session* cle_create_session();
-void cle_end_session(cle_session* ses);
-
-// instance
-typedef struct cle_instance
-{
-	int dummy;
-}
-cle_instance;
-
-cle_instance* cle_get_instance(cdat instanceid, uint length);
+#include "cle_pagesource.h"
 
 /* event input functions */
 typedef struct _ipt_internal _ipt;
 
+_ipt* cle_start(cdat eventid, uint event_len, cle_pagesource* source, cle_psrc_data srcdata, cle_output* response, void* responsedata);
 int cle_data(_ipt* inpt, cdat data, uint length);
 int cle_pop(_ipt* inpt);
 int cle_push(_ipt* inpt);
-int cle_end(_ipt* inpt, cdat code, uint length);
-_ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata);
 int cle_next(_ipt* inpt);
+int cle_end(_ipt* inpt, cdat code, uint length);
 
 // system-event-handlers
 

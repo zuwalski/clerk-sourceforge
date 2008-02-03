@@ -217,6 +217,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_pagesource.h"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_runtime.h"
 				>
 			</File>
