@@ -1198,8 +1198,13 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		switch(cst->c)
 		{
 		case -1:
-			chk_state(ST_0)
 			if(cst->glevel != 0) err(__LINE__)
+			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
+			if((nest & NEST_EXPR) == 0 || (nest & PURE_EXPR))
+			{end_expr_nest()}
+			else
+				_cmp_op_clear(cst);
+			_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 			return -1;
 		case '+':
 			num_op(OP_ADD,4)
@@ -1731,87 +1736,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 	}
 }
 
-/*
- read annotations:
- key ( value )
- key.key ( (val) )
- key
- ...
- do
-*/
-static int _cmp_annotations(struct _cmp_state* cst, st_ptr root)
-{
-	_cmp_whitespace(cst);
-
-	while(1)
-	{
-		st_ptr tmp = root;
-
-		while(1)
-		{
-			uint len = _cmp_name(cst);
-
-			if(len == 0)
-				return __LINE__;
-			else if(len <= KW_MAX_LEN) 
-			{
-				switch(_cmp_keyword(cst->opbuf + cst->top))
-				{
-				case 0:
-					break;
-				case KW_DO:
-					return 0;
-				default:
-					return __LINE__;
-				}
-			}
-
-			// insert key
-			st_insert(cst->t,&tmp,cst->opbuf + cst->top,len);
-
-			if(cst->c != '.')
-				break;
-
-			_cmp_nextc(cst);
-		}
-
-		if(whitespace(cst->c)) _cmp_whitespace(cst);
-
-		// value-copy
-		if(cst->c == '(')
-		{
-			uint level = 1;
-			cst->c = '=';
-			do
-			{
-				int i;
-				char buffer[100];
-
-				for(i = 0; i < sizeof(buffer) && level != 0; i++)
-				{
-					buffer[i] = cst->c;
-
-					switch(_cmp_nextc(cst))
-					{
-					case -1:
-						return __LINE__;
-					case '(':
-						level++;
-						break;
-					case ')':
-						level--;
-					}
-				}
-
-				st_append(cst->t,&tmp,buffer,i);
-			}
-			while(level != 0);
-
-			_cmp_whitespace(cst);
-		}
-	}
-}
-
 // setup call-site and funspace
 static int _cmp_header(struct _cmp_state* cst)
 {
@@ -1921,40 +1845,32 @@ static void cmp_function(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_outpu
 	ret = _cmp_header(&cst);
 	if(ret == 0)
 	{
-		st_ptr anno = cst.root;
-		// create annotations
-		st_insert(t,&anno,"A",2);
-		ret = _cmp_annotations(&cst,anno);
-		if(ret == 0)
+		uint br_prev_handler = 0;
+		_cmp_nextc(&cst);
+		// compile body
+		while(1)
 		{
-			uint br_prev_handler = 0;
-			_cmp_nextc(&cst);
-			// compile body
-			while(1)
+			ret = _cmp_block_expr(&cst,0,PROC_EXPR);
+			if(ret == -1)
+				break;
+			else if(ret == 'h')	// (exception) handle it-expr do bexpr end|handle... 
 			{
-				ret = _cmp_block_expr(&cst,0,PROC_EXPR);
-				if(ret == 'e')
-					break;
-				else if(ret == 'h')	// (exception) handle it-expr do bexpr end|handle... 
-				{
-					_cmp_emit0(&cst,OP_END);		// end func/expr here - begin handler-code
-					if(cst.first_handler == 0) cst.first_handler = cst.code_next - codebegin;
-					else
-						_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
-
-					_cmp_it_expr(&cst);
-
-					br_prev_handler = cst.code_next;
-					_cmp_emitIs(&cst,OP_BR,0);
-				}
+				_cmp_emit0(&cst,OP_END);		// end func/expr here - begin handler-code
+				if(cst.first_handler == 0) cst.first_handler = cst.code_next - codebegin;
 				else
-				{cst.err++; print_err(&cst,__LINE__);break;}
-			}
+					_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
 
-			if(br_prev_handler != 0)
-				_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
+				_cmp_it_expr(&cst);
+
+				br_prev_handler = cst.code_next;
+				_cmp_emitIs(&cst,OP_BR,0);
+			}
+			else
+			{cst.err++; print_err(&cst,__LINE__);break;}
 		}
-		else cst.err++;
+
+		if(br_prev_handler != 0)
+			_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
 	}
 	else cst.err++;
 
@@ -1980,12 +1896,8 @@ static void cmp_expr(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* r
 	_cmp_end(&cst);
 }
 
-/**
-	looks like an expr
-
-	text ?{expr} text
-*/
-static void cmp_mix(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
+// attr-def :type.name[card-min .. card-max]
+static void cmp_object_ref(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* response, void* data)
 {
 	struct _cmp_state cst;
 
@@ -1998,96 +1910,7 @@ static void cmp_mix(struct _cmp_buffer* bf, task* t, st_ptr* ref, cle_output* re
 	// strings
 	st_insert(t,&cst.strs,"S",2);
 
-	char buffer[BUFFER_GROW];
-	int i = 0;
-
-	while(1)
-	{
-		_cmp_nextc(&cst);
-
-		if(cst.c == '?')
-		{
-			_cmp_nextc(&cst);
-			if(cst.c == '{')
-			{
-				if(i)
-				{
-					if(st_append(cst->t,out,buffer,i)) err(__LINE__)
-					i = 0;
-				}
-
-				_cmp_nextc(&cst);
-				if(_cmp_expr(&cst,0,PURE_EXPR) != '}')
-					cst.err++;
-			}
-			else
-				buffer[i++] = '?';
-		}
-		else if(cst.c <= 0)
-			break;
-
-		buffer[i++] = cst.c;
-		if(i == BUFFER_GROW)
-		{
-			if(st_append(cst->t,out,buffer,i)) err(__LINE__)
-			i = 0;
-		}
-	}
-
-	_cmp_end(&cst);
-
-
-	/////////////////
-
-			cst->cur_string = cst->strs;
-		st_insert(cst->t,&cst->cur_string,(cdat)&cst->stringidx,sizeof(ushort));
-		_cmp_emitIs(cst,OP_STR,cst->stringidx);
-		_cmp_stack(cst,1);
-		cst->stringidx++;
-
-	char buffer[BUFFER_GROW];
-	int ic = 0,i = 0;
-
-	if(!append)
-		st_update(cst->t,out,HEAD_STR,HEAD_SIZE);
-
-	while(1)
-	{
-		ic = _cmp_nextc(cst);
-		if(ic == c)
-		{
-			ic = _cmp_nextc(cst);
-			if(ic != c)
-				break;
-		}
-		else if(ic <= 0)
-		{
-			err(__LINE__)
-			return;
-		}
-
-		buffer[i++] = ic;
-		if(i == BUFFER_GROW)
-		{
-			if(st_append(cst->t,out,buffer,i)) err(__LINE__)
-			i = 0;
-		}
-	}
-
-//	buffer[i++] = '\0';
-	if(st_append(cst->t,out,buffer,i)) err(__LINE__)
-
-		uint exittype;
-	cst->glevel++;
-	while(1)
-	{
-		exittype = _cmp_expr(cst,skips,nest);
-		if(exittype == ';') _cmp_nextc(cst);
-		else break;
-	}
-	_cmp_free_var(cst);
-
-
+	_cmp_nextc(&cst);
 	if(_cmp_block_expr(&cst,0,PURE_EXPR) != -1) {cst.err++; print_err(&cst,__LINE__);}
 
 	_cmp_end(&cst);
@@ -2107,45 +1930,21 @@ static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, s
 		{
 		case '#':
 			_cmp_comment_bf(&bf);
-			continue;
 		case ' ':
 		case '\t':
 		case '\n':
 		case '\r':
-			continue;
+			break;
 		case '=':	// expr
+			// TODO: convert constant exprs to static type (int, string ...)
 			cmp_expr(&bf,t,ref,response,data);
 			return 0;
 		case '(':	// function
 			cmp_function(&bf,t,ref,response,data);
-			break;
+			return 0;
 		case ':':	// attr-def :type.name[card-min .. card-max]
-			break;
-		case '"':
-			cmp_mix(&bf,t,ref,response,data);
+			cmp_object_ref(&bf,t,ref,response,data);
 			return 0;
-		case '0':	// number ...
-		default:
-			return -1;
-		}
-		break;
-	}
-
-	// only whitespace & comments allowed after 'body'
-	while(1)
-	{
-		switch(_cmp_next_bf(&bf))
-		{
-		case -1:
-			return 0;
-		case '#':
-			_cmp_comment_bf(&bf);
-			break;
-		case ' ':
-		case '\t':
-		case '\n':
-		case '\r':
-			break;
 		default:
 			return -1;
 		}
@@ -2160,7 +1959,7 @@ static int _cmp_do_cmp(st_ptr* src, cle_output* response, void* data, task* t, s
 ** eventid names type
 ** 1.next: path.typename
 ** 2.next: field.path
-** 3.next: data [(... -> function, =... -> expr, 0-9 -> number else: " text]
+** 3.next: data [(... -> function, =... -> expr]
 ** x.next error
 */
 

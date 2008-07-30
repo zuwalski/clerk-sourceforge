@@ -428,6 +428,184 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	return 0;
 }
 
+int st_get(st_ptr* pt, char* buffer, uint length)
+{
+	page_wrap* pg = pt->pg;
+	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt      = 0;
+	cdat ckey     = KDATA(me) + (pt->offset >> 3);
+	uint offset   = pt->offset;
+	uint klen;
+	int read      = 0;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+	}
+
+	klen = ((nxt)? nxt->offset : me->length) - offset;
+
+	length <<= 3;
+
+	while(1)
+	{
+		uint max = 0;
+
+		if(klen > 0)
+		{
+			max = (length > klen?klen:length)>>3;
+			memcpy(buffer,ckey,max);
+			buffer += max;
+			read   += max;
+			length -= max << 3;
+		}
+
+		// move to next key for more data?
+		if(length > 0)
+		{
+			// no next key! or trying to read past split?
+			if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
+			{
+				pt->offset = max + (offset & 0xFFF8);
+				break;
+			}
+
+			offset = 0;
+			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+			ckey = KDATA(me);
+			if(me->sub)
+			{
+				nxt = GOOFF(pg,me->sub);
+				klen = nxt->offset;
+			}
+			else
+			{
+				klen = me->length;
+				nxt = 0;
+			}
+		}
+		// is there any more data?
+		else
+		{
+			max <<= 3;
+
+			if(max < klen)	// more on this key?
+				pt->offset = max + (offset & 0xFFF8);
+			else if(nxt && nxt->offset == me->length)	// continuing key?
+			{
+				pt->offset = 0;
+				me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+			}
+			else
+			{
+				pt->offset = me->length;
+				read = -1;	// no more!
+				break;
+			}
+
+			// yes .. tell caller and move st_ptr
+			read = -2;
+			break;
+		}
+	}
+
+	pt->key = (uint)me - (uint)&pg->pg;
+	pt->pg  = pg;
+	return read;
+}
+
+// should use repeatede calls to st_get(...) with own buffer
+char* st_get_all(st_ptr* pt, uint* length)
+{
+	char* buffer  = 0;
+	page_wrap* pg = pt->pg;
+	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt      = 0;
+	cdat ckey     = KDATA(me) + (pt->offset >> 3);
+	uint rlength  = 0;
+	uint boffset  = 0;
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < pt->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+	}
+
+	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
+
+	while(1)
+	{
+		klen >>= 3;
+		if(klen > 0)
+		{
+			uint max = klen;
+			//for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
+
+			if(klen + boffset > rlength)
+			{
+				rlength += klen > GET_ALL_BUFFER? klen : GET_ALL_BUFFER;
+				buffer = (char*)tk_realloc(buffer,rlength);
+			}
+
+			memcpy(buffer + boffset,ckey,klen);
+			boffset += klen;
+
+			if(max != klen)	// stop at zero-term
+			{
+				pt->pg = pg;
+				pt->key = (uint)me - (uint)&pg->pg;
+				pt->offset = klen << 3;
+				*length = boffset;
+				return buffer;
+			}
+		}
+
+		// no next key! or trying to read past split?
+		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
+		{
+			pt->pg = pg;
+			pt->key = (uint)me - (uint)&pg->pg;
+			pt->offset = nxt? nxt->offset : me->length;
+			*length = boffset;
+			return buffer;
+		}
+
+		// move to next key for more data
+		me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+		ckey = KDATA(me);
+		if(me->sub)
+		{
+			nxt = GOOFF(pg,me->sub);
+			klen = nxt->offset;
+		}
+		else
+		{
+			klen = me->length;
+			nxt = 0;
+		}
+	}
+}
+
+// ------ USED? ----------------------
+
 /* FIXME */
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length)
 {
@@ -573,181 +751,6 @@ uint st_offset(st_ptr* pt, uint offset)
 			pt->pg  = pg;
 			pt->key = (uint)me - (uint)&pg->pg;
 			return (offset >> 3);
-		}
-	}
-}
-
-int st_get(st_ptr* pt, char* buffer, uint length)
-{
-	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt      = 0;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint offset   = pt->offset;
-	uint klen;
-	int read      = 0;
-
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
-
-	klen = ((nxt)? nxt->offset : me->length) - offset;
-
-	length <<= 3;
-
-	while(1)
-	{
-		uint max = 0;
-
-		if(klen > 0)
-		{
-			max = (length > klen?klen:length)>>3;
-			memcpy(buffer,ckey,max);
-			buffer += max;
-			read   += max;
-			length -= max << 3;
-		}
-
-		// move to next key for more data?
-		if(length > 0)
-		{
-			// no next key! or trying to read past split?
-			if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
-			{
-				pt->offset = max + (offset & 0xFFF8);
-				break;
-			}
-
-			offset = 0;
-			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
-			ckey = KDATA(me);
-			if(me->sub)
-			{
-				nxt = GOOFF(pg,me->sub);
-				klen = nxt->offset;
-			}
-			else
-			{
-				klen = me->length;
-				nxt = 0;
-			}
-		}
-		// is there any more data?
-		else
-		{
-			max <<= 3;
-
-			if(max < klen)	// more on this key?
-				pt->offset = max + (offset & 0xFFF8);
-			else if(nxt && nxt->offset == me->length)	// continuing key?
-			{
-				pt->offset = 0;
-				me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
-			}
-			else
-			{
-				pt->offset = me->length;
-				read = -1;	// no more!
-				break;
-			}
-
-			// yes .. tell caller and move st_ptr
-			read = -2;
-			break;
-		}
-	}
-
-	pt->key = (uint)me - (uint)&pg->pg;
-	pt->pg  = pg;
-	return read;
-}
-
-char* st_get_all(st_ptr* pt, uint* length)
-{
-	char* buffer  = 0;
-	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt      = 0;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint rlength  = 0;
-	uint boffset  = 0;
-	uint klen;
-
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < pt->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
-
-	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
-
-	while(1)
-	{
-		klen >>= 3;
-		if(klen > 0)
-		{
-			uint max = klen;
-			//for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
-
-			if(klen + boffset > rlength)
-			{
-				rlength += klen > GET_ALL_BUFFER? klen : GET_ALL_BUFFER;
-				buffer = (char*)tk_realloc(buffer,rlength);
-			}
-
-			memcpy(buffer + boffset,ckey,klen);
-			boffset += klen;
-
-			if(max != klen)	// stop at zero-term
-			{
-				pt->pg = pg;
-				pt->key = (uint)me - (uint)&pg->pg;
-				pt->offset = klen << 3;
-				*length = boffset;
-				return buffer;
-			}
-		}
-
-		// no next key! or trying to read past split?
-		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
-		{
-			pt->pg = pg;
-			pt->key = (uint)me - (uint)&pg->pg;
-			pt->offset = nxt? nxt->offset : me->length;
-			*length = boffset;
-			return buffer;
-		}
-
-		// move to next key for more data
-		me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
-		ckey = KDATA(me);
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
-		}
-		else
-		{
-			klen = me->length;
-			nxt = 0;
 		}
 	}
 }

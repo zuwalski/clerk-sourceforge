@@ -24,9 +24,12 @@ typedef void* cle_psrc_data;
 
 typedef struct cle_pagesource
 {
+	cle_pagedata (*root_page)(cle_psrc_data);
+	cle_pagedata (*new_page)(cle_psrc_data);
 	cle_pagedata (*read_page)(cle_psrc_data, cle_pageid);
-	int (*lock_page)(cle_psrc_data, cle_pageid);
-	int (*write_page)(cle_psrc_data, cle_pageid, cle_pagedata, int length);
+	cle_pagedata (*writable_page)(cle_psrc_data, cle_pagedata);
+	int (*write_page)(cle_psrc_data, cle_pagedata);
+	int (*release_page)(cle_psrc_data, cle_pageid);
 }
 cle_pagesource;
 
