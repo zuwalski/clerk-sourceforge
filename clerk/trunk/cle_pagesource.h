@@ -18,18 +18,26 @@
 #ifndef __CLE_PAGESOURCE_H__
 #define __CLE_PAGESOURCE_H__
 
-typedef void* cle_pagedata;
 typedef void* cle_pageid;
 typedef void* cle_psrc_data;
 
+typedef struct page
+{
+	cle_pageid id;
+	ushort size;
+	ushort used;
+	ushort waste;
+	char data[];
+} page;
+
 typedef struct cle_pagesource
 {
-	cle_pagedata (*root_page)(cle_psrc_data);
-	cle_pagedata (*new_page)(cle_psrc_data);
-	cle_pagedata (*read_page)(cle_psrc_data, cle_pageid);
-	cle_pagedata (*writable_page)(cle_psrc_data, cle_pagedata);
-	int (*write_page)(cle_psrc_data, cle_pagedata);
-	int (*release_page)(cle_psrc_data, cle_pageid);
+	page* (*root_page)(cle_psrc_data);
+	page* (*new_page)(cle_psrc_data);
+	page* (*read_page)(cle_psrc_data, cle_pageid);
+	int (*write_page)(cle_psrc_data, cle_pageid, page*);
+	int (*free_page)(cle_psrc_data, cle_pageid);
+	int (*unref_page)(cle_psrc_data, cle_pageid);
 }
 cle_pagesource;
 

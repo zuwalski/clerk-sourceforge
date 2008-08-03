@@ -24,6 +24,7 @@
 
 struct _st_lkup_it_res
 {
+	task*   t;
 	page_wrap* pg;
 	page_wrap* low_pg;
 	page_wrap* high_pg;
@@ -134,7 +135,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 				atsub = rt->path;
 				// if this is a pointer - resolve it
 				if(me->length == 0)
-					me = _tk_get_ptr(&rt->pg,me);
+					me = _tk_get_ptr(rt->t,&rt->pg,me);
 				ckey = KDATA(me);
                 continue;
 			}
@@ -147,7 +148,7 @@ static void _it_grow_kdata(it_ptr* it, struct _st_lkup_it_res* rt)
 {
 	uint path_offset = (uint)rt->path - (uint)it->kdata;
 	it->ksize += IT_GROW_SIZE;
-	it->kdata = (uchar*)tk_realloc(it->kdata,it->ksize);
+	it->kdata = (uchar*)tk_realloc(rt->t,it->kdata,it->ksize);
 	rt->path = it->kdata + path_offset;
 }
 
@@ -180,7 +181,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 		uint clen;
 
 		if(sub->length == 0)	// ptr-key?
-			sub = _tk_get_ptr(&rt->pg,sub);
+			sub = _tk_get_ptr(rt->t,&rt->pg,sub);
 
 		rt->sub = sub;
 		ckey = KDATA(sub);
@@ -244,9 +245,10 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 	while(sub);
 }
 
-uint it_next(st_ptr* pt, it_ptr* it)
+uint it_next(task* t, st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
+	rt.t      = t;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
@@ -280,15 +282,16 @@ uint it_next(st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
 }
 
-uint it_next_eq(st_ptr* pt, it_ptr* it)
+uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
+	rt.t      = t;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
@@ -305,7 +308,7 @@ uint it_next_eq(st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+				pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 				pt->offset = rt.diff;
 			}
 			return 1;
@@ -328,15 +331,16 @@ uint it_next_eq(st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
 }
 
-uint it_prev(st_ptr* pt, it_ptr* it)
+uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
+	rt.t      = t;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
@@ -370,15 +374,16 @@ uint it_prev(st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
 }
 
-uint it_prev_eq(st_ptr* pt, it_ptr* it)
+uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 {
 	struct _st_lkup_it_res rt;
+	rt.t      = t;
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
@@ -395,7 +400,7 @@ uint it_prev_eq(st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+				pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 				pt->offset = rt.diff;
 			}
 			return 1;
@@ -418,18 +423,18 @@ uint it_prev_eq(st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
 }
 
-void it_load(it_ptr* it, cdat path, uint length)
+void it_load(task* t, it_ptr* it, cdat path, uint length)
 {
 	if(it->ksize < length)
 	{
 		it->ksize = length;
-		it->kdata = (uchar*)tk_realloc(it->kdata,it->ksize);
+		it->kdata = (uchar*)tk_realloc(t,it->kdata,it->ksize);
 	}
 
 	memcpy(it->kdata,path,length);
@@ -447,9 +452,9 @@ void it_create(it_ptr* it, st_ptr* pt)
 	it->ksize  = it->kused = 0;
 }
 
-void it_dispose(it_ptr* it)
+void it_dispose(task* t, it_ptr* it)
 {
-	tk_mfree(it->kdata);
+	tk_mfree(t, it->kdata);
 }
 
 /**
@@ -458,6 +463,7 @@ void it_dispose(it_ptr* it)
 uint it_new(task* t, it_ptr* it, st_ptr* pt)
 {
 	struct _st_lkup_it_res rt;
+	rt.t      = t;
 	rt.path   = it->kdata;
 	rt.length = 0;
 	rt.pg     = it->pg;
@@ -553,6 +559,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 	uint waste  = 0;
 	uint remove = 0;
 
+	rt.t      = t;
 	rt.pg     = pt->pg;
 	rt.sub    = GOKEY(pt->pg,pt->key);
 	rt.diff   = pt->offset;
@@ -633,9 +640,9 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	if(rm_pg->page_adr)
+	if(rm_pg->pg->id)
 	{
-		rm_pg->pg.waste += waste >> 3;
+		rm_pg->pg->waste += waste >> 3;
 		_tk_remove_tree(t,rm_pg,remove);
 	}
 

@@ -18,7 +18,11 @@
 #ifndef __CLE_STRUCT_H__
 #define __CLE_STRUCT_H__
 
+#include "cle_pagesource.h"
+
 /* Config */
+
+#define PAGE_SIZE 2048
 
 #define OVERFLOW_GROW (16*64)
 
@@ -33,11 +37,13 @@ typedef struct overflow
 	uint size;
 } overflow;
 
+/* DEL
 typedef struct page
 {
 	ushort used;
 	ushort waste;
 } page;
+*/
 
 struct page_wrap
 {
@@ -45,7 +51,7 @@ struct page_wrap
 	overflow* ovf;
 	void*     page_adr;
 	/* from page-header */
-	page pg;
+	page* pg;
 };
 
 typedef struct key
@@ -68,14 +74,15 @@ typedef struct ptr
 struct task
 {
 	page_wrap* stack;
+	cle_pagesource* ps;
 };
 
-#define GOKEY(pag,off) ((key*)((char*)&((pag)->pg) + (off)))
-#define GOPTR(pg,off) ((key*)((char*)(pg)->ovf + (((off) - PAGE_SIZE)<<4)))
-#define GOOFF(pg,off) ((off & 0xF800)? GOPTR(pg,off):GOKEY(pg,off))
+#define GOKEY(pag,off) ((key*)((char*)((pag)->pg) + (off)))
+#define GOPTR(pag,off) ((key*)((char*)(pag)->ovf + (((off) - (pag)->pg->size)<<4)))
+#define GOOFF(pag,off) ((off & 0xF800)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((char*)k + sizeof(key))
 
-key* _tk_get_ptr(page_wrap** pg, key* me);
+key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
 

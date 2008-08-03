@@ -15,13 +15,12 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include <stdlib.h>
-
 #include "cle_clerk.h"
 #include "cle_struct.h"
 
 struct _st_lkup_res
 {
+	task*   t;
 	page_wrap* pg;
 	key*	prev;
 	key*	sub;
@@ -80,7 +79,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 			{
 				rt->diff = 0;
 				if(me->length == 0)
-					me = _tk_get_ptr(&rt->pg,me);
+					me = _tk_get_ptr(rt->t,&rt->pg,me);
 				ckey = KDATA(me);
                 continue;
 			}
@@ -90,7 +89,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 	return (rt->length == 0);
 }
 
-static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
+static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
 	overflow* ovf = rt->pg->ovf;
 	ptr*      pt;
@@ -98,7 +97,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
 
 	if(ovf == 0)	/* alloc overflow-block */
 	{
-		ovf = (overflow*)tk_malloc(OVERFLOW_GROW);
+		ovf = (overflow*)tk_malloc(rt->t,OVERFLOW_GROW);
 
 		ovf->size = OVERFLOW_GROW;
 		ovf->used = 16;
@@ -116,7 +115,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
 
 		ovf->size += OVERFLOW_GROW;
 
-		ovf = (overflow*)tk_realloc(ovf,ovf->size);
+		ovf = (overflow*)tk_realloc(rt->t,ovf,ovf->size);
 
 		rt->pg->ovf = ovf;
 		/* rebuild prev-pointer in (possibly) new ovf */
@@ -127,8 +126,8 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 
-	if(t->stack == 0 || size + t->stack->pg.used > PAGE_SIZE)
-		_tk_stack_new(t);
+	if(rt->t->stack == 0 || size + rt->t->stack->pg->used > PAGE_SIZE)
+		_tk_stack_new(rt->t);
 
 	/* make pointer */
 	nkoff = (ovf->used >> 4) + PAGE_SIZE;
@@ -146,35 +145,40 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, task* t, uint size)
 		rt->sub->sub = nkoff;
 	}
 
-	pt->pg = t->stack;
-	pt->koffset = t->stack->pg.used;
+	pt->pg = rt->t->stack;
+	pt->koffset = rt->t->stack->pg->used;
 	pt->offset = rt->diff;
 	pt->zero = 0;
 
 	/* reset values */
-	rt->pg = t->stack;
+	rt->pg = rt->t->stack;
 	rt->prev = rt->sub = 0;
 	rt->diff = 0;
 	
 	return pt;	// for update to manipulate pointer
 }
 
-#define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)&(pag->pg) + sizeof(page) + sizeof(key) + 3 > (pag)->pg.used)
+#define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)(pag->pg) + sizeof(page) + sizeof(key) + 3 > (pag)->pg->used)
 
-static void _st_write(struct _st_lkup_res* rt, task* t)
+static void _st_write(struct _st_lkup_res* rt)
 {
 	key* newkey;
 	uint size = rt->length >> 3;
 
+	/* make a writable copy of external pages before write */
+	if(rt->pg->pg->id)
+	{
+	}
+
 	/* continue/append (last)key? */
 	if(rt->diff == rt->sub->length && IS_LAST_KEY(rt->sub,rt->pg))
 	{
-		uint length = (rt->pg->pg.used + size > PAGE_SIZE)? PAGE_SIZE - rt->pg->pg.used : size;
+		uint length = (rt->pg->pg->used + size > rt->pg->pg->size)? rt->pg->pg->size - rt->pg->pg->used : size;
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
-		rt->pg->pg.used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)&(rt->pg->pg) + sizeof(key);
-		rt->pg->pg.used += rt->pg->pg.used & 1;
+		rt->pg->pg->used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)(rt->pg->pg) + sizeof(key);
+		rt->pg->pg->used += rt->pg->pg->used & 1;
 
 		rt->diff = rt->sub->length;		
 		size -= length;
@@ -187,7 +191,7 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 
 	do
 	{
-		uint   room   = PAGE_SIZE - rt->pg->pg.used;
+		uint   room   = rt->pg->pg->size - rt->pg->pg->used;
 		uint   length = rt->length;
 		uint   pgsize = size;
 		ushort nkoff;
@@ -200,9 +204,9 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 				pgsize = room;		/* as much as we can */
 			else
 			{
-				_st_page_overflow(rt,t,pgsize);	/* we need a new page */
+				_st_page_overflow(rt,pgsize);	/* we need a new page */
 
-				room = PAGE_SIZE - rt->pg->pg.used;
+				room = PAGE_SIZE - rt->pg->pg->used;
 				pgsize = room > pgsize? pgsize : room;
 			}
 
@@ -210,9 +214,9 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 			rt->length -= length;
 		}
 
-		nkoff  = rt->pg->pg.used;
+		nkoff  = rt->pg->pg->used;
 		newkey = GOKEY(rt->pg,nkoff);
-		rt->pg->pg.used += pgsize + (pgsize & 1);	/* short aligned */
+		rt->pg->pg->used += pgsize + (pgsize & 1);	/* short aligned */
 		
 		newkey->offset = rt->diff;
 		newkey->length = length;
@@ -246,12 +250,12 @@ static void _st_write(struct _st_lkup_res* rt, task* t)
 void st_empty(task* t, st_ptr* pt)
 {
 	key* nk;
-	if(t->stack == 0 || t->stack->pg.used + sizeof(key) + 2 > PAGE_SIZE)
+	if(t->stack == 0 || t->stack->pg->used + sizeof(key) + 2 > PAGE_SIZE)
 		_tk_stack_new(t);
 
-	pt->key = t->stack->pg.used;
+	pt->key = t->stack->pg->used;
 	nk = GOKEY(t->stack,pt->key);
-	t->stack->pg.used += sizeof(key) + 2;
+	t->stack->pg->used += sizeof(key) + 2;
 
 	memset(nk,0,sizeof(key) + 2);
 	nk->length = 1;
@@ -274,9 +278,10 @@ uint st_is_empty(st_ptr* pt)
 	return 0;
 }
 
-uint st_exsist(st_ptr* pt, cdat path, uint length)
+uint st_exsist(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;
+	rt.t      = t;
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
@@ -286,9 +291,10 @@ uint st_exsist(st_ptr* pt, cdat path, uint length)
 	return _st_lookup(&rt);
 }
 
-uint st_move(st_ptr* pt, cdat path, uint length)
+uint st_move(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;
+	rt.t      = t;
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
@@ -298,7 +304,7 @@ uint st_move(st_ptr* pt, cdat path, uint length)
 	if(_st_lookup(&rt))
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)&rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (rt.length != 0);
@@ -307,6 +313,7 @@ uint st_move(st_ptr* pt, cdat path, uint length)
 uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;
+	rt.t      = t;
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
@@ -314,10 +321,10 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 	rt.diff   = pt->offset;
 
 	if(!_st_lookup(&rt))
-		_st_write(&rt,t);
+		_st_write(&rt);
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)&rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
 	pt->offset = rt.diff;
 	return (rt.length != 0);
 }
@@ -333,6 +340,7 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 	rt.diff = pt->offset;
 	rt.sub  = GOKEY(pt->pg,pt->key);
 	rt.prev = 0;
+	rt.t    = t;
 
 	if(rt.sub->sub)
 	{
@@ -372,18 +380,18 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 		{
 			rt.path   = path;
 			rt.length = length;
-			_st_write(&rt,t);
+			_st_write(&rt);
 		}
 	}
 
-	if(rm_pg->page_adr)	// should we care about cleanup?
+	if(rm_pg->pg->id)	// should we care about cleanup?
 	{
-		rm_pg->pg.waste += waste >> 3;
+		rm_pg->pg->waste += waste >> 3;
 		_tk_remove_tree(t,rm_pg,remove);
 	}
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)&rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
 	pt->offset = rt.diff;
 	return 0;
 }
@@ -391,6 +399,7 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;
+	rt.t      = t;
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
@@ -409,7 +418,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 			if(nxt->offset != rt.sub->length)
 				return 1;
 
-			rt.sub  = (nxt->length == 0)?_tk_get_ptr(&rt.pg,nxt):nxt;
+			rt.sub  = (nxt->length == 0)?_tk_get_ptr(t,&rt.pg,nxt):nxt;
 			if(rt.sub->sub == 0)
 			{
 				rt.diff = rt.sub->length;
@@ -420,15 +429,15 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	_st_write(&rt,t);
+	_st_write(&rt);
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)&rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
 	pt->offset = rt.diff;
 	return 0;
 }
 
-int st_get(st_ptr* pt, char* buffer, uint length)
+int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
@@ -480,7 +489,7 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 			}
 
 			offset = 0;
-			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
 			ckey = KDATA(me);
 			if(me->sub)
 			{
@@ -503,7 +512,7 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 			else if(nxt && nxt->offset == me->length)	// continuing key?
 			{
 				pt->offset = 0;
-				me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+				me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
 			}
 			else
 			{
@@ -518,13 +527,13 @@ int st_get(st_ptr* pt, char* buffer, uint length)
 		}
 	}
 
-	pt->key = (uint)me - (uint)&pg->pg;
+	pt->key = (uint)me - (uint)pg->pg;
 	pt->pg  = pg;
 	return read;
 }
 
 // should use repeatede calls to st_get(...) with own buffer
-char* st_get_all(st_ptr* pt, uint* length)
+char* st_get_all(task* t, st_ptr* pt, uint* length)
 {
 	char* buffer  = 0;
 	page_wrap* pg = pt->pg;
@@ -562,7 +571,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 			if(klen + boffset > rlength)
 			{
 				rlength += klen > GET_ALL_BUFFER? klen : GET_ALL_BUFFER;
-				buffer = (char*)tk_realloc(buffer,rlength);
+				buffer = (char*)tk_realloc(t,buffer,rlength);
 			}
 
 			memcpy(buffer + boffset,ckey,klen);
@@ -571,7 +580,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 			if(max != klen)	// stop at zero-term
 			{
 				pt->pg = pg;
-				pt->key = (uint)me - (uint)&pg->pg;
+				pt->key = (uint)me - (uint)pg->pg;
 				pt->offset = klen << 3;
 				*length = boffset;
 				return buffer;
@@ -582,14 +591,14 @@ char* st_get_all(st_ptr* pt, uint* length)
 		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
 		{
 			pt->pg = pg;
-			pt->key = (uint)me - (uint)&pg->pg;
+			pt->key = (uint)me - (uint)pg->pg;
 			pt->offset = nxt? nxt->offset : me->length;
 			*length = boffset;
 			return buffer;
 		}
 
 		// move to next key for more data
-		me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
+		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
 		ckey = KDATA(me);
 		if(me->sub)
 		{
@@ -607,6 +616,7 @@ char* st_get_all(st_ptr* pt, uint* length)
 // ------ USED? ----------------------
 
 /* FIXME */
+/*
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length)
 {
 	struct _st_lkup_res rt;
@@ -640,7 +650,7 @@ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length
 		me->sub = 0;
 	}
 
-	_st_write(&rt,t);	// write new
+	_st_write(&rt);	// write new
 
 	if(k && nxt == 0)
 	{
@@ -754,3 +764,4 @@ uint st_offset(st_ptr* pt, uint offset)
 		}
 	}
 }
+*/

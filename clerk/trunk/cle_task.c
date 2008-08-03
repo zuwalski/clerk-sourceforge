@@ -21,7 +21,7 @@
 #include "cle_struct.h"
 
 /* mem-manager */
-void* tk_malloc(uint size)
+void* tk_malloc(task* t, uint size)
 {
 	void* m = malloc(size);
 	if(m == 0)
@@ -30,7 +30,7 @@ void* tk_malloc(uint size)
 	return m;
 }
 
-void* tk_realloc(void* mem, uint size)
+void* tk_realloc(task* t, void* mem, uint size)
 {
 	void* m = realloc(mem,size);
 	if(m == 0)
@@ -39,7 +39,7 @@ void* tk_realloc(void* mem, uint size)
 	return m;
 }
 
-void tk_mfree(void* mem)
+void tk_mfree(task* t, void* mem)
 {
 	free(mem);
 }
@@ -70,7 +70,7 @@ static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 	}
 }
 
-key* _tk_get_ptr(page_wrap** pg, key* me)
+key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 {
 	ptr* pt = (ptr*)me;
 	if(pt->koffset)
@@ -132,9 +132,10 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 	}
 }
 
-task* tk_create_task(task* parent)
+task* tk_create_task(cle_pagesource* ps)
 {
-	task* t = (task*)tk_malloc(sizeof(task));
+	task* t = (task*)tk_malloc(0,sizeof(task));
+	t->ps = ps;
 	t->stack = 0;
 	return t;
 }

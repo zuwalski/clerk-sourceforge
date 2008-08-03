@@ -18,7 +18,7 @@
 #ifndef __CLE_CLERK_H__
 #define __CLE_CLERK_H__
 
-#define PAGE_SIZE 2048
+#include "cle_pagesource.h"
 
 typedef unsigned int uint;
 typedef unsigned long ulong;
@@ -65,9 +65,9 @@ void st_empty(task* t, st_ptr* pt);
 
 uint st_is_empty(st_ptr* pt);
 
-uint st_exsist(st_ptr* pt, cdat path, uint length);
+uint st_exsist(task* t, st_ptr* pt, cdat path, uint length);
 
-uint st_move(st_ptr* pt, cdat path, uint length);
+uint st_move(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_insert(task* t, st_ptr* pt, cdat path, uint length);
 
@@ -75,35 +75,36 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_append(task* t, st_ptr* pt, cdat path, uint length);
 
-uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);
-
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length);
 
+/*
 uint st_offset(st_ptr* pt, uint offset);
+uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);
+*/
 
-int st_get(st_ptr* pt, char* buffer, uint buffer_length);
+int st_get(task* t, st_ptr* pt, char* buffer, uint buffer_length);
 
-char* st_get_all(st_ptr* pt, uint* length);
+char* st_get_all(task* t, st_ptr* pt, uint* length);
 
 /* iterator functions */
 void it_create(it_ptr* it, st_ptr* pt);
 
-void it_dispose(it_ptr* it);
+void it_dispose(task* t, it_ptr* it);
 
-void it_load(it_ptr* it, cdat path, uint length);
+void it_load(task* t, it_ptr* it, cdat path, uint length);
 
 uint it_new(task* t, it_ptr* it, st_ptr* pt);
 
-uint it_next(st_ptr* pt, it_ptr* it);
+uint it_next(task* t, st_ptr* pt, it_ptr* it);
 
-uint it_next_eq(st_ptr* pt, it_ptr* it);
+uint it_next_eq(task* t, st_ptr* pt, it_ptr* it);
 
-uint it_prev(st_ptr* pt, it_ptr* it);
+uint it_prev(task* t, st_ptr* pt, it_ptr* it);
 
-uint it_prev_eq(st_ptr* pt, it_ptr* it);
+uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
 
 /* Task functions */
-task* tk_create_task(task* parent);
+task* tk_create_task(cle_pagesource* ps);
 
 cle_output* tk_getoutput(task* t);
 
@@ -111,9 +112,9 @@ void tk_drop_task(task* t);
 
 void* tk_alloc(task* t, uint size);
 
-void* tk_malloc(uint size);
-void* tk_realloc(void* mem, uint size);
-void tk_mfree(void* mem);
+void* tk_malloc(task* t, uint size);
+void* tk_realloc(task* t, void* mem, uint size);
+void tk_mfree(task* t, void* mem);
 
 /* test */
 
