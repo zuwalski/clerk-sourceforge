@@ -26,20 +26,18 @@ typedef unsigned short ushort;
 typedef unsigned char uchar;
 typedef const unsigned char* cdat;
 
-typedef struct page_wrap page_wrap;
-
 typedef struct task task;
 
 typedef struct st_ptr
 {
-	page_wrap* pg;
-	ushort	   key;
-	ushort	   offset;
+	page*  pg;
+	ushort key;
+	ushort offset;
 } st_ptr;
 
 typedef struct it_ptr
 {
-	page_wrap* pg;
+	page*  pg;
 	uchar* kdata;
 	ushort key;
 	ushort offset;
@@ -104,9 +102,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it);
 uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
 
 /* Task functions */
-task* tk_create_task(cle_pagesource* ps);
-
-cle_output* tk_getoutput(task* t);
+task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 
 void tk_drop_task(task* t);
 

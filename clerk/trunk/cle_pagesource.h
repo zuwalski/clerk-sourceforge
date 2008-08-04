@@ -24,9 +24,9 @@ typedef void* cle_psrc_data;
 typedef struct page
 {
 	cle_pageid id;
-	ushort size;
-	ushort used;
-	ushort waste;
+	unsigned short size;
+	unsigned short used;
+	unsigned short waste;
 	char data[];
 } page;
 
@@ -38,6 +38,7 @@ typedef struct cle_pagesource
 	int (*write_page)(cle_psrc_data, cle_pageid, page*);
 	int (*free_page)(cle_psrc_data, cle_pageid);
 	int (*unref_page)(cle_psrc_data, cle_pageid);
+	int (*page_error)(cle_psrc_data);
 }
 cle_pagesource;
 

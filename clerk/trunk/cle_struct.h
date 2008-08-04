@@ -45,14 +45,12 @@ typedef struct page
 } page;
 */
 
-struct page_wrap
+typedef struct page_wrap
 {
 	struct page_wrap* next;
 	overflow* ovf;
-	void*     page_adr;
-	/* from page-header */
-	page* pg;
-};
+	void* ext_pageid;
+}page_wrap;
 
 typedef struct key
 {
@@ -75,15 +73,16 @@ struct task
 {
 	page_wrap* stack;
 	cle_pagesource* ps;
+	cle_psrc_data psrc_data;
 };
 
-#define GOKEY(pag,off) ((key*)((char*)((pag)->pg) + (off)))
-#define GOPTR(pag,off) ((key*)((char*)(pag)->ovf + (((off) - (pag)->pg->size)<<4)))
+#define GOKEY(pag,off) ((key*)((char*)(pag) + (off)))
+#define GOPTR(pag,off) ((key*)(((char*)((page_wrap*)((char*)(pag) + (pag)->size))->ovf) + (((off) - (pag)->size)<<4)))
 #define GOOFF(pag,off) ((off & 0xF800)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((char*)k + sizeof(key))
 
-key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
+key* _tk_get_ptr(task* t, page** pg, key* me);
 void _tk_stack_new(task* t);
-void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
+void _tk_remove_tree(task* t, page* pg, ushort key);
 
 #endif

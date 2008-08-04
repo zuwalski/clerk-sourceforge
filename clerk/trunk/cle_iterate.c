@@ -24,21 +24,21 @@
 
 struct _st_lkup_it_res
 {
-	task*   t;
-	page_wrap* pg;
-	page_wrap* low_pg;
-	page_wrap* high_pg;
-	key*	prev;
-	key*	sub;
-	key*	low;
-	key*	low_prev;
-	key*	high;
-	key*	high_prev;
-	uchar*	path;
-	uchar*	low_path;
-	uchar*	high_path;
-	uint	length;
-	uint	diff;
+	task*  t;
+	page*  pg;
+	page*  low_pg;
+	page*  high_pg;
+	key*   prev;
+	key*   sub;
+	key*   low;
+	key*   low_prev;
+	key*   high;
+	key*   high_prev;
+	uchar* path;
+	uchar* low_path;
+	uchar* high_path;
+	uint   length;
+	uint   diff;
 };
 
 static void _it_lookup(struct _st_lkup_it_res* rt)
@@ -522,7 +522,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 }
 
 /* delete function - uses it_lookup */
-static uint _st_splice_key(page_wrap* rm_pg, ushort remove)
+static uint _st_splice_key(page* rm_pg, ushort remove)
 {
 	if(remove)
 	{
@@ -530,12 +530,12 @@ static uint _st_splice_key(page_wrap* rm_pg, ushort remove)
 		key* nxt = (tmp->next)?GOKEY(rm_pg,tmp->next):0;
 		tmp->next = 0;
 		if(nxt)
-			return (uint)nxt - (uint)&rm_pg->pg;
+			return (uint)nxt - (uint)rm_pg;
 	}
 	return 0;
 }
 
-static uint _st_remove_key(page_wrap* rm_pg, key* sub, key* prev)
+static uint _st_remove_key(page* rm_pg, key* sub, key* prev)
 {
 	uint remove;
 	if(prev)
@@ -555,7 +555,7 @@ static uint _st_remove_key(page_wrap* rm_pg, key* sub, key* prev)
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_it_res rt;
-	page_wrap* rm_pg;
+	page* rm_pg;
 	uint waste  = 0;
 	uint remove = 0;
 

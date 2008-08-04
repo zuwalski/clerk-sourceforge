@@ -20,13 +20,13 @@
 
 struct _st_lkup_res
 {
-	task*   t;
-	page_wrap* pg;
-	key*	prev;
-	key*	sub;
-	cdat	path;
-	uint	length;
-	uint	diff;
+	task* t;
+	page* pg;
+	key*  prev;
+	key*  sub;
+	cdat  path;
+	uint  length;
+	uint  diff;
 };
 
 static uint _st_lookup(struct _st_lkup_res* rt)
@@ -91,7 +91,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
-	overflow* ovf = rt->pg->ovf;
+	overflow* ovf = ((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf;
 	ptr*      pt;
 	ushort    nkoff;
 
@@ -102,7 +102,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		ovf->size = OVERFLOW_GROW;
 		ovf->used = 16;
 
-		rt->pg->ovf = ovf;
+		((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf = ovf;
 
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
@@ -117,7 +117,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 
 		ovf = (overflow*)tk_realloc(rt->t,ovf,ovf->size);
 
-		rt->pg->ovf = ovf;
+		((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf = ovf;
 		/* rebuild prev-pointer in (possibly) new ovf */
 		if(prev_offset)
 			rt->prev = (key*)((uint)ovf + prev_offset);
@@ -158,7 +158,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	return pt;	// for update to manipulate pointer
 }
 
-#define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)(pag->pg) + sizeof(page) + sizeof(key) + 3 > (pag)->pg->used)
+#define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)(pag) + sizeof(page) + sizeof(key) + 3 > (pag)->used)
 
 static void _st_write(struct _st_lkup_res* rt)
 {
@@ -166,14 +166,14 @@ static void _st_write(struct _st_lkup_res* rt)
 	uint size = rt->length >> 3;
 
 	/* make a writable copy of external pages before write */
-	if(rt->pg->pg->id)
+	if(rt->pg->id)
 	{
 	}
 
 	/* continue/append (last)key? */
 	if(rt->diff == rt->sub->length && IS_LAST_KEY(rt->sub,rt->pg))
 	{
-		uint length = (rt->pg->pg->used + size > rt->pg->pg->size)? rt->pg->pg->size - rt->pg->pg->used : size;
+		uint length = (rt->pg->used + size > rt->pg->size)? rt->pg->size - rt->pg->used : size;
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
@@ -304,7 +304,7 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length)
 	if(_st_lookup(&rt))
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
 	return (rt.length != 0);
@@ -324,7 +324,7 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 		_st_write(&rt);
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg;
 	pt->offset = rt.diff;
 	return (rt.length != 0);
 }
@@ -332,7 +332,7 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_res rt;
-	page_wrap* rm_pg;
+	page* rm_pg;
 	ushort remove = 0;
 	ushort waste;
 
@@ -384,14 +384,14 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	if(rm_pg->pg->id)	// should we care about cleanup?
+	if(rm_pg->id)	// should we care about cleanup?
 	{
-		rm_pg->pg->waste += waste >> 3;
+		rm_pg->waste += waste >> 3;
 		_tk_remove_tree(t,rm_pg,remove);
 	}
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg;
 	pt->offset = rt.diff;
 	return 0;
 }
@@ -432,20 +432,20 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	_st_write(&rt);
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (uint)rt.sub - (uint)rt.pg;
 	pt->offset = rt.diff;
 	return 0;
 }
 
 int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 {
-	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt      = 0;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint offset   = pt->offset;
+	page* pg     = pt->pg;
+	key* me      = GOKEY(pt->pg,pt->key);
+	key* nxt     = 0;
+	cdat ckey    = KDATA(me) + (pt->offset >> 3);
+	uint offset  = pt->offset;
 	uint klen;
-	int read      = 0;
+	int read     = 0;
 
 	if(me->sub)
 	{
@@ -527,7 +527,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 		}
 	}
 
-	pt->key = (uint)me - (uint)pg->pg;
+	pt->key = (uint)me - (uint)pg;
 	pt->pg  = pg;
 	return read;
 }
@@ -536,7 +536,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 char* st_get_all(task* t, st_ptr* pt, uint* length)
 {
 	char* buffer  = 0;
-	page_wrap* pg = pt->pg;
+	page* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
 	key* nxt      = 0;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
@@ -580,7 +580,7 @@ char* st_get_all(task* t, st_ptr* pt, uint* length)
 			if(max != klen)	// stop at zero-term
 			{
 				pt->pg = pg;
-				pt->key = (uint)me - (uint)pg->pg;
+				pt->key = (uint)me - (uint)pg;
 				pt->offset = klen << 3;
 				*length = boffset;
 				return buffer;
@@ -591,7 +591,7 @@ char* st_get_all(task* t, st_ptr* pt, uint* length)
 		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
 		{
 			pt->pg = pg;
-			pt->key = (uint)me - (uint)pg->pg;
+			pt->key = (uint)me - (uint)pg;
 			pt->offset = nxt? nxt->offset : me->length;
 			*length = boffset;
 			return buffer;

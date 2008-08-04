@@ -45,7 +45,7 @@ void tk_mfree(task* t, void* mem)
 }
 
 /* internal */
-static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
+static void _tk_clear_tree(task* t, page* pg, ushort off)
 {
 	while(off)
 	{
@@ -58,11 +58,11 @@ static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 				// que 
 				pt->pg;
 			}
-			pg->pg.waste += sizeof(ptr);
+			pg->waste += sizeof(ptr);
 		}
 		else
 		{
-			pg->pg.waste += ((k->length + 7) >> 3) + sizeof(key);
+			pg->waste += ((k->length + 7) >> 3) + sizeof(key);
 			_tk_clear_tree(t,pg,k->sub);
 		}
 
@@ -70,17 +70,21 @@ static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 	}
 }
 
-key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
+key* _tk_get_ptr(task* t, page** pg, key* me)
 {
 	ptr* pt = (ptr*)me;
 	if(pt->koffset)
 	{
-		*pg = (page_wrap*)pt->pg;
+		*pg = (page*)pt->pg;
 		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
 	}
 	else
-		/* call pager to get persistent page */
-		unimplm();
+	{
+		/* call pager to get page */
+		*pg = t->ps->read_page(t->psrc_data,pt->pg);
+		/* go to root-key */
+		me = GOKEY(*pg,sizeof(page));
+	}
 
 	return me;
 }
@@ -88,13 +92,18 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 void _tk_stack_new(task* t)
 {
 	/* put a new page on the task stack */
-	page_wrap* tmp = (page_wrap*)tk_malloc(PAGE_SIZE + sizeof(page_wrap));
+	page_wrap* tmp;
+	page* pg = (page*)tk_malloc(t,PAGE_SIZE + sizeof(page_wrap));
 
+	pg->id = 0;
+	pg->size = PAGE_SIZE;
+	pg->used = sizeof(page);
+	pg->waste = 0;
+
+	tmp = (page_wrap*)((char*)pg + PAGE_SIZE);
 	tmp->next = t->stack;
-	tmp->page_adr = 0;		// in-mem page (no disk adr)
+	tmp->ext_pageid = 0;
 	tmp->ovf = 0;
-	tmp->pg.used = sizeof(page);
-	tmp->pg.waste = 0;
 	t->stack = tmp;
 
 	page_size++;	// TEST
@@ -103,7 +112,8 @@ void _tk_stack_new(task* t)
 void* tk_alloc(task* t, uint size)
 {
 	uint offset;
-	if(t->stack == 0 || t->stack->pg.used + size + 3 > PAGE_SIZE)
+	page* pg = (page*)((char*)t->stack - PAGE_SIZE);
+	if(t->stack == 0 || pg->used + size + 3 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
 			return 0;
@@ -111,31 +121,33 @@ void* tk_alloc(task* t, uint size)
 		_tk_stack_new(t);
 	}
 
-	if(t->stack->pg.used & 3)
-		t->stack->pg.used += 4 - (t->stack->pg.used & 3);
+	pg = (page*)((char*)t->stack - PAGE_SIZE);
+	if(pg->used & 3)
+		pg->used += 4 - (pg->used & 3);
 
-	offset = t->stack->pg.used;
-	t->stack->pg.used += size;
+	offset = pg->used;
+	pg->used += size;
 
-	return (void*)GOKEY(t->stack,offset);
+	return (void*)GOKEY(pg,offset);
 }
 
-void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
+void _tk_remove_tree(task* t, page* pg, ushort off)
 {
 	// clear tree before clean_page
 	_tk_clear_tree(t,pg,off);
 
 	// clean_page
-	if(pg->pg.waste > PAGE_SIZE/2)
+	if(pg->waste > pg->size/2)
 	{
 		// que this + parent
 	}
 }
 
-task* tk_create_task(cle_pagesource* ps)
+task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 {
 	task* t = (task*)tk_malloc(0,sizeof(task));
 	t->ps = ps;
+	t->psrc_data = psrc_data;
 	t->stack = 0;
 	return t;
 }
@@ -146,9 +158,9 @@ void tk_drop_task(task* t)
 	while(pg)
 	{
 		t->stack = pg->next;
-		tk_mfree(pg);
+		tk_mfree(t,(char*)pg - PAGE_SIZE);
 		pg = t->stack;
 	}
 
-	tk_mfree(t);
+	tk_mfree(0,t);
 }
