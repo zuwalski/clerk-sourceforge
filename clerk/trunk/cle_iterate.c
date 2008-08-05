@@ -282,7 +282,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
@@ -308,7 +308,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+				pt->key = (uint)rt.sub - (uint)rt.pg;
 				pt->offset = rt.diff;
 			}
 			return 1;
@@ -331,7 +331,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
@@ -374,7 +374,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
@@ -400,7 +400,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+				pt->key = (uint)rt.sub - (uint)rt.pg;
 				pt->offset = rt.diff;
 			}
 			return 1;
@@ -423,7 +423,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
 	return (it->kused > 0);
@@ -640,9 +640,9 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	if(rm_pg->pg->id)
+	if(rm_pg->id)
 	{
-		rm_pg->pg->waste += waste >> 3;
+		rm_pg->waste += waste >> 3;
 		_tk_remove_tree(t,rm_pg,remove);
 	}
 

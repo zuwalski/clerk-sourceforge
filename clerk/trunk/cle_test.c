@@ -24,7 +24,7 @@
 #include <stdio.h>
 
 static FILE* f;
-static void print_struct(page_wrap* pg, const key* me, int ind)
+static void print_struct(page* pg, const key* me, int ind)
 {
 	while(1){
 		int i;
@@ -70,7 +70,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 void st_prt_page(st_ptr* pt)
 {
 	f = stdout;
-	fprintf(f,"%p(%d/%d)\n",pt->pg,pt->pg->pg.used,pt->pg->pg.waste);
+	fprintf(f,"%p(%d/%d)\n",pt->pg,pt->pg->used,pt->pg->waste);
 	print_struct(pt->pg,GOKEY(pt->pg,pt->key),0);
 }
 

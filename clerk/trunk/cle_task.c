@@ -80,13 +80,43 @@ key* _tk_get_ptr(task* t, page** pg, key* me)
 	}
 	else
 	{
-		/* call pager to get page */
-		*pg = t->ps->read_page(t->psrc_data,pt->pg);
+		/* have a writable copy? */
+		page_wrap* pw = t->wpages;
+		while(pw && pw->ext_pageid != pt->pg)
+			pw = pw->next;
+
+		if(pw)
+			*pg = pw->pg;	/* use internal(writable) copy of page */
+		else
+			/* call pager to get page */
+			*pg = t->ps->read_page(t->psrc_data,pt->pg);
 		/* go to root-key */
 		me = GOKEY(*pg,sizeof(page));
 	}
 
 	return me;
+}
+
+page* _tk_write_copy(task* t, page* pg)
+{
+	page_wrap* wp;
+	page* npg;
+	/* copy to new (internal) page */
+	npg = (page*)tk_malloc(t,pg->size + sizeof(page_wrap));
+	memcpy(npg,pg,pg->used);
+	npg->id = 0;
+
+	/* setup page-wrap */
+	wp = GOPAGEWRAP(pg);
+	wp->ext_pageid = pg->id;
+	wp->pg = npg;
+	wp->ovf = 0;
+
+	wp->next = t->wpages;
+	t->wpages = wp;
+
+	//t->ps->unref_page(t->psrc_data,pg->id);
+	return npg;
 }
 
 void _tk_stack_new(task* t)
@@ -104,6 +134,7 @@ void _tk_stack_new(task* t)
 	tmp->next = t->stack;
 	tmp->ext_pageid = 0;
 	tmp->ovf = 0;
+	tmp->pg = pg;
 	t->stack = tmp;
 
 	page_size++;	// TEST
@@ -146,9 +177,10 @@ void _tk_remove_tree(task* t, page* pg, ushort off)
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 {
 	task* t = (task*)tk_malloc(0,sizeof(task));
-	t->ps = ps;
 	t->psrc_data = psrc_data;
+	t->ps = ps;
 	t->stack = 0;
+	t->wpages = 0;
 	return t;
 }
 

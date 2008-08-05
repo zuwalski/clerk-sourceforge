@@ -22,13 +22,13 @@
 
 /* Config */
 
-#define PAGE_SIZE 2048
+#define PAGE_SIZE 1024
 
 #define OVERFLOW_GROW (16*64)
 
 #define GET_ALL_BUFFER 256
 
-#define IT_GROW_SIZE 16
+#define IT_GROW_SIZE 32
 
 /* Defs */
 typedef struct overflow
@@ -37,19 +37,12 @@ typedef struct overflow
 	uint size;
 } overflow;
 
-/* DEL
-typedef struct page
-{
-	ushort used;
-	ushort waste;
-} page;
-*/
-
 typedef struct page_wrap
 {
 	struct page_wrap* next;
 	overflow* ovf;
-	void* ext_pageid;
+	page* pg;
+	cle_pageid ext_pageid;
 }page_wrap;
 
 typedef struct key
@@ -72,17 +65,20 @@ typedef struct ptr
 struct task
 {
 	page_wrap* stack;
+	page_wrap* wpages;		// USE MAP INSTEAD OF LIST?
 	cle_pagesource* ps;
 	cle_psrc_data psrc_data;
 };
 
+#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))
 #define GOKEY(pag,off) ((key*)((char*)(pag) + (off)))
-#define GOPTR(pag,off) ((key*)(((char*)((page_wrap*)((char*)(pag) + (pag)->size))->ovf) + (((off) - (pag)->size)<<4)))
-#define GOOFF(pag,off) ((off & 0xF800)? GOPTR(pag,off):GOKEY(pag,off))
+#define GOPTR(pag,off) ((key*)(((char*)GOPAGEWRAP(pag)->ovf) + (((off) ^ 0x8000)<<4)))
+#define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((char*)k + sizeof(key))
 
 key* _tk_get_ptr(task* t, page** pg, key* me);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page* pg, ushort key);
+page* _tk_write_copy(task* t, page* pg);
 
 #endif

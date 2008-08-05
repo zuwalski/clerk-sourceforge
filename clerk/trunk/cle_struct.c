@@ -91,7 +91,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
-	overflow* ovf = ((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf;
+	overflow* ovf = GOPAGEWRAP(rt->pg)->ovf;
 	ptr*      pt;
 	ushort    nkoff;
 
@@ -102,7 +102,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		ovf->size = OVERFLOW_GROW;
 		ovf->used = 16;
 
-		((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf = ovf;
+		GOPAGEWRAP(rt->pg)->ovf = ovf;
 
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
@@ -117,7 +117,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 
 		ovf = (overflow*)tk_realloc(rt->t,ovf,ovf->size);
 
-		((page_wrap*)((char*)rt->pg + rt->pg->size))->ovf = ovf;
+		GOPAGEWRAP(rt->pg)->ovf = ovf;
 		/* rebuild prev-pointer in (possibly) new ovf */
 		if(prev_offset)
 			rt->prev = (key*)((uint)ovf + prev_offset);
@@ -126,11 +126,11 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 
-	if(rt->t->stack == 0 || size + rt->t->stack->pg->used > PAGE_SIZE)
+	if(rt->t->stack == 0 || size + rt->t->stack->pg->used > rt->t->stack->pg->size)
 		_tk_stack_new(rt->t);
 
 	/* make pointer */
-	nkoff = (ovf->used >> 4) + PAGE_SIZE;
+	nkoff = (ovf->used >> 4) & 0x8000;
 	pt = (ptr*)((char*)ovf + ovf->used);
 	ovf->used += 16;
 
@@ -151,7 +151,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	pt->zero = 0;
 
 	/* reset values */
-	rt->pg = rt->t->stack;
+	rt->pg = rt->t->stack->pg;
 	rt->prev = rt->sub = 0;
 	rt->diff = 0;
 	
@@ -168,6 +168,16 @@ static void _st_write(struct _st_lkup_res* rt)
 	/* make a writable copy of external pages before write */
 	if(rt->pg->id)
 	{
+		page* wpage = _tk_write_copy(rt->t,rt->pg);
+
+		/* fix pointers */
+		if(rt->prev)
+			rt->prev = GOKEY(wpage,(uint)rt->prev - (uint)rt->pg);
+
+		if(rt->sub)
+			rt->sub = GOKEY(wpage,(uint)rt->sub - (uint)rt->pg);
+
+		rt->pg = wpage;
 	}
 
 	/* continue/append (last)key? */
@@ -177,8 +187,8 @@ static void _st_write(struct _st_lkup_res* rt)
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
-		rt->pg->pg->used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)(rt->pg->pg) + sizeof(key);
-		rt->pg->pg->used += rt->pg->pg->used & 1;
+		rt->pg->used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)(rt->pg) + sizeof(key);
+		rt->pg->used += rt->pg->used & 1;
 
 		rt->diff = rt->sub->length;		
 		size -= length;
@@ -191,7 +201,7 @@ static void _st_write(struct _st_lkup_res* rt)
 
 	do
 	{
-		uint   room   = rt->pg->pg->size - rt->pg->pg->used;
+		uint   room   = rt->pg->size - rt->pg->used;
 		uint   length = rt->length;
 		uint   pgsize = size;
 		ushort nkoff;
@@ -206,7 +216,7 @@ static void _st_write(struct _st_lkup_res* rt)
 			{
 				_st_page_overflow(rt,pgsize);	/* we need a new page */
 
-				room = PAGE_SIZE - rt->pg->pg->used;
+				room = rt->pg->size - rt->pg->used;
 				pgsize = room > pgsize? pgsize : room;
 			}
 
@@ -214,9 +224,9 @@ static void _st_write(struct _st_lkup_res* rt)
 			rt->length -= length;
 		}
 
-		nkoff  = rt->pg->pg->used;
+		nkoff  = rt->pg->used;
 		newkey = GOKEY(rt->pg,nkoff);
-		rt->pg->pg->used += pgsize + (pgsize & 1);	/* short aligned */
+		rt->pg->used += pgsize + (pgsize & 1);	/* short aligned */
 		
 		newkey->offset = rt->diff;
 		newkey->length = length;
@@ -249,19 +259,14 @@ static void _st_write(struct _st_lkup_res* rt)
 
 void st_empty(task* t, st_ptr* pt)
 {
-	key* nk;
-	if(t->stack == 0 || t->stack->pg->used + sizeof(key) + 2 > PAGE_SIZE)
-		_tk_stack_new(t);
+	key* nk = tk_alloc(t,sizeof(key) + 2);
 
-	pt->key = t->stack->pg->used;
-	nk = GOKEY(t->stack,pt->key);
-	t->stack->pg->used += sizeof(key) + 2;
+	pt->key = (uint)nk - (uint)t->stack->pg;
+	pt->pg = t->stack->pg;
+	pt->offset = 0;
 
 	memset(nk,0,sizeof(key) + 2);
 	nk->length = 1;
-
-	pt->pg = t->stack;
-	pt->offset = 0;
 }
 
 uint st_is_empty(st_ptr* pt)
