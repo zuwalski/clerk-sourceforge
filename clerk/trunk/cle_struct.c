@@ -126,7 +126,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 
-	if(rt->t->stack == 0 || size + rt->t->stack->pg->used > rt->t->stack->pg->size)
+	if(size + rt->t->stack->pg->used > rt->t->stack->pg->size)
 		_tk_stack_new(rt->t);
 
 	/* make pointer */

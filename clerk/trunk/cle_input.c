@@ -22,6 +22,13 @@
 *	Commands and external events are "pumped" in through this set of functions
 */
 
+#define HEAD_TYPE "\0T"
+#define HEAD_APPS  "\0A"
+
+#define HEAD_EVENT "\0e"
+#define HEAD_IMPORT "\0i"
+#define HEAD_EXTENDS "\0x"
+
 // structs
 struct _ptr_stack
 {
@@ -56,18 +63,107 @@ static cle_output _def_output_handler = {
 	_def_1  /*next*/
 };
 
-// sys-handlers
-// calls should be single threaded during setup/app.init
-static cle_syshandler* _sys_handler = 0;
+/* GLOBALS */
+static task* _global_handler_task = 0;
+static st_ptr _global_handler_rootptr;
 
-void cle_add_sys_handler(cle_syshandler* handler)
+static int _validate_event_name(cdat name, uint length)
 {
-	handler->next = _sys_handler;
-	_sys_handler = handler;
+	return 1;
+}
+
+/* initializers */
+int cle_initialize_system(int argc, char *argv[])
+{
+	// setup system event-handlers
+	_global_handler_task = tk_create_task(0,0);
+
+	st_empty(_global_handler_task,&_global_handler_rootptr);
+
+	return 0;
+}
+
+int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler)
+{
+	st_ptr pt = _global_handler_rootptr;
+
+	if(!_validate_event_name(eventmask,mask_length))
+		return -1;
+
+	if(!st_insert(_global_handler_task,&pt,eventmask,mask_length))
+		return -2;
+
+	st_append(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE);
+
+	st_append(_global_handler_task,&pt,(cdat)&handler,sizeof(cle_syshandler*));
+
+	return 0;
 }
 
 // input-functions
 
+_ipt* cle_start(cdat eventid, uint event_len,
+				cdat userid, uint userid_len, 
+					cle_output* response, void* responsedata, 
+						cle_pagesource* app_source, cle_psrc_data app_source_data, 
+							cle_pagesource* session_source, cle_psrc_data session_source_data)
+{
+	st_ptr pt;
+	task* t;
+	_ipt* ipt;
+
+	// valid eventid?
+	if(!_validate_event_name(eventid,event_len))
+		return 0;
+
+	// validate user allowed to fire event
+
+	// ipt setup
+	t = tk_create_task(0,0);
+	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
+	ipt->free = 0;
+	ipt->system = 0;
+
+	ipt->depth = ipt->maxdepth = 0;
+
+	ipt->sys.data = 0;
+	ipt->sys.next_call = 0;
+	ipt->sys.t = t;
+
+	pt.pg = app_source->root_page(app_source_data);
+	pt.key = sizeof(page);
+	pt.offset = 0;
+
+	ipt->sys.instance = pt;
+
+	// if no response-handler. Just throw away output
+	ipt->sys.response = (response != 0)? response : &_def_output_handler;
+	ipt->sys.respdata = responsedata;
+
+	// lookup system-eventhandler
+	pt = _global_handler_rootptr;
+	if(!st_move(_global_handler_task,&pt,eventid,event_len))
+	{
+		if(!st_move(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE))
+		{
+			if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) == -1)
+			{
+			}
+			else
+				ipt->system = 0;
+		}
+	}
+
+	// lookup module-eventhandlers
+
+	// setup and ready all handlers
+	if(ipt->system)
+		ipt->system->do_setup(&ipt->sys);
+
+	return ipt;
+}
+
+/*
 _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 {
 	_ipt* ipt;
@@ -151,6 +247,7 @@ _ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
 
 	return ipt;
 }
+*/
 
 int cle_end(_ipt* ipt, cdat code, uint length)
 {

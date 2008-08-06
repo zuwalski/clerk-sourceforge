@@ -127,11 +127,6 @@ extern uint overflow_size;
 #define HEAD_STR "\0S"
 #define HEAD_NEXT "\0N"
 
-#define HEAD_TYPE "\0T"
-#define HEAD_APPS  "\0A"
 
-#define HEAD_EVENT "\0e"
-#define HEAD_IMPORT "\0i"
-#define HEAD_EXTENDS "\0x"
 
 #endif

@@ -144,7 +144,7 @@ void* tk_alloc(task* t, uint size)
 {
 	uint offset;
 	page* pg = (page*)((char*)t->stack - PAGE_SIZE);
-	if(t->stack == 0 || pg->used + size + 3 > PAGE_SIZE)
+	if(pg->used + size + 3 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
 			return 0;
@@ -176,10 +176,19 @@ void _tk_remove_tree(task* t, page* pg, ushort off)
 
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 {
-	task* t = (task*)tk_malloc(0,sizeof(task));
+	task* t;
+	page* p;
+	task xt;
+	xt.stack = 0;
+	_tk_stack_new(&xt);
+
+	p = xt.stack->pg;
+	t = (task*)((char*)p + p->used);
+	p->used += sizeof(task);
+
 	t->psrc_data = psrc_data;
 	t->ps = ps;
-	t->stack = 0;
+	t->stack = xt.stack;
 	t->wpages = 0;
 	return t;
 }
@@ -189,10 +198,8 @@ void tk_drop_task(task* t)
 	page_wrap* pg = t->stack;
 	while(pg)
 	{
-		t->stack = pg->next;
-		tk_mfree(t,(char*)pg - PAGE_SIZE);
-		pg = t->stack;
+		page_wrap* tmp = pg->next;
+		tk_mfree(t,pg->pg);
+		pg = tmp;
 	}
-
-	tk_mfree(0,t);
 }

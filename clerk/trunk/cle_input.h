@@ -21,10 +21,22 @@
 #include "cle_clerk.h"
 #include "cle_pagesource.h"
 
+/*
+*	The main input-interface to the running system
+*	Commands and external events are "pumped" in through this set of functions
+*/
+
+/* initializer: call this before anything else */
+int cle_initialize_system(int argc, char *argv[]);
+
 /* event input functions */
 typedef struct _ipt_internal _ipt;
 
-_ipt* cle_start(cdat eventid, uint event_len, cle_pagesource* source, cle_psrc_data srcdata, cle_output* response, void* responsedata);
+_ipt* cle_start(cdat eventid, uint event_len, cdat userid, uint userid_len, 
+				cle_output* response, void* responsedata, 
+					cle_pagesource* app_source, cle_psrc_data app_source_data, 
+						cle_pagesource* session_source, cle_psrc_data session_source_data);
+
 int cle_data(_ipt* inpt, cdat data, uint length);
 int cle_pop(_ipt* inpt);
 int cle_push(_ipt* inpt);
@@ -47,24 +59,13 @@ sys_handler_data;
 /* system extension-handlers */
 typedef struct cle_syshandler
 {
-	const char* handlerid;
-	uint id_length;
-
 	int (*do_setup)(sys_handler_data*);
 	int (*do_next)(sys_handler_data*,st_ptr,uint);
 	int (*do_end)(sys_handler_data*,cdat,uint);
-
-	struct cle_syshandler* next;
 }
 cle_syshandler;
 
-void cle_add_sys_handler(cle_syshandler* handler);
-
-/* initializers */
-void app_setup();
-void typ_setup();
-void cmp_setup();
-
-void tst_setup();
+/* single threaded calls only */
+int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);
 
 #endif
