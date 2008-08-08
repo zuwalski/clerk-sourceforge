@@ -43,6 +43,7 @@ typedef struct page_wrap
 	overflow* ovf;
 	page* pg;
 	cle_pageid ext_pageid;
+	ulong refcount;
 }page_wrap;
 
 typedef struct key
@@ -77,6 +78,8 @@ struct task
 #define KDATA(k) ((char*)k + sizeof(key))
 
 key* _tk_get_ptr(task* t, page** pg, key* me);
+void _tk_page_ref(task* t, page* pg);
+void _tk_page_unref(task* t, page* pg);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page* pg, ushort key);
 page* _tk_write_copy(task* t, page* pg);

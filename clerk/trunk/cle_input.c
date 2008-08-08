@@ -50,19 +50,6 @@ struct _ipt_internal
 	uint depth;
 };
 
-// default output-handler (used if none given)
-static int _def_1(void* t) { return 0; }
-static int _def_2(void* t, cdat c, uint u) { return 0; }
-
-static cle_output _def_output_handler = {
-	_def_1 /*start*/,
-	_def_2 /*end*/,
-	_def_1 /*pop*/,
-	_def_1 /*push*/,
-	_def_2  /*data*/,
-	_def_1  /*next*/
-};
-
 /* GLOBALS */
 static task* _global_handler_task = 0;
 static st_ptr _global_handler_rootptr;
@@ -130,31 +117,34 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	ipt->sys.next_call = 0;
 	ipt->sys.t = t;
 
+	/* get a root ptr */
 	pt.pg = app_source->root_page(app_source_data);
 	pt.key = sizeof(page);
 	pt.offset = 0;
-
 	ipt->sys.instance = pt;
 
-	// if no response-handler. Just throw away output
-	ipt->sys.response = (response != 0)? response : &_def_output_handler;
+	ipt->sys.response = response;
 	ipt->sys.respdata = responsedata;
 
 	// lookup system-eventhandler
 	pt = _global_handler_rootptr;
-	if(!st_move(_global_handler_task,&pt,eventid,event_len))
+	if(!st_move(_global_handler_task,&pt,eventid,event_len) &&
+		!st_move(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE))
 	{
-		if(!st_move(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE))
+		if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) == -1)
 		{
-			if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) == -1)
-			{
-			}
-			else
-				ipt->system = 0;
 		}
+		else
+			ipt->system = 0;
 	}
 
 	// lookup module-eventhandlers
+	pt = ipt->sys.instance;
+
+	if(!st_move(x,&pt,HEAD_EVENT,HEAD_SIZE) &&
+		!st_move(x,&pt,eventid,event_len)
+	{
+	}
 
 	// setup and ready all handlers
 	if(ipt->system)

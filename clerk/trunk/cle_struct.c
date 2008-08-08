@@ -155,6 +155,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	rt->prev = rt->sub = 0;
 	rt->diff = 0;
 	
+	GOPAGEWRAP(rt->pg)->refcount++;
 	return pt;	// for update to manipulate pointer
 }
 
