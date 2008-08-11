@@ -236,11 +236,49 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 
 void tk_drop_task(task* t)
 {
-	page_wrap* pg = t->stack;
+	page_wrap* pg = t->wpages;
 	while(pg)
 	{
 		page_wrap* tmp = pg->next;
 		tk_mfree(t,pg->pg);
 		pg = tmp;
 	}
+
+	pg = t->stack;
+	while(pg)
+	{
+		page_wrap* tmp = pg->next;
+		tk_mfree(t,pg->pg);
+		pg = tmp;
+	}
+}
+
+// ---- commit ----------------------------------
+
+int tk_commit_task(task* t)
+{
+	page_wrap* pgw = t->wpages;
+	int ret = 0;
+	while(pgw && ret == 0)
+	{
+		page_wrap* tmp = pgw->next;
+		page* pg = pgw->pg;
+
+		/* overflowed? */
+		if(pgw->ovf)
+		{}
+		/* underflow? */
+		else if(pg->waste > pg->size/2)
+		{
+		}
+		else
+		/* just write it */
+			ret = t->ps->write_page(t->psrc_data,pgw->ext_pageid,pg);
+
+		pgw = tmp;
+	}
+
+	tk_drop_task(t);
+
+	return ret;
 }

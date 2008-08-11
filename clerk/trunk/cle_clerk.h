@@ -105,6 +105,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 
 void tk_drop_task(task* t);
+int tk_commit_task(task* t);
 
 void* tk_alloc(task* t, uint size);
 

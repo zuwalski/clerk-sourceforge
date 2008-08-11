@@ -24,7 +24,7 @@
 
 #define HEAD_TYPE "\0T"
 #define HEAD_APPS  "\0A"
-
+#define HEAD_USERS "\0u"
 #define HEAD_EVENT "\0e"
 #define HEAD_IMPORT "\0i"
 #define HEAD_EXTENDS "\0x"
@@ -103,10 +103,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	if(!_validate_event_name(eventid,event_len))
 		return 0;
 
-	// validate user allowed to fire event
-
 	// ipt setup
-	t = tk_create_task(0,0);
+	t = tk_create_task(app_source,app_source_data);
 	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
 	ipt->free = 0;
 	ipt->system = 0;
@@ -126,23 +124,35 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	ipt->sys.response = response;
 	ipt->sys.respdata = responsedata;
 
+	// validate user allowed to fire event
+	if(userid_len > 0)
+	{
+		// user exsist?
+		if(st_move(t,&pt,HEAD_USERS,HEAD_SIZE) ||
+			st_move(t,&pt,userid,userid_len))
+		{
+			app_source->unref_page(app_source_data,ipt->sys.instance.pg->pg->id);
+			tk_drop_task(t);
+			return 0;
+		}
+
+		// user-roles
+	}
+
 	// lookup system-eventhandler
 	pt = _global_handler_rootptr;
 	if(!st_move(_global_handler_task,&pt,eventid,event_len) &&
 		!st_move(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE))
 	{
-		if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) == -1)
-		{
-		}
-		else
+		if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) != -1)
 			ipt->system = 0;
 	}
 
 	// lookup module-eventhandlers
 	pt = ipt->sys.instance;
 
-	if(!st_move(x,&pt,HEAD_EVENT,HEAD_SIZE) &&
-		!st_move(x,&pt,eventid,event_len)
+	if(!st_move(t,&pt,HEAD_EVENT,HEAD_SIZE) &&
+		!st_move(t,&pt,eventid,event_len))
 	{
 	}
 
@@ -334,7 +344,7 @@ int cle_next(_ipt* ipt)
 		if(ipt->system->do_next)
 			rcode = ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
 		else
-			rcode = -3;		// operation doent use next
+			rcode = -3;		// operation doesn't use next
 	}
 	else
 	{
