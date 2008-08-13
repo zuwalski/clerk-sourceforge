@@ -50,7 +50,7 @@ typedef struct sys_handler_data
 	cle_output* response;
 	void* respdata;
 	void* data;
-	task* t;
+	task* instance_tk;
 	st_ptr instance;
 	uint next_call;
 }

@@ -44,6 +44,8 @@ struct _ipt_internal
 	cle_syshandler* system;
 	sys_handler_data sys;
 
+	task* t;
+
 	st_ptr current;
 
 	uint maxdepth;
@@ -103,19 +105,20 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	if(!_validate_event_name(eventid,event_len))
 		return 0;
 
-	// ipt setup
-	t = tk_create_task(app_source,app_source_data);
+	// ipt setup - internal task
+	t = tk_create_task(0,0);
 	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
 	ipt->free = 0;
 	ipt->system = 0;
+	ipt->t = t;
 
 	ipt->depth = ipt->maxdepth = 0;
 
 	ipt->sys.data = 0;
 	ipt->sys.next_call = 0;
-	ipt->sys.t = t;
 
-	/* get a root ptr */
+	/* get a root ptr to instance-db */
+	ipt->sys.instance_tk = tk_create_task(app_source,app_source_data);
 	pt.pg = app_source->root_page(app_source_data);
 	pt.key = sizeof(page);
 	pt.offset = 0;
@@ -131,12 +134,24 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		if(st_move(t,&pt,HEAD_USERS,HEAD_SIZE) ||
 			st_move(t,&pt,userid,userid_len))
 		{
-			app_source->unref_page(app_source_data,ipt->sys.instance.pg->pg->id);
+			app_source->unref_page(app_source_data,ipt->sys.instance.pg->id);
 			tk_drop_task(t);
 			return 0;
 		}
+		else
+		{
+			it_ptr it;
+			it_create(&it,&pt);
 
-		// user-roles
+			// iterate user-roles
+			while(it_next(ipt->sys.instance_tk,0,&it))
+			{
+				it.kdata;
+				it.ksize;
+			}
+
+			it_dispose(ipt->sys.instance_tk,&it);
+		}
 	}
 
 	// lookup system-eventhandler
@@ -154,6 +169,15 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	if(!st_move(t,&pt,HEAD_EVENT,HEAD_SIZE) &&
 		!st_move(t,&pt,eventid,event_len))
 	{
+		it_ptr it;
+		it_create(&it,&pt);
+
+		// iterate instance-refs / event-handler-id
+		while(it_next(ipt->sys.instance_tk,&pt,&it))
+		{
+		}
+
+		it_dispose(ipt->sys.instance_tk,&it);
 	}
 
 	// setup and ready all handlers
@@ -163,91 +187,38 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	return ipt;
 }
 
-/*
-_ipt* cle_start(cle_input* inpt, cle_output* response, void* responsedata)
+int cle_next(_ipt* ipt)
 {
-	_ipt* ipt;
-	task* t;
+	struct _handler_list* handlers;
+	int rcode;
+	if(ipt == 0)
+		return -1;
 
-	// validate
-	if(inpt == 0)
-		return 0;
+	if(ipt->top->prev != 0)
+		return -2;
 
-	if(inpt->eventid == 0 || inpt->evnt_len == 0)
-		return 0;
-
-	// setup for work
-	t = tk_create_task(0);
-	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
-
-	ipt->free = 0;
-	ipt->system = 0;
-
-	ipt->depth = ipt->maxdepth = 0;
-
-	ipt->sys.data = 0;
-	ipt->sys.instance = instance;
-	ipt->sys.next_call = 0;
-	ipt->sys.t = t;
-
-	// if no response-handler. Just throw away output
-	ipt->sys.response = (response != 0)? response : &_def_output_handler;
-	ipt->sys.respdata = responsedata;
-
-	// first: Does anyone want this event? And are the sender allowed?
-	// if not just throw it away
-
-	// check for system-events. Application-name 0-length
-	if(inpt->app_len == 0)
+	if(ipt->system)	// system-event
 	{
-		cle_syshandler* handler = _sys_handler;
-
-		while(handler)
-		{
-			if(handler->id_length == inpt->evnt_len
-				&& memcmp(handler->handlerid,inpt->eventid,inpt->evnt_len) == 0)
-				break;
-
-			handler = handler->next;
-		}
-
-		if(handler == 0)
-			return 0;
-
-		if(handler->do_setup)
-			handler->do_setup(&ipt->sys);
-
-		ipt->system = handler;
+		if(ipt->system->do_next)
+			rcode = ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
+		else
+			rcode = -3;		// operation doesn't use next
 	}
-	// application event-handlers/filters
 	else
 	{
-		st_ptr app = ipt->sys.instance;
-
-		if(st_move(&app,HEAD_APPS,HEAD_SIZE))
-			return 0;
-		else if(st_move(&app,inpt->appid,inpt->app_len))
-			return 0;
-		else if(st_move(&app,HEAD_EVENT,HEAD_SIZE))
-			return 0;
-		else if(st_move(&app,inpt->eventid,inpt->evnt_len))
-			return 0;
-		else
-		{
-		}
+		// send data-structure to all handlers
+		rcode = 0;
 	}
 
-	// create blank toplevel element
-	ipt->top = (struct _ptr_stack*)tk_alloc(t,sizeof(struct _ptr_stack));
+	ipt->sys.next_call++;
+	ipt->depth = ipt->maxdepth = 0;
 
-	st_empty(t,&ipt->top->pt);
-	ipt->top->prev = 0;
-
+	// done processing .. clear and ready for next
+	st_empty(ipt->t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
 
-	return ipt;
+	return rcode;
 }
-*/
 
 int cle_end(_ipt* ipt, cdat code, uint length)
 {
@@ -256,7 +227,7 @@ int cle_end(_ipt* ipt, cdat code, uint length)
 	if(ipt == 0)
 		return -1;
 
-	t = ipt->sys.t;
+	t = ipt->t;
 
 	// reporting an error
 	if(length != 0 && code != 0)
@@ -287,7 +258,7 @@ int cle_push(_ipt* ipt)
 		ipt->free = elm->prev;
 	}
 	else
-		elm = (struct _ptr_stack*)tk_alloc(ipt->sys.t,sizeof(struct _ptr_stack));
+		elm = (struct _ptr_stack*)tk_alloc(ipt->t,sizeof(struct _ptr_stack));
 
 	elm->pt = ipt->top->pt;
 
@@ -326,38 +297,5 @@ int cle_data(_ipt* ipt, cdat data, uint length)
 	if(ipt == 0)
 		return -1;
 
-	return -st_append(ipt->sys.t,&ipt->current,data,length);
-}
-
-int cle_next(_ipt* ipt)
-{
-	struct _handler_list* handlers;
-	int rcode;
-	if(ipt == 0)
-		return -1;
-
-	if(ipt->top->prev != 0)
-		return -2;
-
-	if(ipt->system)	// system-event
-	{
-		if(ipt->system->do_next)
-			rcode = ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
-		else
-			rcode = -3;		// operation doesn't use next
-	}
-	else
-	{
-		// send data-structure to all handlers
-		rcode = 0;
-	}
-
-	ipt->sys.next_call++;
-	ipt->depth = ipt->maxdepth = 0;
-
-	// done processing .. clear and ready for next
-	st_empty(ipt->sys.t,&ipt->top->pt);
-	ipt->current = ipt->top->pt;
-
-	return rcode;
+	return -st_append(ipt->t,&ipt->current,data,length);
 }
