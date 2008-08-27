@@ -256,6 +256,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
+	tk_ref(t,rt.pg);
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -263,7 +264,10 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 		if(rt.high == 0)
 		{
 			if(rt.length == 0)
+			{
+				tk_unref(t,rt.pg);
 				return 0;
+			}
 		}
 		else if(rt.length == 0)
 		{
@@ -285,6 +289,8 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
+	else
+		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -299,6 +305,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
+	tk_ref(t,rt.pg);
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -315,7 +322,10 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 		}
 
 		if(rt.high == 0)
+		{
+			tk_unref(t,rt.pg);
 			return 0;
+		}
 
 		rt.diff = rt.high_prev? rt.high_prev->offset : 0;
 		rt.sub  = rt.high;
@@ -334,6 +344,8 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
+	else
+		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -348,6 +360,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
+	tk_ref(t,rt.pg);
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -355,7 +368,10 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 		if(rt.low == 0)
 		{
 			if(rt.length == 0)
+			{
+				tk_unref(t,rt.pg);
 				return 0;
+			}
 		}
 		else if(rt.length == 0)
 		{
@@ -377,6 +393,8 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
+	else
+		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -391,6 +409,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
+	tk_ref(t,rt.pg);
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -403,11 +422,16 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 				pt->key = (uint)rt.sub - (uint)rt.pg;
 				pt->offset = rt.diff;
 			}
+			else
+				tk_unref(t,rt.pg);
 			return 1;
 		}
 
 		if(rt.low == 0)
+		{
+			tk_unref(t,rt.pg);
 			return 0;
+		}
 
 		rt.diff = rt.low_prev? rt.low_prev->offset : 0;
 		rt.sub  = rt.low;
@@ -426,6 +450,8 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 		pt->key = (uint)rt.sub - (uint)rt.pg;
 		pt->offset = rt.diff;
 	}
+	else
+		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -442,7 +468,7 @@ void it_load(task* t, it_ptr* it, cdat path, uint length)
 	it->kused = length;
 }
 
-void it_create(it_ptr* it, st_ptr* pt)
+void it_create(task* t, it_ptr* it, st_ptr* pt)
 {
 	it->pg     = pt->pg;
 	it->key    = pt->key;
@@ -450,10 +476,13 @@ void it_create(it_ptr* it, st_ptr* pt)
 
 	it->kdata  = 0;
 	it->ksize  = it->kused = 0;
+
+	tk_ref(t, it->pg);
 }
 
 void it_dispose(task* t, it_ptr* it)
 {
+	tk_unref(t, it->pg);
 	tk_mfree(t, it->kdata);
 }
 

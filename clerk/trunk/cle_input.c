@@ -29,12 +29,30 @@
 #define HEAD_IMPORT "\0i"
 #define HEAD_EXTENDS "\0x"
 
+// error-messages
+static char unknown_user[] = "unknown user";
+
+#define _error(txt) ipt->sys.response->end(ipt->sys.respdata,txt,sizeof(txt))
+
 // structs
 struct _ptr_stack
 {
 	struct _ptr_stack* prev;
 	st_ptr pt;
 };
+
+typedef struct _task_chain
+{
+	struct _task_chain* next;
+	task* tk;
+	uint  refs;
+}_task_chain;
+
+typedef struct _mod_handler
+{
+	struct _mod_handler* next;
+	struct _task_chain* current_input;
+}_mod_handler;
 
 struct _ipt_internal
 {
@@ -43,6 +61,9 @@ struct _ipt_internal
 
 	cle_syshandler* system;
 	sys_handler_data sys;
+
+	_mod_handler* handler_list;
+	_task_chain* input_chain_last;
 
 	task* t;
 
@@ -58,18 +79,25 @@ static st_ptr _global_handler_rootptr;
 
 static int _validate_event_name(cdat name, uint length)
 {
+	int state = 0;
+	while(length-- > 0)
+	{
+		switch(*name++)
+		{
+		}
+	}
 	return 1;
 }
 
 /* initializers */
-int cle_initialize_system(int argc, char *argv[])
+void cle_initialize_system()
 {
 	// setup system event-handlers
 	_global_handler_task = tk_create_task(0,0);
 
 	st_empty(_global_handler_task,&_global_handler_rootptr);
 
-	return 0;
+	tk_ref(_global_handler_task,_global_handler_rootptr.pg);
 }
 
 int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler)
@@ -97,9 +125,10 @@ _ipt* cle_start(cdat eventid, uint event_len,
 						cle_pagesource* app_source, cle_psrc_data app_source_data, 
 							cle_pagesource* session_source, cle_psrc_data session_source_data)
 {
-	st_ptr pt;
+	st_ptr pt,userpt,eventpt;
 	task* t;
 	_ipt* ipt;
+	_mod_handler* handler;
 
 	// valid eventid?
 	if(!_validate_event_name(eventid,event_len))
@@ -130,27 +159,49 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	// validate user allowed to fire event
 	if(userid_len > 0)
 	{
+		userpt = ipt->sys.instance;
+		tk_ref(ipt->sys.instance_tk,userpt.pg);
 		// user exsist?
-		if(st_move(t,&pt,HEAD_USERS,HEAD_SIZE) ||
-			st_move(t,&pt,userid,userid_len))
+		if(st_move(ipt->sys.instance_tk,&userpt,HEAD_USERS,HEAD_SIZE) ||
+			st_move(ipt->sys.instance_tk,&userpt,userid,userid_len))
 		{
-			app_source->unref_page(app_source_data,ipt->sys.instance.pg->id);
+			_error(unknown_user);
+			tk_unref(ipt->sys.instance_tk,userpt.pg);
+			tk_drop_task(ipt->sys.instance_tk);
 			tk_drop_task(t);
 			return 0;
 		}
-		else
-		{
-			it_ptr it;
-			it_create(&it,&pt);
+	}
 
-			// iterate user-roles
-			while(it_next(ipt->sys.instance_tk,0,&it))
+	else
+		{
+			st_ptr evptr = ipt->sys.instance;
+			tk_ref(ipt->sys.instance_tk,evptr.pg);
+			
+
+			// settings for this event
+			if(st_move(ipt->sys.instance_tk,&evptr,HEAD_EVENT,HEAD_SIZE) ||
+				st_move(ipt->sys.instance_tk,&evptr,eventid,event_len))
 			{
-				it.kdata;
-				it.ksize;
 			}
 
-			it_dispose(ipt->sys.instance_tk,&it);
+
+			it_ptr roles;
+			it_create(&roles,&pt);
+
+			// match roles
+			if(it_next(t,0,&roles))
+			{
+			}
+
+			// iterate user-roles
+			while(it_next(t,0,&roles))
+			{
+				roles.kdata;
+				roles.ksize;
+			}
+
+			it_dispose(t,&roles);
 		}
 	}
 
@@ -161,6 +212,9 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	{
 		if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) != -1)
 			ipt->system = 0;
+		else
+			// run system-handler setup
+			ipt->system->do_setup(&ipt->sys);
 	}
 
 	// lookup module-eventhandlers
@@ -173,29 +227,37 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		it_create(&it,&pt);
 
 		// iterate instance-refs / event-handler-id
-		while(it_next(ipt->sys.instance_tk,&pt,&it))
+		while(it_next(t,&pt,&it))
 		{
 		}
 
-		it_dispose(ipt->sys.instance_tk,&it);
+		it_dispose(t,&it);
 	}
 
-	// setup and ready all handlers
-	if(ipt->system)
-		ipt->system->do_setup(&ipt->sys);
+	// run module-handler setups
+	handler = ipt->handler_list;
+	while(handler)
+	{
+		// call runtime to setup/start handler
+
+		// next handler
+		handler = handler->next;
+	}
 
 	return ipt;
 }
 
-int cle_next(_ipt* ipt)
+void cle_next(_ipt* ipt)
 {
 	struct _handler_list* handlers;
-	int rcode;
 	if(ipt == 0)
-		return -1;
+		return;
 
 	if(ipt->top->prev != 0)
-		return -2;
+	{
+		_error();
+		return;
+	}
 
 	if(ipt->system)	// system-event
 	{
@@ -216,16 +278,14 @@ int cle_next(_ipt* ipt)
 	// done processing .. clear and ready for next
 	st_empty(ipt->t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
-
-	return rcode;
 }
 
-int cle_end(_ipt* ipt, cdat code, uint length)
+void cle_end(_ipt* ipt, cdat code, uint length)
 {
+	_mod_handler* handler;
 	task* t;
-	int rcode = 0;
 	if(ipt == 0)
-		return -1;
+		return;
 
 	t = ipt->t;
 
@@ -233,17 +293,20 @@ int cle_end(_ipt* ipt, cdat code, uint length)
 	if(length != 0 && code != 0)
 	{}
 
-	if(ipt->system)
+	if(ipt->system && ipt->system->do_end)
+		rcode = ipt->system->do_end(&ipt->sys,code,length);
+
+	// finish module-handlers
+	handler = ipt->handler_list;
+	while(handler)
 	{
-		if(ipt->system->do_end)
-			rcode = ipt->system->do_end(&ipt->sys,code,length);
+		// call runtime to finish handler
+
+		// next handler
+		handler = handler->next;
 	}
-	else
-	{}
 
 	tk_drop_task(t);
-
-	return rcode;
 }
 
 int cle_push(_ipt* ipt)
@@ -251,6 +314,9 @@ int cle_push(_ipt* ipt)
 	struct _ptr_stack* elm;
 	if(ipt == 0)
 		return -1;
+
+	if(ipt->input_chain_last == 0)
+		return 0;
 
 	if(ipt->free)
 	{
@@ -272,14 +338,17 @@ int cle_push(_ipt* ipt)
 	return 0;
 }
 
-int cle_pop(_ipt* ipt)
+void cle_pop(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0)
-		return -1;
+	if(ipt == 0 || ipt->input_chain_last == 0)
+		return;
 
 	if(ipt->top->prev == 0)
-		return -2;
+	{
+		_error("error");
+		return;
+	}
 
 	elm = ipt->top;
 	ipt->top = ipt->top->prev;
@@ -289,13 +358,12 @@ int cle_pop(_ipt* ipt)
 	ipt->free = elm;
 
 	ipt->depth--;
-	return 0;
 }
 
-int cle_data(_ipt* ipt, cdat data, uint length)
+void cle_data(_ipt* ipt, cdat data, uint length)
 {
-	if(ipt == 0)
-		return -1;
+	if(ipt == 0 || ipt->input_chain_last == 0)
+		return;
 
-	return -st_append(ipt->t,&ipt->current,data,length);
+	st_append(ipt->input_chain_last->tk,&ipt->current,data,length);
 }

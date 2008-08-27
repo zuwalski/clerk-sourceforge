@@ -88,7 +88,7 @@ key* _tk_get_ptr(task* t, page** pg, key* me)
 	return me;
 }
 
-void _tk_page_ref(task* t, page* pg)
+void tk_ref(task* t, page* pg)
 {
 	if(pg->id)
 		t->ps->ref_page(t->psrc_data,pg->id);
@@ -96,7 +96,7 @@ void _tk_page_ref(task* t, page* pg)
 		GOPAGEWRAP(pg)->refcount++;
 }
 
-void _tk_page_unref(task* t, page* pg)
+void tk_unref(task* t, page* pg)
 {
 	if(pg->id)
 		t->ps->unref_page(t->psrc_data,pg->id);

@@ -26,8 +26,8 @@
 *	Commands and external events are "pumped" in through this set of functions
 */
 
-/* initializer: call this before anything else */
-int cle_initialize_system(int argc, char *argv[]);
+/* initializer: call this once(!) before anything else */
+void cle_initialize_system();
 
 /* event input functions */
 typedef struct _ipt_internal _ipt;
