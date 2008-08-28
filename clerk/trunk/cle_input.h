@@ -37,11 +37,11 @@ _ipt* cle_start(cdat eventid, uint event_len, cdat userid, uint userid_len,
 					cle_pagesource* app_source, cle_psrc_data app_source_data, 
 						cle_pagesource* session_source, cle_psrc_data session_source_data);
 
-int cle_data(_ipt* inpt, cdat data, uint length);
-int cle_pop(_ipt* inpt);
-int cle_push(_ipt* inpt);
-int cle_next(_ipt* inpt);
-int cle_end(_ipt* inpt, cdat code, uint length);
+void cle_data(_ipt* inpt, cdat data, uint length);
+void cle_pop(_ipt* inpt);
+void cle_push(_ipt* inpt);
+void cle_next(_ipt* inpt);
+void cle_end(_ipt* inpt, cdat code, uint length);
 
 // system-event-handlers
 
@@ -59,9 +59,9 @@ sys_handler_data;
 /* system extension-handlers */
 typedef struct cle_syshandler
 {
-	int (*do_setup)(sys_handler_data*);
-	int (*do_next)(sys_handler_data*,st_ptr,uint);
-	int (*do_end)(sys_handler_data*,cdat,uint);
+	void (*do_setup)(sys_handler_data*);
+	void (*do_next)(sys_handler_data*,st_ptr,uint);
+	void (*do_end)(sys_handler_data*,cdat,uint);
 }
 cle_syshandler;
 

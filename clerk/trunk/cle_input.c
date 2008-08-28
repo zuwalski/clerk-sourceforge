@@ -19,7 +19,7 @@
 
 /*
 *	The main input-interface to the running system
-*	Commands and external events are "pumped" in through this set of functions
+*	Events/messages are "pumped" in through the exported set of functions
 */
 
 #define HEAD_TYPE "\0T"
@@ -45,13 +45,22 @@ typedef struct _task_chain
 {
 	struct _task_chain* next;
 	task* tk;
-	uint  refs;
+	ulong refs;
+	uint depth;
 }_task_chain;
+
+enum run_state
+{
+	RUNNING,
+	WAITING,
+	FAILED
+};
 
 typedef struct _mod_handler
 {
 	struct _mod_handler* next;
 	struct _task_chain* current_input;
+	enum run_state run_state;
 }_mod_handler;
 
 struct _ipt_internal
@@ -66,6 +75,9 @@ struct _ipt_internal
 	_task_chain* input_chain_last;
 
 	task* t;
+
+	cdat _error;
+	uint _errlength;
 
 	st_ptr current;
 
@@ -140,6 +152,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	ipt->free = 0;
 	ipt->system = 0;
 	ipt->t = t;
+	ipt->_errlength = 0;
 
 	ipt->depth = ipt->maxdepth = 0;
 
@@ -238,13 +251,26 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	handler = ipt->handler_list;
 	while(handler)
 	{
-		// call runtime to setup/start handler
+		// call runtime to setup/start handlers
 
 		// next handler
 		handler = handler->next;
 	}
 
 	return ipt;
+}
+
+// loop through event-handlers and update waiting handlers and ready them
+static void _check_handlers(_ipt* ipt)
+{
+	// run module-handler setups
+	_mod_handler* handler = ipt->handler_list;
+	while(handler)
+	{
+
+		// next handler
+		handler = handler->next;
+	}
 }
 
 void cle_next(_ipt* ipt)
@@ -259,18 +285,8 @@ void cle_next(_ipt* ipt)
 		return;
 	}
 
-	if(ipt->system)	// system-event
-	{
-		if(ipt->system->do_next)
-			rcode = ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
-		else
-			rcode = -3;		// operation doesn't use next
-	}
-	else
-	{
-		// send data-structure to all handlers
-		rcode = 0;
-	}
+	if(ipt->system && ipt->system->do_next)
+		ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
 
 	ipt->sys.next_call++;
 	ipt->depth = ipt->maxdepth = 0;
@@ -278,45 +294,39 @@ void cle_next(_ipt* ipt)
 	// done processing .. clear and ready for next
 	st_empty(ipt->t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
+
+	_check_handlers(ipt);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
 {
-	_mod_handler* handler;
-	task* t;
 	if(ipt == 0)
 		return;
 
-	t = ipt->t;
-
-	// reporting an error
-	if(length != 0 && code != 0)
-	{}
-
-	if(ipt->system && ipt->system->do_end)
-		rcode = ipt->system->do_end(&ipt->sys,code,length);
-
-	// finish module-handlers
-	handler = ipt->handler_list;
-	while(handler)
+	if(ipt->_error == 0)
 	{
-		// call runtime to finish handler
-
-		// next handler
-		handler = handler->next;
+		// reporting an error
+		if(code != 0 && length != 0)
+		{
+			ipt->_error = code;
+			ipt->_errlength = length;
+		}
+		else
+			// signal end of input
+			ipt->_error = "";
 	}
 
-	tk_drop_task(t);
+	if(ipt->system && ipt->system->do_end)
+		ipt->system->do_end(&ipt->sys,code,length);
+
+	_check_handlers(ipt);
 }
 
-int cle_push(_ipt* ipt)
+void cle_push(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0)
-		return -1;
-
-	if(ipt->input_chain_last == 0)
-		return 0;
+	if(ipt == 0 || ipt->input_chain_last == 0)
+		return;
 
 	if(ipt->free)
 	{
@@ -334,8 +344,6 @@ int cle_push(_ipt* ipt)
 
 	ipt->depth++;
 	if(ipt->depth > ipt->maxdepth) ipt->maxdepth = ipt->depth;
-
-	return 0;
 }
 
 void cle_pop(_ipt* ipt)
