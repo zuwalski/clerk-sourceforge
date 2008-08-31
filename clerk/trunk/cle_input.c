@@ -16,6 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_input.h"
+#include "cle_runtime.h"
 
 /*
 *	The main input-interface to the running system
@@ -26,13 +27,14 @@
 #define HEAD_APPS  "\0A"
 #define HEAD_USERS "\0u"
 #define HEAD_EVENT "\0e"
-#define HEAD_IMPORT "\0i"
-#define HEAD_EXTENDS "\0x"
+#define HEAD_HANDLER "\0h"
+#define HEAD_ROLES "\0r"
 
 // error-messages
 static char unknown_user[] = "unknown user";
 static char input_underflow[] = "input underflow";
 static char input_incomplete[] = "input incomplete";
+static char event_not_allowed[] = "event not allowed";
 
 #define _error(txt) ipt->sys.response->end(ipt->sys.respdata,txt,sizeof(txt))
 
@@ -140,6 +142,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	_mod_handler* handler;
 	_ipt* ipt;
 	task* t;
+	int from,i,allowed;
 
 	st_ptr pt,userpt,eventpt;
 
@@ -166,7 +169,9 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	pt.offset = 0;
 	ipt->sys.instance = pt;
 
-	// validate user allowed to fire event
+	allowed = 0;
+	// validate user - validate event-settings
+	// no username? -> root/sa
 	if(userid_len > 0)
 	{
 		userpt = ipt->sys.instance;
@@ -182,16 +187,74 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			return 0;
 		}
 	}
+	else
+		allowed = 1;	// admin-user
 
 	eventpt = ipt->sys.instance;
+	if(st_move(ipt->sys.instance_tk,&eventpt,HEAD_EVENT,HEAD_SIZE))
+	{
+		// no event-structure in this instance -> exit
+	}
 
+	from = 0;
+	for(i = 0; i < event_len; i++)
+	{
+		// event-part-boundary
+		if(eventid[i] == 0)
+		{
+			// lookup event-part
+			if(st_move(ipt->sys.instance_tk,&eventpt,eventid + from,i - from))
+			{
+				// not found! No such event allowed/no possible end-handlers
+				allowed = 0;
+				break;
+			}
 
-	// prepare for event-stream
-	st_empty(t,&ipt->top->pt);
-	ipt->current = ipt->top->pt;
+			// lookup allowed roles (if no access yet)
+			if(allowed == 0)
+			{
+				pt = eventpt;
+				if(st_move(ipt->sys.instance_tk,&pt,HEAD_ROLES,HEAD_SIZE) == 0)
+				{
+					// has allowed-roles
+				}
+			}
 
-	ipt->input_chain = ipt->input_chain_last
-		= _new_ptr_stack(ipt,&ipt->current,0);
+			// get handlers
+			pt = eventpt;
+			if(st_move(ipt->sys.instance_tk,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+			{
+				it_ptr it;
+				it_create(t,&it,&pt);
+
+				// iterate instance-refs / event-handler-id
+				while(it_next(t,&pt,&it))
+				{
+					_mod_handler* hdl;
+					
+					// TODO: request-pipeline, response-pipeline or end-handler
+					// .. Sync & async handlers (/ responding and no-response-handlers)
+
+					hdl = (_mod_handler*)tk_alloc(ipt->t,sizeof(struct _mod_handler));
+					hdl->next = ipt->handler_list;
+					ipt->handler_list = hdl;
+				}
+
+				it_dispose(t,&it);
+			}
+
+			from = i;
+		}
+	}
+
+	if(allowed == 0 || ipt->handler_list == 0)
+	{
+		_error(event_not_allowed);
+		tk_unref(ipt->sys.instance_tk,userpt.pg);
+		tk_drop_task(ipt->sys.instance_tk);
+		tk_drop_task(t);
+		return 0;
+	}
 
 	// lookup system-eventhandler
 	pt = _global_handler_rootptr;
@@ -205,23 +268,6 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			ipt->system->do_setup(&ipt->sys);
 	}
 
-	// lookup module-eventhandlers
-	pt = ipt->sys.instance;
-
-	if(!st_move(t,&pt,HEAD_EVENT,HEAD_SIZE) &&
-		!st_move(t,&pt,eventid,event_len))
-	{
-		it_ptr it;
-		it_create(t,&it,&pt);
-
-		// iterate instance-refs / event-handler-id
-		while(it_next(t,&pt,&it))
-		{
-		}
-
-		it_dispose(t,&it);
-	}
-
 	// run module-handler setups
 	handler = ipt->handler_list;
 	while(handler)
@@ -231,6 +277,13 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		// next handler
 		handler = handler->next;
 	}
+
+	// prepare for event-stream
+	st_empty(t,&ipt->top->pt);
+	ipt->current = ipt->top->pt;
+
+	ipt->input_chain = ipt->input_chain_last
+		= _new_ptr_stack(ipt,&ipt->current,0);
 
 	return ipt;
 }
