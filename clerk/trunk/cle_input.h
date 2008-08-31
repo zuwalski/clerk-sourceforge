@@ -53,6 +53,10 @@ typedef struct sys_handler_data
 	task* instance_tk;
 	st_ptr instance;
 	uint next_call;
+	cdat eventid;
+	uint event_len;
+	cdat userid;
+	uint userid_len;
 }
 sys_handler_data;
 

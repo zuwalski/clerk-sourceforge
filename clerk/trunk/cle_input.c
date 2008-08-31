@@ -31,6 +31,8 @@
 
 // error-messages
 static char unknown_user[] = "unknown user";
+static char input_underflow[] = "input underflow";
+static char input_incomplete[] = "input incomplete";
 
 #define _error(txt) ipt->sys.response->end(ipt->sys.respdata,txt,sizeof(txt))
 
@@ -40,14 +42,6 @@ struct _ptr_stack
 	struct _ptr_stack* prev;
 	st_ptr pt;
 };
-
-typedef struct _task_chain
-{
-	struct _task_chain* next;
-	task* tk;
-	ulong refs;
-	uint depth;
-}_task_chain;
 
 enum run_state
 {
@@ -59,7 +53,7 @@ enum run_state
 typedef struct _mod_handler
 {
 	struct _mod_handler* next;
-	struct _task_chain* current_input;
+	struct _ptr_stack* current_input;
 	enum run_state run_state;
 }_mod_handler;
 
@@ -72,7 +66,8 @@ struct _ipt_internal
 	sys_handler_data sys;
 
 	_mod_handler* handler_list;
-	_task_chain* input_chain_last;
+	struct _ptr_stack* input_chain;
+	struct _ptr_stack* input_chain_last;
 
 	task* t;
 
@@ -85,20 +80,25 @@ struct _ipt_internal
 	uint depth;
 };
 
-/* GLOBALS */
+/* GLOBALS (readonly after init.) */
 static task* _global_handler_task = 0;
 static st_ptr _global_handler_rootptr;
 
-static int _validate_event_name(cdat name, uint length)
+struct _ptr_stack* _new_ptr_stack(_ipt* ipt, st_ptr* pt, struct _ptr_stack* prev)
 {
-	int state = 0;
-	while(length-- > 0)
+	struct _ptr_stack* elm;
+	if(ipt->free)
 	{
-		switch(*name++)
-		{
-		}
+		elm = ipt->free;
+		ipt->free = elm->prev;
 	}
-	return 1;
+	else
+		elm = (struct _ptr_stack*)tk_alloc(ipt->t,sizeof(struct _ptr_stack));
+
+	elm->pt = *pt;
+	elm->prev = prev;
+
+	return elm;
 }
 
 /* initializers */
@@ -137,27 +137,27 @@ _ipt* cle_start(cdat eventid, uint event_len,
 						cle_pagesource* app_source, cle_psrc_data app_source_data, 
 							cle_pagesource* session_source, cle_psrc_data session_source_data)
 {
-	st_ptr pt,userpt,eventpt;
-	task* t;
-	_ipt* ipt;
 	_mod_handler* handler;
+	_ipt* ipt;
+	task* t;
 
-	// valid eventid?
-	if(!_validate_event_name(eventid,event_len))
-		return 0;
+	st_ptr pt,userpt,eventpt;
 
 	// ipt setup - internal task
 	t = tk_create_task(0,0);
 	ipt = (_ipt*)tk_alloc(t,sizeof(_ipt));
-	ipt->free = 0;
-	ipt->system = 0;
+	// default null
+	memset(ipt,0,sizeof(_ipt));
+
 	ipt->t = t;
-	ipt->_errlength = 0;
 
-	ipt->depth = ipt->maxdepth = 0;
+	ipt->sys.response = response;
+	ipt->sys.respdata = responsedata;
 
-	ipt->sys.data = 0;
-	ipt->sys.next_call = 0;
+	ipt->sys.eventid = eventid;
+	ipt->sys.event_len = event_len;
+	ipt->sys.userid = userid;
+	ipt->sys.userid_len = userid_len;
 
 	/* get a root ptr to instance-db */
 	ipt->sys.instance_tk = tk_create_task(app_source,app_source_data);
@@ -165,9 +165,6 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	pt.key = sizeof(page);
 	pt.offset = 0;
 	ipt->sys.instance = pt;
-
-	ipt->sys.response = response;
-	ipt->sys.respdata = responsedata;
 
 	// validate user allowed to fire event
 	if(userid_len > 0)
@@ -186,37 +183,15 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		}
 	}
 
-	else
-		{
-			st_ptr evptr = ipt->sys.instance;
-			tk_ref(ipt->sys.instance_tk,evptr.pg);
-			
-
-			// settings for this event
-			if(st_move(ipt->sys.instance_tk,&evptr,HEAD_EVENT,HEAD_SIZE) ||
-				st_move(ipt->sys.instance_tk,&evptr,eventid,event_len))
-			{
-			}
+	eventpt = ipt->sys.instance;
 
 
-			it_ptr roles;
-			it_create(&roles,&pt);
+	// prepare for event-stream
+	st_empty(t,&ipt->top->pt);
+	ipt->current = ipt->top->pt;
 
-			// match roles
-			if(it_next(t,0,&roles))
-			{
-			}
-
-			// iterate user-roles
-			while(it_next(t,0,&roles))
-			{
-				roles.kdata;
-				roles.ksize;
-			}
-
-			it_dispose(t,&roles);
-		}
-	}
+	ipt->input_chain = ipt->input_chain_last
+		= _new_ptr_stack(ipt,&ipt->current,0);
 
 	// lookup system-eventhandler
 	pt = _global_handler_rootptr;
@@ -237,7 +212,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		!st_move(t,&pt,eventid,event_len))
 	{
 		it_ptr it;
-		it_create(&it,&pt);
+		it_create(t,&it,&pt);
 
 		// iterate instance-refs / event-handler-id
 		while(it_next(t,&pt,&it))
@@ -276,12 +251,13 @@ static void _check_handlers(_ipt* ipt)
 void cle_next(_ipt* ipt)
 {
 	struct _handler_list* handlers;
-	if(ipt == 0)
+	struct _ptr_stack* elm;
+	if(ipt == 0 || ipt->_error != 0)
 		return;
 
 	if(ipt->top->prev != 0)
 	{
-		_error();
+		_error(input_incomplete);
 		return;
 	}
 
@@ -294,6 +270,9 @@ void cle_next(_ipt* ipt)
 	// done processing .. clear and ready for next
 	st_empty(ipt->t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
+
+	ipt->input_chain_last->prev = _new_ptr_stack(ipt,&ipt->current,0);
+	ipt->input_chain_last = ipt->input_chain_last->prev;
 
 	_check_handlers(ipt);
 }
@@ -325,20 +304,11 @@ void cle_end(_ipt* ipt, cdat code, uint length)
 void cle_push(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->input_chain_last == 0)
+	if(ipt == 0 || ipt->_error != 0)
 		return;
 
-	if(ipt->free)
-	{
-		elm = ipt->free;
-		ipt->free = elm->prev;
-	}
-	else
-		elm = (struct _ptr_stack*)tk_alloc(ipt->t,sizeof(struct _ptr_stack));
+	elm = _new_ptr_stack(ipt,&ipt->top->pt,ipt->top);
 
-	elm->pt = ipt->top->pt;
-
-	elm->prev = ipt->top;
 	ipt->top = elm;
 	ipt->current = ipt->top->pt;
 
@@ -349,12 +319,12 @@ void cle_push(_ipt* ipt)
 void cle_pop(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->input_chain_last == 0)
+	if(ipt == 0 || ipt->_error != 0)
 		return;
 
 	if(ipt->top->prev == 0)
 	{
-		_error("error");
+		_error(input_underflow);
 		return;
 	}
 
@@ -370,8 +340,8 @@ void cle_pop(_ipt* ipt)
 
 void cle_data(_ipt* ipt, cdat data, uint length)
 {
-	if(ipt == 0 || ipt->input_chain_last == 0)
+	if(ipt == 0 || ipt->_error != 0)
 		return;
 
-	st_append(ipt->input_chain_last->tk,&ipt->current,data,length);
+	st_append(ipt->t,&ipt->current,data,length);
 }
