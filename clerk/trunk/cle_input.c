@@ -134,7 +134,7 @@ int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handle
 // input-functions
 
 _ipt* cle_start(cdat eventid, uint event_len,
-				cdat userid, uint userid_len, 
+				cdat userid, uint userid_len, char* user_roles[],
 					cle_output* response, void* responsedata, 
 						cle_pagesource* app_source, cle_psrc_data app_source_data, 
 							cle_pagesource* session_source, cle_psrc_data session_source_data)
@@ -144,7 +144,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	task* t;
 	int from,i,allowed;
 
-	st_ptr pt,userpt,eventpt;
+	st_ptr pt,eventpt;
 
 	// ipt setup - internal task
 	t = tk_create_task(0,0);
@@ -169,26 +169,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	pt.offset = 0;
 	ipt->sys.instance = pt;
 
-	allowed = 0;
-	// validate user - validate event-settings
 	// no username? -> root/sa
-	if(userid_len > 0)
-	{
-		userpt = ipt->sys.instance;
-		tk_ref(ipt->sys.instance_tk,userpt.pg);
-		// user exsist?
-		if(st_move(ipt->sys.instance_tk,&userpt,HEAD_USERS,HEAD_SIZE) ||
-			st_move(ipt->sys.instance_tk,&userpt,userid,userid_len))
-		{
-			_error(unknown_user);
-			tk_unref(ipt->sys.instance_tk,userpt.pg);
-			tk_drop_task(ipt->sys.instance_tk);
-			tk_drop_task(t);
-			return 0;
-		}
-	}
-	else
-		allowed = 1;	// admin-user
+	allowed = (userid_len == 0);
 
 	eventpt = ipt->sys.instance;
 	if(st_move(ipt->sys.instance_tk,&eventpt,HEAD_EVENT,HEAD_SIZE))
@@ -197,7 +179,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	}
 
 	from = 0;
-	for(i = 0; i < event_len; i++)
+	for(i = 0; i <= event_len; i++)
 	{
 		// event-part-boundary
 		if(eventid[i] == 0)
@@ -217,6 +199,35 @@ _ipt* cle_start(cdat eventid, uint event_len,
 				if(st_move(ipt->sys.instance_tk,&pt,HEAD_ROLES,HEAD_SIZE) == 0)
 				{
 					// has allowed-roles
+					it_ptr it;
+					int r = 0;
+
+					it_create(t,&it,&pt);
+
+					while(allowed == 0 && user_roles[r] != 0)
+					{
+						it_load(t,&it,user_roles[r] + 1,*user_roles[r]);
+
+						if(it_next_eq(t,&pt,&it) == 0)
+							break;
+
+						do
+						{
+							int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused);
+							if(cmp == 0 && it.kused == *user_roles[r])
+							{
+								allowed = 1;
+								break;
+							}
+							else if(cmp > 0)
+								break;
+							
+							r++;
+						}
+						while(user_roles[r] != 0);
+					}
+
+					it_dispose(t,&it);
 				}
 			}
 
@@ -250,7 +261,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	if(allowed == 0 || ipt->handler_list == 0)
 	{
 		_error(event_not_allowed);
-		tk_unref(ipt->sys.instance_tk,userpt.pg);
+		tk_unref(ipt->sys.instance_tk,eventpt.pg);
 		tk_drop_task(ipt->sys.instance_tk);
 		tk_drop_task(t);
 		return 0;

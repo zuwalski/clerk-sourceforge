@@ -32,7 +32,7 @@ void cle_initialize_system();
 /* event input functions */
 typedef struct _ipt_internal _ipt;
 
-_ipt* cle_start(cdat eventid, uint event_len, cdat userid, uint userid_len, 
+_ipt* cle_start(cdat eventid, uint event_len, cdat userid, uint userid_len, char* user_roles[],
 				cle_output* response, void* responsedata, 
 					cle_pagesource* app_source, cle_psrc_data app_source_data, 
 						cle_pagesource* session_source, cle_psrc_data session_source_data);
