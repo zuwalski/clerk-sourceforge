@@ -45,6 +45,14 @@ void cle_end(_ipt* inpt, cdat code, uint length);
 
 // system-event-handlers
 
+enum handler_type
+{
+	SYNC_REQUEST_HANDLER,
+	ASYNC_REQUEST_HANDLER,
+	PIPELINE_REQUEST,
+	PIPELINE_RESPONSE
+};
+
 typedef struct sys_handler_data
 {
 	cle_output* response;
@@ -57,19 +65,23 @@ typedef struct sys_handler_data
 	uint event_len;
 	cdat userid;
 	uint userid_len;
+	cdat error;
+	uint errlength;
 }
 sys_handler_data;
 
 /* system extension-handlers */
 typedef struct cle_syshandler
 {
+	struct cle_syshandler* next_handler;
 	void (*do_setup)(sys_handler_data*);
 	void (*do_next)(sys_handler_data*,st_ptr,uint);
 	void (*do_end)(sys_handler_data*,cdat,uint);
+	enum handler_type systype;
 }
 cle_syshandler;
 
 /* single threaded calls only */
-int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);
+void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);
 
 #endif

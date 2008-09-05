@@ -54,6 +54,7 @@ enum run_state
 
 typedef struct _mod_handler
 {
+	cle_syshandler* thehandler;
 	struct _mod_handler* next;
 	struct _ptr_stack* current_input;
 	enum run_state run_state;
@@ -61,26 +62,32 @@ typedef struct _mod_handler
 
 struct _ipt_internal
 {
+	task* t;
 	struct _ptr_stack* top;
 	struct _ptr_stack* free;
 
-	cle_syshandler* system;
 	sys_handler_data sys;
 
-	_mod_handler* handler_list;
 	struct _ptr_stack* input_chain;
 	struct _ptr_stack* input_chain_last;
 
-	task* t;
-
-	cdat _error;
-	uint _errlength;
+	_mod_handler* handler_list;
+	_mod_handler* handler_request;
+	_mod_handler* handler_response;
 
 	st_ptr current;
 
 	uint maxdepth;
 	uint depth;
 };
+
+// hook-handler for the core runtimesystem
+static cle_syshandler _runtime_handler = {0,0,0,0,0};
+
+// nil-output-handler (used for async-handlers)
+static int _nil1(void* v){return 0;}
+static int _nil2(void* v,cdat c,uint u){return 0;}
+static cle_output _nil_out = {_nil1,_nil2,_nil1,_nil1,_nil2,_nil1};
 
 /* GLOBALS (readonly after init.) */
 static task* _global_handler_task = 0;
@@ -114,21 +121,35 @@ void cle_initialize_system()
 	tk_ref(_global_handler_task,_global_handler_rootptr.pg);
 }
 
-int cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler)
+void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler)
 {
+	cle_syshandler* exsisting;
 	st_ptr pt = _global_handler_rootptr;
 
-	if(!_validate_event_name(eventmask,mask_length))
-		return -1;
+	st_insert(_global_handler_task,&pt,eventmask,mask_length);
 
-	if(!st_insert(_global_handler_task,&pt,eventmask,mask_length))
-		return -2;
+	st_insert(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE);
 
-	st_append(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE);
+	if(st_get(_global_handler_task,&pt,(char*)&exsisting,sizeof(cle_syshandler*)) == -1)
+		// prepend to list
+		handler->next_handler = exsisting;
+	else
+		handler->next_handler = 0;
 
 	st_append(_global_handler_task,&pt,(cdat)&handler,sizeof(cle_syshandler*));
+}
 
-	return 0;
+// loop through event-handlers and update waiting handlers and ready them
+static void _notify_handlers(_ipt* ipt)
+{
+	// run module-handler setups
+	_mod_handler* handler = ipt->handler_list;
+	while(handler)
+	{
+
+		// next handler
+		handler = handler->next;
+	}
 }
 
 // input-functions
@@ -144,7 +165,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	task* t;
 	int from,i,allowed;
 
-	st_ptr pt,eventpt;
+	st_ptr pt,eventpt,syspt;
 
 	// ipt setup - internal task
 	t = tk_create_task(0,0);
@@ -175,87 +196,121 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	eventpt = ipt->sys.instance;
 	if(st_move(ipt->sys.instance_tk,&eventpt,HEAD_EVENT,HEAD_SIZE))
 	{
-		// no event-structure in this instance -> exit
+		eventpt.pg = 0;
+		if(allowed == 0)
+		{
+			// no event-structure in this instance -> exit
+			tk_unref(ipt->sys.instance_tk,eventpt.pg);
+			tk_drop_task(ipt->sys.instance_tk);
+			tk_drop_task(t);
+			return 0;
+		}
 	}
 
+	syspt = _global_handler_rootptr;
 	from = 0;
-	for(i = 0; i <= event_len; i++)
+
+	for(i = 0; i < event_len; i++)
 	{
 		// event-part-boundary
-		if(eventid[i] == 0)
+		if(eventid[i] != 0)
+			continue;
+
+		// lookup event-part (module-level)
+		if(eventpt.pg != 0 && st_move(ipt->sys.instance_tk,&eventpt,eventid + from,i - from))
 		{
-			// lookup event-part
-			if(st_move(ipt->sys.instance_tk,&eventpt,eventid + from,i - from))
+			eventpt.pg = 0;
+			// not found! No such event allowed/no possible end-handlers
+			if(syspt.pg == 0)
 			{
-				// not found! No such event allowed/no possible end-handlers
 				allowed = 0;
 				break;
 			}
+		}
 
-			// lookup allowed roles (if no access yet)
-			if(allowed == 0)
+		// lookup system-level handlers
+		if(syspt.pg != 0 && st_move(_global_handler_task,&syspt,eventid + from,i - from))
+		{
+			syspt.pg = 0;
+			// not found! No such event allowed/no possible end-handlers
+			if(eventpt.pg == 0)
 			{
-				pt = eventpt;
-				if(st_move(ipt->sys.instance_tk,&pt,HEAD_ROLES,HEAD_SIZE) == 0)
-				{
-					// has allowed-roles
-					it_ptr it;
-					int r = 0;
-
-					it_create(t,&it,&pt);
-
-					while(allowed == 0 && user_roles[r] != 0)
-					{
-						it_load(t,&it,user_roles[r] + 1,*user_roles[r]);
-
-						if(it_next_eq(t,&pt,&it) == 0)
-							break;
-
-						do
-						{
-							int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused);
-							if(cmp == 0 && it.kused == *user_roles[r])
-							{
-								allowed = 1;
-								break;
-							}
-							else if(cmp > 0)
-								break;
-							
-							r++;
-						}
-						while(user_roles[r] != 0);
-					}
-
-					it_dispose(t,&it);
-				}
+				allowed = 0;
+				break;
 			}
+		}
 
-			// get handlers
+		// lookup allowed roles (if no access yet)
+		if(allowed == 0)
+		{
 			pt = eventpt;
-			if(st_move(ipt->sys.instance_tk,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+			if(st_move(ipt->sys.instance_tk,&pt,HEAD_ROLES,HEAD_SIZE) == 0)
 			{
+				// has allowed-roles
 				it_ptr it;
+				int r = 0;
+
 				it_create(t,&it,&pt);
 
-				// iterate instance-refs / event-handler-id
-				while(it_next(t,&pt,&it))
+				while(allowed == 0 && user_roles[r] != 0)
 				{
-					_mod_handler* hdl;
-					
-					// TODO: request-pipeline, response-pipeline or end-handler
-					// .. Sync & async handlers (/ responding and no-response-handlers)
+					it_load(t,&it,user_roles[r] + 1,*user_roles[r]);
 
-					hdl = (_mod_handler*)tk_alloc(ipt->t,sizeof(struct _mod_handler));
-					hdl->next = ipt->handler_list;
-					ipt->handler_list = hdl;
+					if(it_next_eq(t,&pt,&it) == 0)
+						break;
+
+					do
+					{
+						int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
+						if(cmp == 0 && it.kused == *user_roles[r])
+						{
+							allowed = 1;
+							break;
+						}
+						else if(cmp > 0)
+							break;
+						
+						r++;
+					}
+					while(user_roles[r] != 0);
 				}
 
 				it_dispose(t,&it);
 			}
-
-			from = i;
 		}
+
+		// get pipeline-handlers
+		pt = eventpt;
+		if(pt.pg != 0 && st_move(ipt->sys.instance_tk,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+		{
+			it_ptr it;
+			it_create(t,&it,&pt);
+
+			// iterate instance-refs / event-handler-id
+			while(it_next(t,&pt,&it))
+			{
+				_mod_handler* hdl;
+				
+				// TODO: request-pipeline, response-pipeline or end-handler
+				// .. Sync & async handlers (/ responding and no-response-handlers)
+
+				hdl = (_mod_handler*)tk_alloc(ipt->t,sizeof(struct _mod_handler));
+				hdl->next = ipt->handler_list;
+				ipt->handler_list = hdl;
+
+				hdl->thehandler = _runtime_handler;
+			}
+
+			it_dispose(t,&it);
+		}
+
+		// final part? 
+		if(i + 1 == event_len)
+		{
+			// get handlers for 
+		}
+
+		from = i;
 	}
 
 	if(allowed == 0 || ipt->handler_list == 0)
@@ -267,27 +322,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		return 0;
 	}
 
-	// lookup system-eventhandler
-	pt = _global_handler_rootptr;
-	if(!st_move(_global_handler_task,&pt,eventid,event_len) &&
-		!st_move(_global_handler_task,&pt,HEAD_EVENT,HEAD_SIZE))
-	{
-		if(st_get(_global_handler_task,&pt,(char*)&ipt->system,sizeof(cle_syshandler*)) != -1)
-			ipt->system = 0;
-		else
-			// run system-handler setup
-			ipt->system->do_setup(&ipt->sys);
-	}
-
-	// run module-handler setups
-	handler = ipt->handler_list;
-	while(handler)
-	{
-		// call runtime to setup/start handlers
-
-		// next handler
-		handler = handler->next;
-	}
+	_notify_handlers(ipt);
 
 	// prepare for event-stream
 	st_empty(t,&ipt->top->pt);
@@ -299,24 +334,11 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	return ipt;
 }
 
-// loop through event-handlers and update waiting handlers and ready them
-static void _check_handlers(_ipt* ipt)
-{
-	// run module-handler setups
-	_mod_handler* handler = ipt->handler_list;
-	while(handler)
-	{
-
-		// next handler
-		handler = handler->next;
-	}
-}
-
 void cle_next(_ipt* ipt)
 {
 	struct _handler_list* handlers;
 	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->_error != 0)
+	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
 	if(ipt->top->prev != 0)
@@ -325,8 +347,7 @@ void cle_next(_ipt* ipt)
 		return;
 	}
 
-	if(ipt->system && ipt->system->do_next)
-		ipt->system->do_next(&ipt->sys,ipt->top->pt,ipt->maxdepth);
+	_notify_handlers(ipt);
 
 	ipt->sys.next_call++;
 	ipt->depth = ipt->maxdepth = 0;
@@ -337,38 +358,31 @@ void cle_next(_ipt* ipt)
 
 	ipt->input_chain_last->prev = _new_ptr_stack(ipt,&ipt->current,0);
 	ipt->input_chain_last = ipt->input_chain_last->prev;
-
-	_check_handlers(ipt);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
 {
-	if(ipt == 0)
+	// only handle one end-event
+	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
-	if(ipt->_error == 0)
+	// reporting an error
+	if(code != 0 && length != 0)
 	{
-		// reporting an error
-		if(code != 0 && length != 0)
-		{
-			ipt->_error = code;
-			ipt->_errlength = length;
-		}
-		else
-			// signal end of input
-			ipt->_error = "";
+		ipt->sys.error = code;
+		ipt->sys.errlength = length;
 	}
+	else
+		// signal end of input
+		ipt->sys.error = "";
 
-	if(ipt->system && ipt->system->do_end)
-		ipt->system->do_end(&ipt->sys,code,length);
-
-	_check_handlers(ipt);
+	_notify_handlers(ipt);
 }
 
 void cle_push(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->_error != 0)
+	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
 	elm = _new_ptr_stack(ipt,&ipt->top->pt,ipt->top);
@@ -383,7 +397,7 @@ void cle_push(_ipt* ipt)
 void cle_pop(_ipt* ipt)
 {
 	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->_error != 0)
+	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
 	if(ipt->top->prev == 0)
@@ -404,7 +418,7 @@ void cle_pop(_ipt* ipt)
 
 void cle_data(_ipt* ipt, cdat data, uint length)
 {
-	if(ipt == 0 || ipt->_error != 0)
+	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
 	st_append(ipt->t,&ipt->current,data,length);
