@@ -31,7 +31,6 @@
 #define HEAD_ROLES "\0r"
 
 // error-messages
-static char unknown_user[] = "unknown user";
 static char input_underflow[] = "input underflow";
 static char input_incomplete[] = "input incomplete";
 static char event_not_allowed[] = "event not allowed";
@@ -45,19 +44,12 @@ struct _ptr_stack
 	st_ptr pt;
 };
 
-enum run_state
-{
-	RUNNING,
-	WAITING,
-	FAILED
-};
-
 typedef struct _mod_handler
 {
 	cle_syshandler* thehandler;
 	struct _mod_handler* next;
 	struct _ptr_stack* current_input;
-	enum run_state run_state;
+	struct sys_event_id event_id;
 }_mod_handler;
 
 struct _ipt_internal
@@ -71,9 +63,7 @@ struct _ipt_internal
 	struct _ptr_stack* input_chain;
 	struct _ptr_stack* input_chain_last;
 
-	_mod_handler* handler_list;
-	_mod_handler* handler_request;
-	_mod_handler* handler_response;
+	_mod_handler* hdlists[4];
 
 	st_ptr current;
 
@@ -143,7 +133,7 @@ void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handl
 static void _notify_handlers(_ipt* ipt)
 {
 	// run module-handler setups
-	_mod_handler* handler = ipt->handler_list;
+	_mod_handler* handler = ipt->hdlists[0];
 	while(handler)
 	{
 
@@ -194,12 +184,13 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	allowed = (userid_len == 0);
 
 	eventpt = ipt->sys.instance;
-	if(st_move(ipt->sys.instance_tk,&eventpt,HEAD_EVENT,HEAD_SIZE))
+	if(st_move(ipt->sys.instance_tk,&eventpt,HEAD_EVENT,HEAD_SIZE) != 0)
 	{
 		eventpt.pg = 0;
 		if(allowed == 0)
 		{
 			// no event-structure in this instance -> exit
+			_error(event_not_allowed);
 			tk_unref(ipt->sys.instance_tk,eventpt.pg);
 			tk_drop_task(ipt->sys.instance_tk);
 			tk_drop_task(t);
@@ -217,7 +208,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			continue;
 
 		// lookup event-part (module-level)
-		if(eventpt.pg != 0 && st_move(ipt->sys.instance_tk,&eventpt,eventid + from,i - from))
+		if(eventpt.pg != 0 && st_move(ipt->sys.instance_tk,&eventpt,eventid + from,i - from) != 0)
 		{
 			eventpt.pg = 0;
 			// not found! No such event allowed/no possible end-handlers
@@ -229,7 +220,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		}
 
 		// lookup system-level handlers
-		if(syspt.pg != 0 && st_move(_global_handler_task,&syspt,eventid + from,i - from))
+		if(syspt.pg != 0 && st_move(_global_handler_task,&syspt,eventid + from,i - from) != 0)
 		{
 			syspt.pg = 0;
 			// not found! No such event allowed/no possible end-handlers
@@ -262,13 +253,18 @@ _ipt* cle_start(cdat eventid, uint event_len,
 					do
 					{
 						int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
-						if(cmp == 0 && it.kused == *user_roles[r])
+						if(cmp > 0)
+							break;
+						else if(cmp == 0)
 						{
-							allowed = 1;
-							break;
+							if(it.kused == *user_roles[r])
+							{
+								allowed = 1;
+								break;
+							}
+							else if(it.kused < *user_roles[r])
+								break;
 						}
-						else if(cmp > 0)
-							break;
 						
 						r++;
 					}
@@ -280,6 +276,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		}
 
 		// get pipeline-handlers
+		// module-level
 		pt = eventpt;
 		if(pt.pg != 0 && st_move(ipt->sys.instance_tk,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 		{
@@ -290,30 +287,57 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			while(it_next(t,&pt,&it))
 			{
 				_mod_handler* hdl;
-				
-				// TODO: request-pipeline, response-pipeline or end-handler
-				// .. Sync & async handlers (/ responding and no-response-handlers)
+				struct sys_event_id seid;
 
-				hdl = (_mod_handler*)tk_alloc(ipt->t,sizeof(struct _mod_handler));
-				hdl->next = ipt->handler_list;
-				ipt->handler_list = hdl;
+				if(st_get(ipt->sys.instance_tk,&pt,(char*)&seid,sizeof(struct sys_event_id)) < 0)
+				{
+					if(seid.handlertype >= PIPELINE_REQUEST || i + 1 == event_len)
+					{
+						hdl = (_mod_handler*)tk_alloc(t,sizeof(struct _mod_handler));
 
-				hdl->thehandler = _runtime_handler;
+						hdl->next = ipt->hdlists[seid.handlertype];
+						ipt->hdlists[seid.handlertype] = hdl;
+
+						hdl->thehandler = &_runtime_handler;
+						hdl->event_id = seid;
+					}
+				}
 			}
 
 			it_dispose(t,&it);
 		}
 
-		// final part? 
-		if(i + 1 == event_len)
+		// system-level
+		pt = syspt;
+		if(pt.pg != 0 && st_move(_global_handler_task,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 		{
-			// get handlers for 
+			cle_syshandler* syshdl;
+			if(st_get(_global_handler_task,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) == -1)
+			{
+				do
+				{
+					if(syshdl->systype >= PIPELINE_REQUEST || i + 1 == event_len)
+					{					
+						_mod_handler* hdl = (_mod_handler*)tk_alloc(t,sizeof(struct _mod_handler));
+
+						hdl->next = ipt->hdlists[syshdl->systype];
+						ipt->hdlists[syshdl->systype] = hdl;
+
+						hdl->thehandler = syshdl;
+					}
+
+					// next in list...
+					syshdl = syshdl->next_handler;
+				}
+				while(syshdl);
+			}
 		}
 
-		from = i;
+		from = i + 1;
 	}
 
-	if(allowed == 0 || ipt->handler_list == 0)
+	// access allowed? and is there anything anyone in the other end?
+	if(allowed == 0 || (ipt->hdlists[SYNC_REQUEST_HANDLER] == 0 && ipt->hdlists[ASYNC_REQUEST_HANDLER] == 0))
 	{
 		_error(event_not_allowed);
 		tk_unref(ipt->sys.instance_tk,eventpt.pg);

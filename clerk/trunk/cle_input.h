@@ -47,10 +47,17 @@ void cle_end(_ipt* inpt, cdat code, uint length);
 
 enum handler_type
 {
-	SYNC_REQUEST_HANDLER,
+	SYNC_REQUEST_HANDLER = 0,
 	ASYNC_REQUEST_HANDLER,
 	PIPELINE_REQUEST,
 	PIPELINE_RESPONSE
+};
+
+struct sys_event_id
+{
+	char appid[2];
+	char objid[7];
+	char handlertype;
 };
 
 typedef struct sys_handler_data
@@ -74,7 +81,7 @@ sys_handler_data;
 typedef struct cle_syshandler
 {
 	struct cle_syshandler* next_handler;
-	void (*do_setup)(sys_handler_data*);
+	void (*do_setup)(sys_handler_data*,struct sys_event_id*);
 	void (*do_next)(sys_handler_data*,st_ptr,uint);
 	void (*do_end)(sys_handler_data*,cdat,uint);
 	enum handler_type systype;
