@@ -100,9 +100,29 @@ void tk_unref(task* t, page* pg)
 {
 	if(pg->id)
 		t->ps->unref_page(t->psrc_data,pg->id);
-	else if(--(GOPAGEWRAP(pg)->refcount) == 0)
+	else
 	{
-		/* dead page */
+		page_wrap* wp = GOPAGEWRAP(pg);
+		/* internal dead page ? */
+		if(--(wp->refcount) == 0)
+		{
+			/* unref linked pages */
+			if(wp->ovf != 0)
+			{
+				int off;
+				for(off = 16; off < wp->ovf->used; off += 16)
+				{
+					ptr* pt = (ptr*)((char*)wp->ovf + off);
+					tk_unref(t,pt->pg);
+				}
+
+				/* release ovf */
+				tk_mfree(t,wp->ovf);
+			}
+
+			/* release page */
+			tk_mfree(t,pg);
+		}
 	}
 }
 
@@ -240,6 +260,7 @@ void tk_drop_task(task* t)
 	while(pg)
 	{
 		page_wrap* tmp = pg->next;
+		tk_mfree(t,pg->ovf);
 		tk_mfree(t,pg->pg);
 		pg = tmp;
 	}
@@ -248,6 +269,7 @@ void tk_drop_task(task* t)
 	while(pg)
 	{
 		page_wrap* tmp = pg->next;
+		tk_mfree(t,pg->ovf);
 		tk_mfree(t,pg->pg);
 		pg = tmp;
 	}

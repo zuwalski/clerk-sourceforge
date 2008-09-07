@@ -46,9 +46,8 @@ struct _ptr_stack
 
 typedef struct _mod_handler
 {
-	cle_syshandler* thehandler;
 	struct _mod_handler* next;
-	struct _ptr_stack* current_input;
+	cle_syshandler* thehandler;
 	struct sys_event_id event_id;
 }_mod_handler;
 
@@ -60,9 +59,6 @@ struct _ipt_internal
 
 	sys_handler_data sys;
 
-	struct _ptr_stack* input_chain;
-	struct _ptr_stack* input_chain_last;
-
 	_mod_handler* hdlists[4];
 
 	st_ptr current;
@@ -70,9 +66,6 @@ struct _ipt_internal
 	uint maxdepth;
 	uint depth;
 };
-
-// hook-handler for the core runtimesystem
-static cle_syshandler _runtime_handler = {0,0,0,0,0};
 
 // nil-output-handler (used for async-handlers)
 static int _nil1(void* v){return 0;}
@@ -82,6 +75,10 @@ static cle_output _nil_out = {_nil1,_nil2,_nil1,_nil1,_nil2,_nil1};
 /* GLOBALS (readonly after init.) */
 static task* _global_handler_task = 0;
 static st_ptr _global_handler_rootptr;
+
+// pipeline-output-to-input
+
+static cle_output _pipeline_out = {0,0,0,0,0,0};
 
 struct _ptr_stack* _new_ptr_stack(_ipt* ipt, st_ptr* pt, struct _ptr_stack* prev)
 {
@@ -126,7 +123,7 @@ void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handl
 	else
 		handler->next_handler = 0;
 
-	st_append(_global_handler_task,&pt,(cdat)&handler,sizeof(cle_syshandler*));
+	st_update(_global_handler_task,&pt,(cdat)&handler,sizeof(cle_syshandler*));
 }
 
 // loop through event-handlers and update waiting handlers and ready them
@@ -336,7 +333,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		from = i + 1;
 	}
 
-	// access allowed? and is there anything anyone in the other end?
+	// access allowed? and is there anyone in the other end?
 	if(allowed == 0 || (ipt->hdlists[SYNC_REQUEST_HANDLER] == 0 && ipt->hdlists[ASYNC_REQUEST_HANDLER] == 0))
 	{
 		_error(event_not_allowed);
@@ -346,15 +343,25 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		return 0;
 	}
 
+	// there can be only one sync-handler (dont mess-up output with concurrent event-handlers)
+	if(ipt->hdlists[SYNC_REQUEST_HANDLER] != 0 && ipt->hdlists[SYNC_REQUEST_HANDLER]->next != 0)
+	{
+		_mod_handler* hdl = ipt->hdlists[SYNC_REQUEST_HANDLER];
+
+		while(hdl != 0 && hdl->thehandler == &_runtime_handler)
+			hdl = hdl->next;
+
+		// pick first system-handler (if any)
+		ipt->hdlists[SYNC_REQUEST_HANDLER] = hdl;
+		if(hdl != 0)
+			hdl->next = 0;
+	}
+
 	_notify_handlers(ipt);
 
 	// prepare for event-stream
 	st_empty(t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
-
-	ipt->input_chain = ipt->input_chain_last
-		= _new_ptr_stack(ipt,&ipt->current,0);
-
 	return ipt;
 }
 
@@ -379,9 +386,6 @@ void cle_next(_ipt* ipt)
 	// done processing .. clear and ready for next
 	st_empty(ipt->t,&ipt->top->pt);
 	ipt->current = ipt->top->pt;
-
-	ipt->input_chain_last->prev = _new_ptr_stack(ipt,&ipt->current,0);
-	ipt->input_chain_last = ipt->input_chain_last->prev;
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)

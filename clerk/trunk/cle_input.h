@@ -55,9 +55,9 @@ enum handler_type
 
 struct sys_event_id
 {
-	char appid[2];
-	char objid[7];
 	char handlertype;
+	char appid[2];
+	char objid[5];
 };
 
 typedef struct sys_handler_data
@@ -90,5 +90,8 @@ cle_syshandler;
 
 /* single threaded calls only */
 void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);
+
+// hook-handler for the core runtimesystem
+extern cle_syshandler _runtime_handler;
 
 #endif

@@ -166,6 +166,10 @@ static void _st_write(struct _st_lkup_res* rt)
 	key* newkey;
 	uint size = rt->length >> 3;
 
+	/* readonly pages? */
+	if(rt->t == 0)
+		return;
+
 	/* make a writable copy of external pages before write */
 	if(rt->pg->id)
 	{
@@ -260,7 +264,12 @@ static void _st_write(struct _st_lkup_res* rt)
 
 void st_empty(task* t, st_ptr* pt)
 {
-	key* nk = tk_alloc(t,sizeof(key) + 2);
+	key* nk;
+
+	if(t == 0)
+		return;
+	
+	nk = tk_alloc(t,sizeof(key) + 2);
 
 	pt->key = (uint)nk - (uint)t->stack->pg;
 	pt->pg = t->stack->pg;
@@ -341,6 +350,9 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 	page* rm_pg;
 	ushort remove = 0;
 	ushort waste;
+
+	if(t == 0)
+		return 1;
 
 	rm_pg = rt.pg = pt->pg;
 	rt.diff = pt->offset;
