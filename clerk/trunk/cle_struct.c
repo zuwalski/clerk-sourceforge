@@ -36,55 +36,60 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 
 	while(1)
 	{
-		uint max = (rt->length + rt->diff < me->length)?rt->length + rt->diff:me->length;
+		uint a,max = (rt->length + rt->diff < me->length) ? rt->length + rt->diff : me->length;
+		cdat maxkey = ckey + ((max - rt->diff + 7) >> 3);
+		cdat ckeyhold = ckey;
 
-		while(rt->diff < max)/* TEST: >40%, x10 invocations. TODO: UTF-8 */
+		while(ckey < maxkey)
 		{
-			uint a = *(rt->path) ^ *ckey;
-			
-			if(a || max - rt->diff < 8)
-			{
-				while((a & 0x80) == 0)
-				{
-					a <<= 1;
-					rt->diff++;
-					if(rt->diff == max) break;
-    			}
-    			break;
-   			}
+			a = *(rt->path++) ^ *ckey++;	// compare bytes
 
-			rt->path++;ckey++;
-			rt->length -= 8;
-			rt->diff += 8;
+			if(a)
+			{
+				// fold 1's after msb
+				a |= (a >> 1);
+				a |= (a >> 2);
+				a |= (a >> 4);
+				// lzc(a)
+				a -= ((a >> 1) & 0x55);
+				a = (((a >> 2) & 0x33) + (a & 0x33));
+				a = (((a >> 4) + a) & 0x0f);
+				rt->diff += 8 - a;
+				break;
+			}
 		}
+
+		a = ckey - ckeyhold - 1;
+		rt->length -= a << 3;
+		rt->diff += a << 3;
+		if(rt->diff > max)
+			rt->diff = max;
+		rt->path--;
 
 		rt->sub  = me;
 		rt->prev = 0;
 
-		if(rt->length && me->sub)
+		if(rt->length == 0 || me->sub == 0)
+			break;
+
+		me = GOOFF(rt->pg,me->sub);
+		while(me->offset < rt->diff)
 		{
-			me = GOOFF(rt->pg,me->sub);
-			/* TEST: 10-20%, x4 invocations */
-			while(me->offset < rt->diff)
-			{
-				rt->prev = me;
+			rt->prev = me;
 
-				if(!me->next)
-					break;
-			
-				me = GOOFF(rt->pg,me->next);
-			}
-
-			if(me->offset == rt->diff)
-			{
-				rt->diff = 0;
-				if(me->length == 0)
-					me = _tk_get_ptr(rt->t,&rt->pg,me);
-				ckey = KDATA(me);
-                continue;
-			}
+			if(!me->next)
+				break;
+		
+			me = GOOFF(rt->pg,me->next);
 		}
-        break;
+
+		if(me->offset != rt->diff)
+			break;
+
+		rt->diff = 0;
+		if(me->length == 0)
+			me = _tk_get_ptr(rt->t,&rt->pg,me);
+		ckey = KDATA(me);
 	}
 	return (rt->length == 0);
 }
