@@ -62,9 +62,8 @@ struct sys_event_id
 
 typedef struct sys_handler_data
 {
-	cle_output* response;
-	void* respdata;
-	void* data;
+	ptr_list* input;
+	task* mem_tk;
 	task* instance_tk;
 	st_ptr instance;
 	uint next_call;
@@ -77,16 +76,27 @@ typedef struct sys_handler_data
 }
 sys_handler_data;
 
-/* system extension-handlers */
+typedef struct event_handler event_handler;
+
 typedef struct cle_syshandler
 {
 	struct cle_syshandler* next_handler;
-	void (*do_setup)(sys_handler_data*,struct sys_event_id*);
-	void (*do_next)(sys_handler_data*,st_ptr,uint);
-	void (*do_end)(sys_handler_data*,cdat,uint);
+	void (*do_setup)(sys_handler_data*,event_handler*);
+	void (*do_next)(sys_handler_data*,event_handler*,st_ptr,uint);
+	void (*do_end)(sys_handler_data*,event_handler*,cdat,uint);
 	enum handler_type systype;
 }
 cle_syshandler;
+
+struct event_handler
+{
+	struct event_handler* next;
+	cle_syshandler* thehandler;
+	void* handdata;
+	cle_output* response;
+	void* respdata;
+	struct sys_event_id event_id;
+};
 
 /* single threaded calls only */
 void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);

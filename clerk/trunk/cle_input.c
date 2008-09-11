@@ -35,33 +35,20 @@ static char input_underflow[] = "input underflow";
 static char input_incomplete[] = "input incomplete";
 static char event_not_allowed[] = "event not allowed";
 
-#define _error(txt) ipt->sys.response->end(ipt->sys.respdata,txt,sizeof(txt))
+#define _error(txt) ipt->response->end(ipt->respdata,txt,sizeof(txt))
 
 // structs
-struct _ptr_stack
-{
-	struct _ptr_stack* prev;
-	st_ptr pt;
-};
-
-typedef struct _mod_handler
-{
-	struct _mod_handler* next;
-	cle_syshandler* thehandler;
-	struct sys_event_id event_id;
-}_mod_handler;
-
 struct _ipt_internal
 {
-	task* t;
-	struct _ptr_stack* top;
-	struct _ptr_stack* free;
+	ptr_list* top;
+	ptr_list* free;
+
+	cle_output* response;
+	void* respdata;
+
+	event_handler* hdlists[4];
 
 	sys_handler_data sys;
-
-	_mod_handler* hdlists[4];
-
-	st_ptr current;
 
 	uint maxdepth;
 	uint depth;
@@ -80,19 +67,19 @@ static st_ptr _global_handler_rootptr;
 
 static cle_output _pipeline_out = {0,0,0,0,0,0};
 
-struct _ptr_stack* _new_ptr_stack(_ipt* ipt, st_ptr* pt, struct _ptr_stack* prev)
+ptr_list* _new_ptr_stack(_ipt* ipt, st_ptr* pt, ptr_list* link)
 {
-	struct _ptr_stack* elm;
+	ptr_list* elm;
 	if(ipt->free)
 	{
 		elm = ipt->free;
-		ipt->free = elm->prev;
+		ipt->free = elm->link;
 	}
 	else
-		elm = (struct _ptr_stack*)tk_alloc(ipt->t,sizeof(struct _ptr_stack));
+		elm = (ptr_list*)tk_alloc(ipt->sys.mem_tk,sizeof(ptr_list));
 
 	elm->pt = *pt;
-	elm->prev = prev;
+	elm->link = link;
 
 	return elm;
 }
@@ -126,19 +113,6 @@ void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handl
 	st_update(_global_handler_task,&pt,(cdat)&handler,sizeof(cle_syshandler*));
 }
 
-// loop through event-handlers and update waiting handlers and ready them
-static void _notify_handlers(_ipt* ipt)
-{
-	// run module-handler setups
-	_mod_handler* handler = ipt->hdlists[0];
-	while(handler)
-	{
-
-		// next handler
-		handler = handler->next;
-	}
-}
-
 // input-functions
 
 _ipt* cle_start(cdat eventid, uint event_len,
@@ -147,9 +121,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 						cle_pagesource* app_source, cle_psrc_data app_source_data, 
 							cle_pagesource* session_source, cle_psrc_data session_source_data)
 {
-	_mod_handler* handler;
-	_ipt* ipt;
 	task* t;
+	_ipt* ipt;
 	int from,i,allowed;
 
 	st_ptr pt,eventpt,syspt;
@@ -160,10 +133,13 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	// default null
 	memset(ipt,0,sizeof(_ipt));
 
-	ipt->t = t;
+	ipt->sys.mem_tk = t;
 
-	ipt->sys.response = response;
-	ipt->sys.respdata = responsedata;
+	if(response == 0)
+		response = &_nil_out;
+
+	ipt->response = response;
+	ipt->respdata = responsedata;
 
 	ipt->sys.eventid = eventid;
 	ipt->sys.event_len = event_len;
@@ -283,21 +259,19 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			// iterate instance-refs / event-handler-id
 			while(it_next(t,&pt,&it))
 			{
-				_mod_handler* hdl;
+				event_handler* hdl;
 				struct sys_event_id seid;
 
 				if(st_get(ipt->sys.instance_tk,&pt,(char*)&seid,sizeof(struct sys_event_id)) < 0)
 				{
-					if(seid.handlertype >= PIPELINE_REQUEST || i + 1 == event_len)
-					{
-						hdl = (_mod_handler*)tk_alloc(t,sizeof(struct _mod_handler));
+					// TODO: verify application is activated - dont send events to sleeping apps
+					hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler));
 
-						hdl->next = ipt->hdlists[seid.handlertype];
-						ipt->hdlists[seid.handlertype] = hdl;
+					hdl->next = ipt->hdlists[seid.handlertype];
+					ipt->hdlists[seid.handlertype] = hdl;
 
-						hdl->thehandler = &_runtime_handler;
-						hdl->event_id = seid;
-					}
+					hdl->thehandler = &_runtime_handler;
+					hdl->event_id = seid;
 				}
 			}
 
@@ -313,20 +287,16 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			{
 				do
 				{
-					if(syshdl->systype >= PIPELINE_REQUEST || i + 1 == event_len)
-					{					
-						_mod_handler* hdl = (_mod_handler*)tk_alloc(t,sizeof(struct _mod_handler));
+					event_handler* hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler));
 
-						hdl->next = ipt->hdlists[syshdl->systype];
-						ipt->hdlists[syshdl->systype] = hdl;
-
-						hdl->thehandler = syshdl;
-					}
+					hdl->next = ipt->hdlists[syshdl->systype];
+					ipt->hdlists[syshdl->systype] = hdl;
+					hdl->thehandler = syshdl;
 
 					// next in list...
 					syshdl = syshdl->next_handler;
 				}
-				while(syshdl);
+				while(syshdl != 0);
 			}
 		}
 
@@ -334,7 +304,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	}
 
 	// access allowed? and is there anyone in the other end?
-	if(allowed == 0 || (ipt->hdlists[SYNC_REQUEST_HANDLER] == 0 && ipt->hdlists[ASYNC_REQUEST_HANDLER] == 0))
+	if(allowed == 0 || ((uint)ipt->hdlists[SYNC_REQUEST_HANDLER]|(uint)ipt->hdlists[ASYNC_REQUEST_HANDLER]) == 0)
 	{
 		_error(event_not_allowed);
 		tk_unref(ipt->sys.instance_tk,eventpt.pg);
@@ -343,49 +313,153 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		return 0;
 	}
 
-	// there can be only one sync-handler (dont mess-up output with concurrent event-handlers)
-	if(ipt->hdlists[SYNC_REQUEST_HANDLER] != 0 && ipt->hdlists[SYNC_REQUEST_HANDLER]->next != 0)
+	// setup sync-handler-chain
+	if(ipt->hdlists[SYNC_REQUEST_HANDLER] != 0)
 	{
-		_mod_handler* hdl = ipt->hdlists[SYNC_REQUEST_HANDLER];
+		event_handler* sync_handler = ipt->hdlists[SYNC_REQUEST_HANDLER];
 
-		while(hdl != 0 && hdl->thehandler == &_runtime_handler)
-			hdl = hdl->next;
+		// there can be only one sync-handler (dont mess-up output with concurrent event-handlers)
+		if(sync_handler->next != 0)
+		{
+			event_handler* hdl = sync_handler;
 
-		// pick first system-handler (if any)
-		ipt->hdlists[SYNC_REQUEST_HANDLER] = hdl;
-		if(hdl != 0)
-			hdl->next = 0;
+			while(hdl != 0 && hdl->thehandler == &_runtime_handler)
+				hdl = hdl->next;
+
+			// pick first (most specific) system-handler (if any)
+			if(hdl != 0)
+				ipt->hdlists[SYNC_REQUEST_HANDLER] = sync_handler = hdl;
+
+			// default: just pick first handler (alone)
+			sync_handler->next = 0;
+		}
+
+		// setup response-handler chain
+		if(ipt->hdlists[PIPELINE_RESPONSE] != 0)
+		{
+			// in correct order (most specific handler comes first)
+			event_handler* hdl = ipt->hdlists[PIPELINE_RESPONSE];
+			event_handler* last;
+
+			// sync-handler outputs through this chain
+			sync_handler->response = &_pipeline_out;
+			sync_handler->respdata = hdl;
+
+			do
+			{
+				last = hdl;
+				hdl->response = &_pipeline_out;
+				hdl->respdata = hdl->next;
+
+				hdl = hdl->next;
+			}
+			while(hdl != 0);
+
+			// and finally the original output-target
+			last->response = response;
+			last->respdata = responsedata;
+		}
+		else
+		{
+			sync_handler->response = response;
+			sync_handler->respdata = responsedata;
+		}
 	}
 
-	_notify_handlers(ipt);
+	// init async-handlers
+	if(ipt->hdlists[ASYNC_REQUEST_HANDLER] != 0)
+	{
+		// must inverse order (most general handlers comes first)
+		event_handler* hdl = ipt->hdlists[ASYNC_REQUEST_HANDLER];
+
+		do
+		{
+			hdl->response = &_nil_out;
+		}
+		while(hdl != 0);
+	}
+
+	// setup request-handler chain
+	if(ipt->hdlists[PIPELINE_REQUEST] != 0)
+	{
+		// must inverse order (most general handlers comes first)
+		event_handler* hdl = ipt->hdlists[PIPELINE_REQUEST];
+		event_handler* last;
+
+		do
+		{
+			last = hdl;
+			hdl->response = &_pipeline_out;
+			hdl->respdata = hdl->next;
+
+			hdl = hdl->next;
+		}
+		while(hdl != 0);
+
+		// run setup on front-handler
+		if(last != 0 && last->thehandler->do_setup != 0)
+			last->thehandler->do_setup(&ipt->sys,last);
+	}
+	else
+	{
+		// just setup handlers without request-pipe
+		event_handler* hdl = ipt->hdlists[SYNC_REQUEST_HANDLER];
+
+		if(hdl != 0 && hdl->thehandler->do_setup != 0)
+			hdl->thehandler->do_setup(&ipt->sys,hdl);
+
+		hdl = ipt->hdlists[ASYNC_REQUEST_HANDLER];
+		while(hdl != 0)
+		{
+			if(hdl->thehandler->do_setup != 0)
+				hdl->thehandler->do_setup(&ipt->sys,hdl);
+
+			hdl = hdl->next;
+		}
+	}
 
 	// prepare for event-stream
 	st_empty(t,&ipt->top->pt);
-	ipt->current = ipt->top->pt;
+
+	// pre-allocate 16 ptr_list-elements
+	// trying to keep list-elm on first task-page
+	ipt->free = (ptr_list*)tk_alloc(t,sizeof(ptr_list) * 16);
+	ipt->free->link = 0;
+	for(i = 1; i < 16; i++)
+	{
+		(ipt->free + 1)->link = ipt->free;
+		ipt->free = ipt->free + 1;
+	}
+
 	return ipt;
 }
 
 void cle_next(_ipt* ipt)
 {
-	struct _handler_list* handlers;
-	struct _ptr_stack* elm;
+	ptr_list* elm;
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
-	if(ipt->top->prev != 0)
+	if(ipt->depth != 0)
 	{
 		_error(input_incomplete);
 		return;
 	}
 
-	_notify_handlers(ipt);
+	elm = _new_ptr_stack(ipt,&ipt->top->pt,0);
+
+	if(ipt->sys.input != 0)
+		ipt->sys.input->link = elm;
+
+	ipt->sys.input = elm;
+
+	//_notify_handlers(ipt);
 
 	ipt->sys.next_call++;
 	ipt->depth = ipt->maxdepth = 0;
 
 	// done processing .. clear and ready for next
-	st_empty(ipt->t,&ipt->top->pt);
-	ipt->current = ipt->top->pt;
+	st_empty(ipt->sys.mem_tk,&ipt->top->pt);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
@@ -404,44 +478,39 @@ void cle_end(_ipt* ipt, cdat code, uint length)
 		// signal end of input
 		ipt->sys.error = "";
 
-	_notify_handlers(ipt);
-}
-
-void cle_push(_ipt* ipt)
-{
-	struct _ptr_stack* elm;
-	if(ipt == 0 || ipt->sys.error != 0)
-		return;
-
-	elm = _new_ptr_stack(ipt,&ipt->top->pt,ipt->top);
-
-	ipt->top = elm;
-	ipt->current = ipt->top->pt;
-
-	ipt->depth++;
-	if(ipt->depth > ipt->maxdepth) ipt->maxdepth = ipt->depth;
+	//_notify_handlers(ipt);
 }
 
 void cle_pop(_ipt* ipt)
 {
-	struct _ptr_stack* elm;
+	ptr_list* elm;
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
-	if(ipt->top->prev == 0)
+	if(ipt->depth == 0)
 	{
 		_error(input_underflow);
 		return;
 	}
 
 	elm = ipt->top;
-	ipt->top = ipt->top->prev;
-	ipt->current = ipt->top->pt;
+	ipt->top = ipt->top->link;
 
-	elm->prev = ipt->free;
+	elm->link = ipt->free;
 	ipt->free = elm;
 
 	ipt->depth--;
+}
+
+void cle_push(_ipt* ipt)
+{
+	if(ipt == 0 || ipt->sys.error != 0)
+		return;
+
+	ipt->top = _new_ptr_stack(ipt,&ipt->top->pt,ipt->top);
+
+	ipt->depth++;
+	if(ipt->depth > ipt->maxdepth) ipt->maxdepth = ipt->depth;
 }
 
 void cle_data(_ipt* ipt, cdat data, uint length)
@@ -449,5 +518,5 @@ void cle_data(_ipt* ipt, cdat data, uint length)
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
-	st_append(ipt->t,&ipt->current,data,length);
+	st_append(ipt->sys.mem_tk,&ipt->top->pt,data,length);
 }

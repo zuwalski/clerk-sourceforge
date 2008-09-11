@@ -35,6 +35,12 @@ typedef struct st_ptr
 	ushort offset;
 } st_ptr;
 
+typedef struct ptr_list
+{
+	struct ptr_list* link;
+	st_ptr pt;
+} ptr_list;
+
 typedef struct it_ptr
 {
 	page*  pg;
