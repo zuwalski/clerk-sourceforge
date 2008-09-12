@@ -82,7 +82,7 @@ typedef struct cle_syshandler
 {
 	struct cle_syshandler* next_handler;
 	void (*do_setup)(sys_handler_data*,event_handler*);
-	void (*do_next)(sys_handler_data*,event_handler*,st_ptr,uint);
+	void (*do_next)(sys_handler_data*,event_handler*,uint);
 	void (*do_end)(sys_handler_data*,event_handler*,cdat,uint);
 	enum handler_type systype;
 }

@@ -46,7 +46,7 @@ struct _ipt_internal
 	cle_output* response;
 	void* respdata;
 
-	event_handler* hdlists[4];
+	event_handler* event_chain_begin;
 
 	sys_handler_data sys;
 
@@ -63,9 +63,13 @@ static cle_output _nil_out = {_nil1,_nil2,_nil1,_nil1,_nil2,_nil1};
 static task* _global_handler_task = 0;
 static st_ptr _global_handler_rootptr;
 
-// pipeline-output-to-input
+// pipeline-output-to-input (chain functions)
 
 static cle_output _pipeline_out = {0,0,0,0,0,0};
+
+// pipeline activate all handlers
+
+static cle_output _pipeline_all = {0,0,0,0,0,0};
 
 ptr_list* _new_ptr_stack(_ipt* ipt, st_ptr* pt, ptr_list* link)
 {
@@ -123,6 +127,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 {
 	task* t;
 	_ipt* ipt;
+	event_handler* hdlists[4];
+	event_handler* hdl;
 	int from,i,allowed;
 
 	st_ptr pt,eventpt,syspt;
@@ -267,8 +273,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 					// TODO: verify application is activated - dont send events to sleeping apps
 					hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler));
 
-					hdl->next = ipt->hdlists[seid.handlertype];
-					ipt->hdlists[seid.handlertype] = hdl;
+					hdl->next = hdlists[seid.handlertype];
+					hdlists[seid.handlertype] = hdl;
 
 					hdl->thehandler = &_runtime_handler;
 					hdl->event_id = seid;
@@ -289,8 +295,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 				{
 					event_handler* hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler));
 
-					hdl->next = ipt->hdlists[syshdl->systype];
-					ipt->hdlists[syshdl->systype] = hdl;
+					hdl->next = hdlists[syshdl->systype];
+					hdlists[syshdl->systype] = hdl;
 					hdl->thehandler = syshdl;
 
 					// next in list...
@@ -304,7 +310,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	}
 
 	// access allowed? and is there anyone in the other end?
-	if(allowed == 0 || ((uint)ipt->hdlists[SYNC_REQUEST_HANDLER]|(uint)ipt->hdlists[ASYNC_REQUEST_HANDLER]) == 0)
+	if(allowed == 0 || ((uint)hdlists[SYNC_REQUEST_HANDLER]|(uint)hdlists[ASYNC_REQUEST_HANDLER]) == 0)
 	{
 		_error(event_not_allowed);
 		tk_unref(ipt->sys.instance_tk,eventpt.pg);
@@ -314,32 +320,17 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	}
 
 	// setup sync-handler-chain
-	if(ipt->hdlists[SYNC_REQUEST_HANDLER] != 0)
+	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
 	{
-		event_handler* sync_handler = ipt->hdlists[SYNC_REQUEST_HANDLER];
+		event_handler* sync_handler = hdlists[SYNC_REQUEST_HANDLER];
 
-		// there can be only one sync-handler (dont mess-up output with concurrent event-handlers)
-		if(sync_handler->next != 0)
-		{
-			event_handler* hdl = sync_handler;
-
-			while(hdl != 0 && hdl->thehandler == &_runtime_handler)
-				hdl = hdl->next;
-
-			// pick first (most specific) system-handler (if any)
-			if(hdl != 0)
-				ipt->hdlists[SYNC_REQUEST_HANDLER] = sync_handler = hdl;
-
-			// default: just pick first handler (alone)
-			sync_handler->next = 0;
-		}
-
+		// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
 		// setup response-handler chain
-		if(ipt->hdlists[PIPELINE_RESPONSE] != 0)
+		if(hdlists[PIPELINE_RESPONSE] != 0)
 		{
-			// in correct order (most specific handler comes first)
-			event_handler* hdl = ipt->hdlists[PIPELINE_RESPONSE];
 			event_handler* last;
+			// in correct order (most specific handler comes first)
+			hdl = hdlists[PIPELINE_RESPONSE];
 
 			// sync-handler outputs through this chain
 			sync_handler->response = &_pipeline_out;
@@ -364,59 +355,64 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			sync_handler->response = response;
 			sync_handler->respdata = responsedata;
 		}
+
+		sync_handler->next = hdlists[ASYNC_REQUEST_HANDLER];
+		ipt->event_chain_begin = sync_handler;
 	}
+	else
+		ipt->event_chain_begin = hdlists[ASYNC_REQUEST_HANDLER];
 
 	// init async-handlers
-	if(ipt->hdlists[ASYNC_REQUEST_HANDLER] != 0)
+	if(hdlists[ASYNC_REQUEST_HANDLER] != 0)
 	{
 		// must inverse order (most general handlers comes first)
-		event_handler* hdl = ipt->hdlists[ASYNC_REQUEST_HANDLER];
+		hdl = hdlists[ASYNC_REQUEST_HANDLER];
 
 		do
 		{
 			hdl->response = &_nil_out;
+			hdl = hdl->next;
 		}
 		while(hdl != 0);
 	}
 
 	// setup request-handler chain
-	if(ipt->hdlists[PIPELINE_REQUEST] != 0)
+	if(hdlists[PIPELINE_REQUEST] != 0)
 	{
 		// must inverse order (most general handlers comes first)
-		event_handler* hdl = ipt->hdlists[PIPELINE_REQUEST];
 		event_handler* last;
+		cle_output* resp = &_pipeline_all;
+		void* data = ipt->event_chain_begin;
+
+		hdl = hdlists[PIPELINE_REQUEST];
 
 		do
 		{
 			last = hdl;
-			hdl->response = &_pipeline_out;
-			hdl->respdata = hdl->next;
+			hdl->response = resp;
+			hdl->respdata = data;
+
+			resp = &_pipeline_out;
+			data = hdl;
 
 			hdl = hdl->next;
 		}
 		while(hdl != 0);
 
-		// run setup on front-handler
-		if(last != 0 && last->thehandler->do_setup != 0)
-			last->thehandler->do_setup(&ipt->sys,last);
+		last->next = 0;
+		ipt->event_chain_begin = last;
 	}
-	else
-	{
-		// just setup handlers without request-pipe
-		event_handler* hdl = ipt->hdlists[SYNC_REQUEST_HANDLER];
 
-		if(hdl != 0 && hdl->thehandler->do_setup != 0)
+	// run setup
+	hdl = ipt->event_chain_begin;
+	do
+	{
+		if(hdl->thehandler->do_setup != 0)
 			hdl->thehandler->do_setup(&ipt->sys,hdl);
 
-		hdl = ipt->hdlists[ASYNC_REQUEST_HANDLER];
-		while(hdl != 0)
-		{
-			if(hdl->thehandler->do_setup != 0)
-				hdl->thehandler->do_setup(&ipt->sys,hdl);
-
-			hdl = hdl->next;
-		}
+		hdl = hdl->next;
 	}
+	while(hdl != 0);
 
 	// prepare for event-stream
 	st_empty(t,&ipt->top->pt);
@@ -436,6 +432,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 
 void cle_next(_ipt* ipt)
 {
+	event_handler* hdl;
 	ptr_list* elm;
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
@@ -453,7 +450,16 @@ void cle_next(_ipt* ipt)
 
 	ipt->sys.input = elm;
 
-	//_notify_handlers(ipt);
+	// run handler donext's
+	hdl = ipt->event_chain_begin;
+	do
+	{
+		if(hdl->thehandler->do_next != 0)
+			hdl->thehandler->do_next(&ipt->sys,hdl,ipt->maxdepth);
+
+		hdl = hdl->next;
+	}
+	while(hdl != 0);
 
 	ipt->sys.next_call++;
 	ipt->depth = ipt->maxdepth = 0;
@@ -464,6 +470,7 @@ void cle_next(_ipt* ipt)
 
 void cle_end(_ipt* ipt, cdat code, uint length)
 {
+	event_handler* hdl;
 	// only handle one end-event
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
@@ -478,7 +485,16 @@ void cle_end(_ipt* ipt, cdat code, uint length)
 		// signal end of input
 		ipt->sys.error = "";
 
-	//_notify_handlers(ipt);
+	// run handlers doend
+	hdl = ipt->event_chain_begin;
+	do
+	{
+		if(hdl->thehandler->do_end != 0)
+			hdl->thehandler->do_end(&ipt->sys,hdl,code,length);
+
+		hdl = hdl->next;
+	}
+	while(hdl != 0);
 }
 
 void cle_pop(_ipt* ipt)
