@@ -319,6 +319,21 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		return 0;
 	}
 
+	// init async-handlers
+	if(hdlists[ASYNC_REQUEST_HANDLER] != 0)
+	{
+		// must inverse order (most general handlers comes first)
+		hdl = hdlists[ASYNC_REQUEST_HANDLER];
+		ipt->event_chain_begin = hdl;
+
+		do
+		{
+			hdl->response = &_nil_out;
+			hdl = hdl->next;
+		}
+		while(hdl != 0);
+	}
+
 	// setup sync-handler-chain
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
 	{
@@ -356,24 +371,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 			sync_handler->respdata = responsedata;
 		}
 
-		sync_handler->next = hdlists[ASYNC_REQUEST_HANDLER];
+		sync_handler->next = ipt->event_chain_begin;
 		ipt->event_chain_begin = sync_handler;
-	}
-	else
-		ipt->event_chain_begin = hdlists[ASYNC_REQUEST_HANDLER];
-
-	// init async-handlers
-	if(hdlists[ASYNC_REQUEST_HANDLER] != 0)
-	{
-		// must inverse order (most general handlers comes first)
-		hdl = hdlists[ASYNC_REQUEST_HANDLER];
-
-		do
-		{
-			hdl->response = &_nil_out;
-			hdl = hdl->next;
-		}
-		while(hdl != 0);
 	}
 
 	// setup request-handler chain

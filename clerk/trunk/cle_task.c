@@ -44,20 +44,44 @@ void tk_mfree(task* t, void* mem)
 	free(mem);
 }
 
+static void _tk_release_page(task* t, page_wrap* wp)
+{
+	/* unref linked pages */
+	if(wp->ovf != 0)
+	{
+		int off;
+		for(off = 16; off < wp->ovf->used; off += 16)
+		{
+			ptr* pt = (ptr*)((char*)wp->ovf + off);
+			page_wrap* wpt = GOPAGEWRAP((page*)pt->pg);
+
+			if(--(wpt->refcount) == 0)
+				_tk_release_page(t,wpt);
+		}
+
+		/* release ovf */
+		tk_mfree(t,wp->ovf);
+	}
+
+	/* release page */
+	tk_mfree(t,wp->pg);
+}
+
 key* _tk_get_ptr(task* t, page** pg, key* me)
 {
 	ptr* pt = (ptr*)me;
 	if(pt->koffset)
 	{
-		if(--(GOPAGEWRAP(*pg)->refcount) == 0)
-		{
-			/* dead page */
-		}
+		page_wrap* oldpage = GOPAGEWRAP(*pg);
 
 		*pg = (page*)pt->pg;
 		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
 
 		GOPAGEWRAP(*pg)->refcount++;
+
+		if(--(oldpage->refcount) == 0)
+			/* dead page */
+			_tk_release_page(t,oldpage);
 	}
 	else
 	{
@@ -105,24 +129,7 @@ void tk_unref(task* t, page* pg)
 		page_wrap* wp = GOPAGEWRAP(pg);
 		/* internal dead page ? */
 		if(--(wp->refcount) == 0)
-		{
-			/* unref linked pages */
-			if(wp->ovf != 0)
-			{
-				int off;
-				for(off = 16; off < wp->ovf->used; off += 16)
-				{
-					ptr* pt = (ptr*)((char*)wp->ovf + off);
-					tk_unref(t,pt->pg);
-				}
-
-				/* release ovf */
-				tk_mfree(t,wp->ovf);
-			}
-
-			/* release page */
-			tk_mfree(t,pg);
-		}
+			_tk_release_page(t,wp);
 	}
 }
 
@@ -277,6 +284,46 @@ void tk_drop_task(task* t)
 
 // ---- commit ----------------------------------
 
+struct _tk_create
+{
+	void* id;
+	page* pg;
+
+	page* dest;
+};
+
+/**
+	rebuild (copy) page/create new io-pages form mem-pages
+*/
+static void _tk_create_iopages(struct _tk_create* map, page* pg, key* parent, key* k, int space_rec)
+{
+	// depth first
+	if(k->next != 0)
+		_tk_create_iopages(map,pg,parent,GOOFF(pg,k->next));
+
+	if(k->length == 0)
+	{
+		ptr* pt = (ptr*)k;
+		if(pt->koffset == 0)	// real page
+		{
+			// go throu pointer?
+			if(map->id == pt->pg)
+				_tk_create_iopages(map,map->pg,0,GOKEY(pg,sizeof(page)));
+			else
+				;	// copy ptr
+		}
+		else
+			// internal page-ptr
+			_tk_create_iopages(map,(page*)pt->pg,parent,GOKEY(pg,pt->koffset));
+
+		return;
+	}
+	else if(k->sub != 0)
+		_tk_create_iopages(map,pg,k,GOOFF(pg,k->sub));
+
+	// copy
+}
+
 int tk_commit_task(task* t)
 {
 	page_wrap* pgw = t->wpages;
@@ -286,12 +333,14 @@ int tk_commit_task(task* t)
 		page_wrap* tmp = pgw->next;
 		page* pg = pgw->pg;
 
-		/* overflowed? */
-		if(pgw->ovf)
-		{}
-		/* underflow? */
-		else if(pg->waste > pg->size/2)
+		/* overflowed or underflow? */
+		if(pgw->ovf || pg->waste > pg->size/2)
 		{
+			struct _tk_create map;
+			// TODO: pick up parent and rebuild from there
+			map.id = 0;
+			map.pg = 0;
+			_tk_create_iopages(&map,pg,0,GOKEY(pg,sizeof(page)),0);
 		}
 		else
 		/* just write it */
