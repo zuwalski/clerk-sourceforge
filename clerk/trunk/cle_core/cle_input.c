@@ -322,10 +322,9 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	// init async-handlers
 	if(hdlists[ASYNC_REQUEST_HANDLER] != 0)
 	{
-		// must inverse order (most general handlers comes first)
 		hdl = hdlists[ASYNC_REQUEST_HANDLER];
 		ipt->event_chain_begin = hdl;
-
+		// "no output"-handler on all async's
 		do
 		{
 			hdl->response = &_nil_out;
@@ -340,7 +339,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 		event_handler* sync_handler = hdlists[SYNC_REQUEST_HANDLER];
 
 		// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
-		// setup response-handler chain
+		// setup response-handler chain (only make sense with sync handlers)
 		if(hdlists[PIPELINE_RESPONSE] != 0)
 		{
 			event_handler* last;
@@ -378,7 +377,7 @@ _ipt* cle_start(cdat eventid, uint event_len,
 	// setup request-handler chain
 	if(hdlists[PIPELINE_REQUEST] != 0)
 	{
-		// must inverse order (most general handlers comes first)
+		// inverse order (most general handlers comes first)
 		event_handler* last;
 		cle_output* resp = &_pipeline_all;
 		void* data = ipt->event_chain_begin;

@@ -51,19 +51,6 @@ typedef struct it_ptr
 	ushort kused;
 } it_ptr;
 
-/* output interface begin */
-typedef struct cle_output
-{
-	int (*start)(void*);
-	int (*end)(void*,cdat,uint);
-	int (*pop)(void*);
-	int (*push)(void*);
-	int (*data)(void*,cdat,uint);
-	int (*next)(void*);
-} cle_output;
-
-/* output interface end */
-
 /* generel functions */
 void st_empty(task* t, st_ptr* pt);
 

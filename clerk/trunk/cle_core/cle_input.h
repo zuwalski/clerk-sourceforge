@@ -26,6 +26,19 @@
 *	Commands and external events are "pumped" in through this set of functions
 */
 
+/* output interface begin */
+typedef struct cle_output
+{
+	int (*start)(void*);
+	int (*end)(void*,cdat,uint);
+	int (*pop)(void*);
+	int (*push)(void*);
+	int (*data)(void*,cdat,uint);
+	int (*next)(void*);
+} cle_output;
+
+/* output interface end */
+
 /* initializer: call this once(!) before anything else */
 void cle_initialize_system();
 

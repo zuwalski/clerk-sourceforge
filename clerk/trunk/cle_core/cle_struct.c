@@ -77,7 +77,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 		{
 			rt->prev = me;
 
-			if(!me->next)
+			if(me->next == 0)
 				break;
 		
 			me = GOOFF(rt->pg,me->next);
@@ -86,10 +86,10 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 		if(me->offset != rt->diff)
 			break;
 
-		rt->diff = 0;
 		if(me->length == 0)
 			me = _tk_get_ptr(rt->t,&rt->pg,me);
 		ckey = KDATA(me);
+		rt->diff = 0;
 	}
 	return (rt->length == 0);
 }
