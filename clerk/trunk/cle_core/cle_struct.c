@@ -54,17 +54,20 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 				a -= ((a >> 1) & 0x55);
 				a = (((a >> 2) & 0x33) + (a & 0x33));
 				a = (((a >> 4) + a) & 0x0f);
+
 				rt->diff += 8 - a;
+				// to avoid a branche inside the main loop...
+				rt->path--;
+				ckey--;
 				break;
 			}
 		}
 
-		a = ckey - ckeyhold - 1;
+		a = ckey - ckeyhold;
 		rt->length -= a << 3;
 		rt->diff += a << 3;
 		if(rt->diff > max)
 			rt->diff = max;
-		rt->path--;
 
 		rt->sub  = me;
 		rt->prev = 0;
@@ -135,7 +138,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		_tk_stack_new(rt->t);
 
 	/* make pointer */
-	nkoff = (ovf->used >> 4) & 0x8000;
+	nkoff = (ovf->used >> 4) | 0x8000;
 	pt = (ptr*)((char*)ovf + ovf->used);
 	ovf->used += 16;
 
@@ -150,7 +153,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		rt->sub->sub = nkoff;
 	}
 
-	pt->pg = rt->t->stack;
+	pt->pg = rt->t->stack->pg;
 	pt->koffset = rt->t->stack->pg->used;
 	pt->offset = rt->diff;
 	pt->zero = 0;
@@ -267,12 +270,13 @@ static void _st_write(struct _st_lkup_res* rt)
 
 /* Interface-functions */
 
-void st_empty(task* t, st_ptr* pt)
+uint st_empty(task* t, st_ptr* pt)
 {
 	key* nk;
 
+	/* readonly ? */
 	if(t == 0)
-		return;
+		return 1;
 	
 	nk = tk_alloc(t,sizeof(key) + 2);
 
@@ -282,20 +286,18 @@ void st_empty(task* t, st_ptr* pt)
 
 	memset(nk,0,sizeof(key) + 2);
 	nk->length = 1;
+	return 0;
 }
 
 uint st_is_empty(st_ptr* pt)
 {
-	key* k = GOKEY(pt->pg,pt->offset);
+	key* k = GOKEY(pt->pg,pt->key);
 	if(k->length == 1) return 1;
-	if(pt->offset == k->length)
-	{
-		if(k->sub == 0) return 1;
-		k = GOOFF(pt->pg,k->sub);
-		while(k->next) k = GOOFF(pt->pg,k->next);
-		return (k->offset == pt->offset);
-	}
-	return 0;
+	if(pt->offset != k->length) return 0;
+	if(k->sub == 0) return 1;
+	k = GOOFF(pt->pg,k->sub);
+	while(k->next && k->offset < pt->offset) k = GOOFF(pt->pg,k->next);
+	return (k->offset < pt->offset);
 }
 
 uint st_exsist(task* t, st_ptr* pt, cdat path, uint length)

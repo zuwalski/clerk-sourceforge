@@ -57,6 +57,9 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
+				AdditionalDependencies="$(NOINHERIT)"
+				ShowProgress="0"
+				IgnoreAllDefaultLibraries="false"
 				GenerateDebugInformation="true"
 				TargetMachine="1"
 			/>

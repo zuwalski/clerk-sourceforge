@@ -52,7 +52,7 @@ typedef struct it_ptr
 } it_ptr;
 
 /* generel functions */
-void st_empty(task* t, st_ptr* pt);
+uint st_empty(task* t, st_ptr* pt);
 
 uint st_is_empty(st_ptr* pt);
 

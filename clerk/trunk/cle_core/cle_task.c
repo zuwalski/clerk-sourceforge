@@ -81,7 +81,8 @@ key* _tk_get_ptr(task* t, page** pg, key* me)
 
 		if(--(oldpage->refcount) == 0)
 			/* dead page */
-			_tk_release_page(t,oldpage);
+			//_tk_release_page(t,oldpage);
+			;
 	}
 	else
 	{
