@@ -53,94 +53,104 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 	while(1)
 	{
-		uint max = (rt->length + rt->diff < me->length)?rt->length + rt->diff:me->length;
+		uint a,max = (rt->length + rt->diff < me->length) ? rt->length + rt->diff : me->length;
+		cdat maxkey = ckey + ((max - rt->diff + 7) >> 3);
+		cdat ckeyhold = ckey;
 
-		while(rt->diff < max)
+		while(ckey < maxkey)
 		{
-			uint a = *(rt->path) ^ *ckey;
-			
-			if(a || max - rt->diff < 8)
-			{
-				while((a & 0x80) == 0)
-				{
-					a <<= 1;
-					rt->diff++;
-					if(rt->diff == max) break;
-    			}
-    			break;
-   			}
+			a = *(rt->path++) ^ *ckey++;	// compare bytes
 
-			rt->path++;ckey++;
-			rt->length -= 8;
-			rt->diff += 8;
+			if(a)
+			{
+				// fold 1's after msb
+				a |= (a >> 1);
+				a |= (a >> 2);
+				a |= (a >> 4);
+				// lzc(a)
+				a -= ((a >> 1) & 0x55);
+				a = (((a >> 2) & 0x33) + (a & 0x33));
+				a = (((a >> 4) + a) & 0x0f);
+
+				rt->diff += 8 - a;
+				// to avoid a branche inside the main loop...
+				rt->path--;
+				ckey--;
+				break;
+			}
 		}
+
+		a = ckey - ckeyhold;
+		rt->length -= a << 3;
+		rt->diff += a << 3;
+		if(rt->diff > max)
+			rt->diff = max;
 
 		rt->sub  = me;
 		rt->prev = 0;
 
-		if(me->sub)
+		if(me->sub == 0)
+			break;
+
+		ckey = KDATA(me);
+		me = GOOFF(rt->pg,me->sub);
+
+		while(me->offset < rt->diff)
 		{
-			ckey = KDATA(me);
-			me = GOOFF(rt->pg,me->sub);
+			rt->prev = me;
 
-			while(me->offset < rt->diff)
+			if(me->offset > offset)
 			{
-				rt->prev = me;
-
-				if(me->offset > offset)
+				if(*(ckey + (me->offset>>3)) & (0x80 >> (me->offset & 7)))
 				{
-					if(*(ckey + (me->offset>>3)) & (0x80 >> (me->offset & 7)))
-					{
-						rt->low = me;
-						rt->low_prev = 0;
-						rt->low_path = atsub + (me->offset>>3);
-						rt->low_pg = rt->pg;
-					}
-					else
-					{
-						rt->high = me;
-						rt->high_prev = 0;
-						rt->high_path = atsub + (me->offset>>3);
-						rt->high_pg = rt->pg;
-					}
+					rt->low = me;
+					rt->low_prev = 0;
+					rt->low_path = atsub + (me->offset>>3);
+					rt->low_pg = rt->pg;
 				}
-
-				if(!me->next)
-					break;
-			
-				me = GOOFF(rt->pg,me->next);
+				else
+				{
+					rt->high = me;
+					rt->high_prev = 0;
+					rt->high_path = atsub + (me->offset>>3);
+					rt->high_pg = rt->pg;
+				}
 			}
 
-			if(rt->length != 0 && me->offset == rt->diff)
+			if(!me->next)
+				break;
+		
+			me = GOOFF(rt->pg,me->next);
+		}
+
+		if(rt->length == 0 || me->offset != rt->diff)
+			break;
+
+		if(rt->diff != rt->sub->length)
+		{
+			if(*rt->path & (0x80 >> (rt->diff & 7)))
 			{
-				if(rt->diff != rt->sub->length)
-				{
-					if(*rt->path & (0x80 >> (rt->diff & 7)))
-					{
-						rt->low = rt->sub;
-						rt->low_prev = me;
-						rt->low_path = rt->path;
-						rt->low_pg = rt->pg;
-					}
-					else
-					{
-						rt->high = rt->sub;
-						rt->high_prev = me;
-						rt->high_path = rt->path;
-						rt->high_pg = rt->pg;
-					}
-				}
-				rt->diff = 0;
-				offset = 0;
-				atsub = rt->path;
-				// if this is a pointer - resolve it
-				if(me->length == 0)
-					me = _tk_get_ptr(rt->t,&rt->pg,me);
-				ckey = KDATA(me);
-                continue;
+				rt->low = rt->sub;
+				rt->low_prev = me;
+				rt->low_path = rt->path;
+				rt->low_pg = rt->pg;
+			}
+			else
+			{
+				rt->high = rt->sub;
+				rt->high_prev = me;
+				rt->high_path = rt->path;
+				rt->high_pg = rt->pg;
 			}
 		}
-        break;
+		// if this is a pointer - resolve it
+		if(me->length == 0)
+			me = _tk_get_ptr(rt->t,&rt->pg,me);
+
+		ckey = KDATA(me);
+		rt->diff = 0;
+		offset = 0;
+		atsub = rt->path;
 	}
 }
 
@@ -318,7 +328,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 				pt->key = (uint)rt.sub - (uint)rt.pg;
 				pt->offset = rt.diff;
 			}
-			return 1;
+			return 2;
 		}
 
 		if(rt.high == 0)
@@ -346,7 +356,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	}
 	else
 		tk_unref(t,rt.pg);
-	return (it->kused > 0);
+	return (it->kused > 0)? 1 : 0;
 }
 
 uint it_prev(task* t, st_ptr* pt, it_ptr* it)
@@ -424,7 +434,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 			}
 			else
 				tk_unref(t,rt.pg);
-			return 1;
+			return 2;
 		}
 
 		if(rt.low == 0)
@@ -452,7 +462,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	}
 	else
 		tk_unref(t,rt.pg);
-	return (it->kused > 0);
+	return (it->kused > 0)? 1 : 0;
 }
 
 void it_load(task* t, it_ptr* it, cdat path, uint length)
@@ -484,6 +494,11 @@ void it_dispose(task* t, it_ptr* it)
 {
 	tk_unref(t, it->pg);
 	tk_mfree(t, it->kdata);
+}
+
+void it_reset(it_ptr* it)
+{
+	it->kused = 0;
 }
 
 /**
@@ -528,6 +543,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 
 		if(idx == 0)
 		{
+			// index max-size!
 			if(it->kdata[0] == 0xFF)
 				return 1;
 
@@ -547,7 +563,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 	pt->key = it->key;
 	pt->offset = it->offset;
 
-	return !st_insert(t,pt,it->kdata,it->kused);
+	return (st_insert(t,pt,it->kdata,it->kused) == 0);
 }
 
 /* delete function - uses it_lookup */

@@ -19,7 +19,7 @@ uint overflow_size = 0;
 
 #define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
 
-#define HIGH_ITERATION_COUNT 4000000
+#define HIGH_ITERATION_COUNT 1000000
 
 char test1[] = "test1";
 char test1x2[] = "test1\0test1";
@@ -135,7 +135,11 @@ void test_struct_c()
 
 void test_iterate_c()
 {
-	st_ptr root;
+	clock_t start,stop;
+
+	st_ptr root,tmp;
+	it_ptr it;
+	int i;
 	//  new task
 	task* t = tk_create_task(0,0);
 
@@ -149,6 +153,53 @@ void test_iterate_c()
 	// create empty node no prob
 	ASSERT(st_empty(t,&root) == 0);
 
+	// create
+	it_create(t,&it,&root);
+
+	// insert data
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		if(it_new(t,&it,&tmp))
+			break;
+	}
+	stop = clock();
+
+	printf("it_new %d items. Time %d\n",i, stop - start);
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	// run up and down
+	it_reset(&it);
+	i = 0;
+
+	start = clock();
+	while(it_next(t,0,&it))
+	{
+		i++;
+	}
+	stop = clock();
+
+	printf("it_next %d items. Time %d\n",i, stop - start);
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	it_reset(&it);
+	i = 0;
+
+	start = clock();
+	while(it_prev(t,0,&it))
+	{
+		i++;
+	}
+	stop = clock();
+
+	printf("it_prev %d items. Time %d\n",i, stop - start);
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	// destroy
+	it_dispose(t,&it);
 
 	tk_drop_task(t);
 }
@@ -223,6 +274,8 @@ int main(int argc, char* argv[])
 	test_struct_c();
 
 	time_struct_c();
+
+	test_iterate_c();
 
 	// test
 	getchar();

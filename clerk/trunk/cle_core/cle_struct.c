@@ -344,11 +344,12 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 
 	if(!_st_lookup(&rt))
 		_st_write(&rt);
+	else rt.path = 0;
 
 	pt->pg     = rt.pg;
 	pt->key    = (uint)rt.sub - (uint)rt.pg;
 	pt->offset = rt.diff;
-	return (rt.length != 0);
+	return (rt.path != 0);
 }
 
 uint st_update(task* t, st_ptr* pt, cdat path, uint length)

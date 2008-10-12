@@ -52,14 +52,20 @@ typedef struct it_ptr
 } it_ptr;
 
 /* generel functions */
+// create empty node
+// = 0 if ok - 1 if t is readonly
 uint st_empty(task* t, st_ptr* pt);
 
+// = 1 if pt points to empty node else = 0
 uint st_is_empty(st_ptr* pt);
 
+// test if path exsist from pt - else = 0
 uint st_exsist(task* t, st_ptr* pt, cdat path, uint length);
 
+// move ptr to path - else = 1
 uint st_move(task* t, st_ptr* pt, cdat path, uint length);
 
+// insert path - if already there = 1
 uint st_insert(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_update(task* t, st_ptr* pt, cdat path, uint length);
@@ -83,6 +89,8 @@ void it_create(task* t, it_ptr* it, st_ptr* pt);
 void it_dispose(task* t, it_ptr* it);
 
 void it_load(task* t, it_ptr* it, cdat path, uint length);
+
+void it_reset(it_ptr* it);
 
 uint it_new(task* t, it_ptr* it, st_ptr* pt);
 
