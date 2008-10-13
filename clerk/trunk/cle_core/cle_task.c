@@ -283,6 +283,13 @@ void tk_drop_task(task* t)
 	}
 }
 
+void tk_root_ptr(task* t, st_ptr* pt)
+{
+	pt->pg = t->ps->root_page(t->psrc_data);
+	pt->key = sizeof(page);
+	pt->offset = 0;
+}
+
 // ---- commit ----------------------------------
 
 struct _tk_create
@@ -310,8 +317,15 @@ static void _tk_create_iopages(struct _tk_create* map, page* pg, key* parent, ke
 {
 	// depth first
 	if(k->next != 0)
-		_tk_create_iopages(map,pg,parent,GOOFF(pg,k->next),pagedist + sizeof(key) + (k->length + 7 >> 3));
+	{
+		// continue-key
+		if(parent != 0 && k->offset == parent->length)
+			;
 
+		_tk_create_iopages(map,pg,parent,GOOFF(pg,k->next),pagedist + sizeof(key) + (k->length + 7 >> 3));
+	}
+
+	// pointer?
 	if(k->length == 0)
 	{
 		ptr* pt = (ptr*)k;
@@ -319,14 +333,14 @@ static void _tk_create_iopages(struct _tk_create* map, page* pg, key* parent, ke
 		{
 			// go throu pointer?
 			if(map->id == pt->pg)
-				_tk_create_iopages(map,map->pg,0,GOKEY(pg,sizeof(page)),pagedist);
+				_tk_create_iopages(map,map->pg,0,GOKEY(map->pg,sizeof(page)),pagedist);
 			else
 				// copy ptr
 				_tk_create_do_copy(map,pt,sizeof(ptr),pagedist);
 		}
 		else
 			// internal page-ptr
-			_tk_create_iopages(map,(page*)pt->pg,parent,GOKEY(pg,pt->koffset),pagedist);
+			_tk_create_iopages(map,(page*)pt->pg,parent,GOKEY((page*)pt->pg,pt->koffset),pagedist);
 
 		return;
 	}
@@ -341,7 +355,7 @@ int tk_commit_task(task* t)
 {
 	page_wrap* pgw = t->wpages;
 	int ret = 0;
-	while(pgw && ret == 0)
+	while(pgw != 0 && ret == 0)
 	{
 		page_wrap* tmp = pgw->next;
 		page* pg = pgw->pg;

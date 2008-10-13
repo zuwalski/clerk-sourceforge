@@ -15,32 +15,16 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef __CLE_PAGESOURCE_H__
-#define __CLE_PAGESOURCE_H__
 
-typedef void* cle_pageid;
-typedef void* cle_psrc_data;
+#ifndef __CLE_UTIL_H__
+#define __CLE_UTIL_H__
 
-typedef struct page
-{
-	cle_pageid id;
-	unsigned short size;
-	unsigned short used;
-	unsigned short waste;
-	short data[];
-} page;
+#include "cle_pagesource.h"
 
-typedef struct cle_pagesource
-{
-	page* (*root_page)(cle_psrc_data);
-	page* (*new_page)(cle_psrc_data);
-	page* (*read_page)(cle_psrc_data, cle_pageid);
-	int (*write_page)(cle_psrc_data, cle_pageid, page*);
-	int (*remove_page)(cle_psrc_data, cle_pageid);
-	int (*unref_page)(cle_psrc_data, cle_pageid);
-	int (*ref_page)(cle_psrc_data, cle_pageid);
-	int (*page_error)(cle_psrc_data);
-}
-cle_pagesource;
+#define MEM_PAGE_SIZE 1024
+
+cle_pagesource util_memory_pager;
+
+cle_psrc_data util_create_mempager();
 
 #endif

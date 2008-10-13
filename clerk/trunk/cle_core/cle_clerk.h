@@ -117,6 +117,8 @@ void tk_mfree(task* t, void* mem);
 void tk_ref(task* t, page* pg);
 void tk_unref(task* t, page* pg);
 
+void tk_root_ptr(task* t, st_ptr* pt);
+
 /* test */
 
 void unimplm();

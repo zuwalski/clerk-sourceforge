@@ -1,3 +1,21 @@
+/* 
+    Clerk application and storage engine.
+    Copyright (C) 2008  Lars Szuwalski
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 /*
 	TEST-SUITE RUNNER
 */
@@ -6,6 +24,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include "../cle_core/cle_clerk.h"
+#include "../cle_core/cle_util.h"
 
 void unimplm()
 {
@@ -268,6 +287,73 @@ void time_struct_c()
 	tk_drop_task(t);
 }
 
+void test_task_c()
+{
+	clock_t start,stop;
+
+	st_ptr root,tmp;
+	it_ptr it;
+	int i;
+	cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+
+	//  new task
+	task* t = tk_create_task(psource,pdata);
+
+	page_size = 0;
+	resize_count = 0;
+	overflow_size = 0;
+
+	// should not happen.. but
+	ASSERT(t);
+
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	// create
+	it_create(t,&it,&root);
+
+	// insert data
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		if(it_new(t,&it,&tmp))
+			break;
+	}
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	// destroy
+	it_dispose(t,&it);
+
+	// commit!
+	start = clock();
+	tk_commit_task(t);
+	stop = clock();
+
+	printf("tk_commit_task. Time %d\n",stop - start);
+
+	// new task, same source
+	t = tk_create_task(psource,pdata);
+
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	// read back collection
+	it_create(t,&it,&root);
+
+	while(it_next(t,0,&it))
+	{
+		i++;
+	}
+
+	// should have same count
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	// destroy
+	it_dispose(t,&it);
+
+	tk_drop_task(t);
+}
 
 int main(int argc, char* argv[])
 {
@@ -276,6 +362,8 @@ int main(int argc, char* argv[])
 	time_struct_c();
 
 	test_iterate_c();
+
+	test_task_c();
 
 	// test
 	getchar();
