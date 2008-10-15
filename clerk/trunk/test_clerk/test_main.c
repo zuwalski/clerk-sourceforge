@@ -67,7 +67,7 @@ void test_struct_c()
 	ASSERT(st_is_empty(&root));
 
 	// insert single value
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
 
 	// collection not empy anymore
@@ -82,7 +82,7 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test3,sizeof(test3)) == 0);
 
 	// can move pointer there (same as exsist) no prob
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
 	// now tmp points to an empty node
@@ -98,22 +98,22 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move half way and find rest
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
 	ASSERT(st_exsist(t,&tmp,test1,sizeof(test1)));
 
 	// we can move all the way and find and empty node
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_move(t,&tmp,test1x2,sizeof(test1x2)) == 0);
 
 	ASSERT(st_is_empty(&tmp));
 
 	// put 2 more root-values in
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_insert(t,&tmp,test2,sizeof(test2)));
 
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_insert(t,&tmp,test3,sizeof(test3)));
 
 	// we can find all 3 distinct values
@@ -127,13 +127,13 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move to one of the new values and start a new collection there
-	tmp = root;
+	tk_dup_ptr(&tmp,&root);
 	ASSERT(st_move(t,&tmp,test2,sizeof(test2)) == 0);
 
-	tmp2 = tmp;
+	tk_dup_ptr(&tmp2,&tmp);
 	ASSERT(st_insert(t,&tmp2,test2,sizeof(test2)));
 
-	tmp2 = tmp;
+	tk_dup_ptr(&tmp2,&tmp);
 	ASSERT(st_insert(t,&tmp2,test3,sizeof(test3)));
 
 	// we can find them relative to tmp ..
@@ -363,7 +363,7 @@ int main(int argc, char* argv[])
 
 	test_iterate_c();
 
-	test_task_c();
+	//test_task_c();
 
 	// test
 	getchar();

@@ -23,15 +23,7 @@ struct _mem_psrc_data
 	page* root;
 };
 
-#define DUMMY_ID ((cle_pageid)1)
-
-page _dummy_root = {DUMMY_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0,0,0,1,0,0,0};
-
-static page* root_page(cle_psrc_data pd)
-{
-	struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
-	return (md->root == 0)? &_dummy_root : md->root;
-}
+page _dummy_root = {ROOT_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0,0,0,1,0,0,0};
 
 static page* new_page(cle_psrc_data pd)
 {
@@ -45,12 +37,12 @@ static page* new_page(cle_psrc_data pd)
 
 static page* read_page(cle_psrc_data pd, cle_pageid id)
 {
-	return (id == 0)? &_dummy_root : (page*)id;
+	return (id == ROOT_ID)? &_dummy_root : (page*)id;
 }
 
 static int write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 {
-	if(id == DUMMY_ID)
+	if(id == ROOT_ID)
 	{
 		struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
 		md->root = id = new_page(pd);
@@ -62,7 +54,7 @@ static int write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 
 static int remove_page(cle_psrc_data pd, cle_pageid id)
 {
-	if(id != DUMMY_ID)
+	if(id != ROOT_ID)
 		free(id);
 	return 0;
 }
@@ -79,7 +71,7 @@ static int page_error(cle_psrc_data pd)
 
 cle_pagesource util_memory_pager = 
 {
-	root_page,new_page,read_page,write_page,remove_page,unref_page,unref_page,page_error
+	new_page,read_page,write_page,remove_page,unref_page,page_error
 };
 
 cle_psrc_data util_create_mempager()

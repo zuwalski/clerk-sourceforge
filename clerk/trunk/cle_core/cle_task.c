@@ -53,7 +53,7 @@ static void _tk_release_page(task* t, page_wrap* wp)
 		for(off = 16; off < wp->ovf->used; off += 16)
 		{
 			ptr* pt = (ptr*)((char*)wp->ovf + off);
-			page_wrap* wpt = GOPAGEWRAP((page*)pt->pg);
+			page_wrap* wpt = (page_wrap*)pt->pg;
 
 			if(--(wpt->refcount) == 0)
 				_tk_release_page(t,wpt);
@@ -67,17 +67,46 @@ static void _tk_release_page(task* t, page_wrap* wp)
 	tk_mfree(t,wp->pg);
 }
 
-key* _tk_get_ptr(task* t, page** pg, key* me)
+static page_wrap* _tk_load_page(task* t, cle_pageid pid)
+{
+	/* have a wrapper? */
+	page_wrap* pw = t->wpages;
+
+	while(pw && pw->ext_pageid != pid)
+		pw = pw->next;
+
+	if(pw != 0)
+		pw->refcount++;
+	else
+	{
+		/* call pager to get page */
+		page* npage = t->ps->read_page(t->psrc_data,pid);
+
+		/* create wrapper and add to w-list */
+		pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap));
+		pw->ext_pageid = pid;
+		pw->ovf = 0;
+		pw->pg = npage;
+		pw->refcount = 1;
+
+		pw->next = t->wpages;
+		t->wpages = pw;
+	}
+
+	return pw;
+}
+
+key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 {
 	ptr* pt = (ptr*)me;
 	if(pt->koffset)
 	{
-		page_wrap* oldpage = GOPAGEWRAP(*pg);
+		page_wrap* oldpage = *pg;
 
-		*pg = (page*)pt->pg;
+		*pg = (page_wrap*)pt->pg;
 		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
 
-		GOPAGEWRAP(*pg)->refcount++;
+		(*pg)->refcount++;
 
 		if(--(oldpage->refcount) == 0)
 			/* dead page */
@@ -86,26 +115,7 @@ key* _tk_get_ptr(task* t, page** pg, key* me)
 	}
 	else
 	{
-		/* have a writable copy? */
-		page* npage;
-		page_wrap* pw = t->wpages;
-		while(pw && pw->ext_pageid != pt->pg)
-			pw = pw->next;
-
-		if(pw)
-		{
-			npage = pw->pg;	/* use internal(writable) copy of page */
-			GOPAGEWRAP(npage)->refcount++;
-		}
-		else
-			/* call pager to get page */
-			npage = t->ps->read_page(t->psrc_data,pt->pg);
-
-		/* unref old page */
-		if((*pg)->id)
-			t->ps->unref_page(t->psrc_data,(*pg)->id);
-
-		*pg = npage;
+		*pg = _tk_load_page(t,pt->pg);
 		/* go to root-key */
 		me = GOKEY(*pg,sizeof(page));
 	}
@@ -113,62 +123,53 @@ key* _tk_get_ptr(task* t, page** pg, key* me)
 	return me;
 }
 
-void tk_ref(task* t, page* pg)
+void tk_root_ptr(task* t, st_ptr* pt)
 {
-	if(pg->id)
-		t->ps->ref_page(t->psrc_data,pg->id);
-	else
-		GOPAGEWRAP(pg)->refcount++;
+	pt->pg = _tk_load_page(t,ROOT_ID);
+	pt->key = sizeof(page);
+	pt->offset = 0;
 }
 
-void tk_unref(task* t, page* pg)
+void tk_dup_ptr(st_ptr* to, st_ptr* from)
 {
-	if(pg->id)
-		t->ps->unref_page(t->psrc_data,pg->id);
-	else
-	{
-		page_wrap* wp = GOPAGEWRAP(pg);
-		/* internal dead page ? */
-		if(--(wp->refcount) == 0)
-			_tk_release_page(t,wp);
-	}
+	*to = *from;
+	to->pg->refcount++;
 }
 
-page* _tk_write_copy(task* t, page* pg)
+void tk_unref(task* t, page_wrap* pg)
 {
-	page_wrap* wp;
-	page* npg;
+	if(pg->pg->id)
+//		t->ps->unref_page(t->psrc_data,pg->pg->id);
+		;
+	/* internal dead page ? */
+	else if(--(pg->refcount) == 0)
+		_tk_release_page(t,pg);
+}
+
+void _tk_write_copy(task* t, page_wrap* pg)
+{
 	/* copy to new (internal) page */
-	npg = (page*)tk_malloc(t,pg->size + sizeof(page_wrap));
-	memcpy(npg,pg,pg->used);
+	page* npg = (page*)tk_malloc(t,pg->pg->size);
+	memcpy(npg,pg->pg,pg->pg->used);
 	npg->id = 0;
 
-	/* setup page-wrap */
-	wp = GOPAGEWRAP(pg);
-	wp->ext_pageid = pg->id;
-	wp->pg = npg;
-	wp->ovf = 0;
-	wp->refcount = 2;
-
-	wp->next = t->wpages;
-	t->wpages = wp;
-
-	t->ps->unref_page(t->psrc_data,pg->id);
-	return npg;
+	/* swap pages */
+	t->ps->unref_page(t->psrc_data,pg->pg->id);
+	pg->pg = npg;
 }
 
 void _tk_stack_new(task* t)
 {
 	/* put a new page on the task stack */
-	page_wrap* tmp;
-	page* pg = (page*)tk_malloc(t,PAGE_SIZE + sizeof(page_wrap));
+	page* pg;
+	page_wrap* tmp = (page_wrap*)tk_malloc(t,PAGE_SIZE + sizeof(page_wrap));
 
+	pg = (page*)(tmp + 1);
 	pg->id = 0;
 	pg->size = PAGE_SIZE;
 	pg->used = sizeof(page);
 	pg->waste = 0;
 
-	tmp = (page_wrap*)((char*)pg + PAGE_SIZE);
 	tmp->next = t->stack;
 	tmp->ext_pageid = 0;
 	tmp->refcount = 1;
@@ -182,7 +183,7 @@ void _tk_stack_new(task* t)
 void* tk_alloc(task* t, uint size)
 {
 	uint offset;
-	page* pg = (page*)((char*)t->stack - PAGE_SIZE);
+	page* pg = t->stack->pg;
 	if(pg->used + size + 3 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
@@ -191,20 +192,19 @@ void* tk_alloc(task* t, uint size)
 		_tk_stack_new(t);
 	}
 
-	pg = (page*)((char*)t->stack - PAGE_SIZE);
+	pg = t->stack->pg;
 	if(pg->used & 3)
 		pg->used += 4 - (pg->used & 3);
 
 	offset = pg->used;
 	pg->used += size;
 
-	GOPAGEWRAP(pg)->refcount++;
-
-	return (void*)GOKEY(pg,offset);
+	t->stack->refcount++;
+	return (void*)((char*)pg + offset);
 }
 
 /* internal */
-static void _tk_clear_tree(task* t, page* pg, ushort off)
+static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 {
 	while(off)
 	{
@@ -217,11 +217,11 @@ static void _tk_clear_tree(task* t, page* pg, ushort off)
 				// que 
 				pt->pg;
 			}
-			pg->waste += sizeof(ptr);
+			pg->pg->waste += sizeof(ptr);
 		}
 		else
 		{
-			pg->waste += ((k->length + 7) >> 3) + sizeof(key);
+			pg->pg->waste += ((k->length + 7) >> 3) + sizeof(key);
 			_tk_clear_tree(t,pg,k->sub);
 		}
 
@@ -229,13 +229,13 @@ static void _tk_clear_tree(task* t, page* pg, ushort off)
 	}
 }
 
-void _tk_remove_tree(task* t, page* pg, ushort off)
+void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 {
 	// clear tree before clean_page
 	_tk_clear_tree(t,pg,off);
 
 	// clean_page
-	if(pg->waste > pg->size/2)
+	if(pg->pg->waste > pg->pg->size/2)
 	{
 		// que this + parent
 	}
@@ -269,7 +269,12 @@ void tk_drop_task(task* t)
 	{
 		page_wrap* tmp = pg->next;
 		tk_mfree(t,pg->ovf);
-		tk_mfree(t,pg->pg);
+		// unref external pages
+		if(pg->pg->id != 0)
+			t->ps->unref_page(t->psrc_data,pg->pg->id);
+		else
+			// free internal (written) pages
+			tk_mfree(t,pg->pg);
 		pg = tmp;
 	}
 
@@ -278,27 +283,83 @@ void tk_drop_task(task* t)
 	{
 		page_wrap* tmp = pg->next;
 		tk_mfree(t,pg->ovf);
-		tk_mfree(t,pg->pg);
+		tk_mfree(t,pg);
 		pg = tmp;
 	}
 }
 
-void tk_root_ptr(task* t, st_ptr* pt)
-{
-	pt->pg = t->ps->root_page(t->psrc_data);
-	pt->key = sizeof(page);
-	pt->offset = 0;
-}
-
 // ---- commit ----------------------------------
-
 struct _tk_create
 {
 	void* id;
-	page* pg;
+	page_wrap* pg;
 
 	page* dest;
 };
+
+static void _tk_copy_page(struct _tk_create* map, key* sub, key* prev, uint offset)
+{
+	key* dest = (key*)((char*)map->dest + map->dest->used);
+	uint byteoffset = offset >> 3;
+	memcpy(dest + sizeof(key),KDATA(sub) + byteoffset,((sub->length + 7) >> 3) - byteoffset);
+
+	dest->length = sub->length - offset;
+	dest->offset = sub->offset - offset;
+	dest->next = 0;
+	dest->sub = 0;
+}
+
+static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
+{
+	uint size = 0;
+
+	if(k->next != 0)
+	{
+		 size = _tk_measure(map,pw,parent,GOOFF(pw,k->next));
+
+		 if(size > map->dest->size/2)
+		 {
+			 _tk_copy_page(map,parent,k,k->offset);
+			 parent->length = k->offset;
+			 k->next = 0;
+			 size = sizeof(ptr);
+		 }
+	}
+
+	if(k->length == 0)
+	{
+		ptr* pt = (ptr*)k;
+		if(pt->koffset == 0)	// real page
+		{
+			// go throu pointer?
+			if(map->id == pt->pg)
+				size += _tk_measure(map,map->pg,parent,GOKEY(map->pg,sizeof(page)));
+			else
+				size += sizeof(ptr);
+		}
+		else
+			// internal page-ptr
+			size += _tk_measure(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset));
+	}
+	else if(k->sub != 0)
+	{
+		uint sub_size = _tk_measure(map,pw,k,GOOFF(pw,k->sub));
+
+		if(sub_size > map->dest->size/2)
+		{
+			_tk_copy_page(map,GOOFF(pw,k->sub),0,0);
+			k->sub = 0;
+			size += sizeof(ptr);
+		}
+		else
+			size += sub_size;
+	}
+
+	return size + (k->length + 7) >> 3;
+}
+
+///////////////////////////////////
+
 
 static void _tk_create_do_copy(struct _tk_create* map, void* data, int size, int pagedist)
 {
@@ -313,7 +374,7 @@ static void _tk_create_do_copy(struct _tk_create* map, void* data, int size, int
 /**
 	rebuild (copy) page/create new io-pages form mem-pages
 */
-static void _tk_create_iopages(struct _tk_create* map, page* pg, key* parent, key* k, int pagedist)
+static void _tk_create_iopages(struct _tk_create* map, page_wrap* pg, key* parent, key* k, int pagedist)
 {
 	// depth first
 	if(k->next != 0)
@@ -340,7 +401,7 @@ static void _tk_create_iopages(struct _tk_create* map, page* pg, key* parent, ke
 		}
 		else
 			// internal page-ptr
-			_tk_create_iopages(map,(page*)pt->pg,parent,GOKEY((page*)pt->pg,pt->koffset),pagedist);
+			_tk_create_iopages(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset),pagedist);
 
 		return;
 	}
@@ -369,7 +430,7 @@ int tk_commit_task(task* t)
 			map.pg = 0;
 			// TODO: create initial page
 			map.dest = 0;
-			_tk_create_iopages(&map,pg,0,GOKEY(pg,sizeof(page)),0);
+			_tk_create_iopages(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
 		}
 		else
 		/* just write it */

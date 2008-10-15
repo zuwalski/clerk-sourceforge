@@ -25,9 +25,9 @@
 struct _st_lkup_it_res
 {
 	task*  t;
-	page*  pg;
-	page*  low_pg;
-	page*  high_pg;
+	page_wrap*  pg;
+	page_wrap*  low_pg;
+	page_wrap*  high_pg;
 	key*   prev;
 	key*   sub;
 	key*   low;
@@ -266,7 +266,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	tk_ref(t,rt.pg);
+	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -315,7 +315,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	tk_ref(t,rt.pg);
+	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -370,7 +370,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	tk_ref(t,rt.pg);
+	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -419,7 +419,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	tk_ref(t,rt.pg);
+	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -487,7 +487,7 @@ void it_create(task* t, it_ptr* it, st_ptr* pt)
 	it->kdata  = 0;
 	it->ksize  = it->kused = 0;
 
-	tk_ref(t, it->pg);
+	it->pg->refcount++;
 }
 
 void it_dispose(task* t, it_ptr* it)
@@ -567,7 +567,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 }
 
 /* delete function - uses it_lookup */
-static uint _st_splice_key(page* rm_pg, ushort remove)
+static uint _st_splice_key(page_wrap* rm_pg, ushort remove)
 {
 	if(remove)
 	{
@@ -580,7 +580,7 @@ static uint _st_splice_key(page* rm_pg, ushort remove)
 	return 0;
 }
 
-static uint _st_remove_key(page* rm_pg, key* sub, key* prev)
+static uint _st_remove_key(page_wrap* rm_pg, key* sub, key* prev)
 {
 	uint remove;
 	if(prev)
@@ -600,7 +600,7 @@ static uint _st_remove_key(page* rm_pg, key* sub, key* prev)
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_it_res rt;
-	page* rm_pg;
+	page_wrap* rm_pg;
 	uint waste  = 0;
 	uint remove = 0;
 
@@ -685,9 +685,9 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	if(rm_pg->id)
+	if(rm_pg->pg->id)
 	{
-		rm_pg->waste += waste >> 3;
+		rm_pg->pg->waste += waste >> 3;
 		_tk_remove_tree(t,rm_pg,remove);
 	}
 

@@ -154,9 +154,8 @@ _ipt* cle_start(cdat eventid, uint event_len,
 
 	/* get a root ptr to instance-db */
 	ipt->sys.instance_tk = tk_create_task(app_source,app_source_data);
-	pt.pg = app_source->root_page(app_source_data);
-	pt.key = sizeof(page);
-	pt.offset = 0;
+
+	tk_root_ptr(ipt->sys.instance_tk,&pt);
 	ipt->sys.instance = pt;
 
 	// no username? -> root/sa
