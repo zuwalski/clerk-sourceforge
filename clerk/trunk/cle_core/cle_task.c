@@ -295,8 +295,43 @@ struct _tk_create
 	page_wrap* pg;
 
 	page* dest;
+
+	uint maxsize;
 };
 
+// create pointer 
+static ushort _tk_make_ptr(struct _tk_create* map, page_wrap* pw, uint offset)
+{
+	ushort koff;
+	ptr* pt;
+
+	if(pw->pg->used + sizeof(ptr) > pw->pg->size)
+	{
+		if(pw->ovf == 0)
+		{}
+		else if(pw->ovf->used + 16 > pw->ovf->size)
+		{}
+
+		koff = pw->ovf->used >> 4;
+		pw->ovf->used += 16;
+		koff |= 0x8000;
+	}
+	else
+	{
+		koff = pw->pg->used;
+		pw->pg->used += sizeof(ptr);
+		pt = (ptr*)((char*)pw->pg + koff);
+	}
+
+	pt->koffset = pt->next = pt->zero = 0;
+	pt->pg = map->dest->id;
+	pt->offset = offset;
+	return koff;
+}
+
+/*
+	trace forward and copy one half-page
+*/
 static void _tk_copy_page(struct _tk_create* map, key* sub, key* prev, uint offset)
 {
 	key* dest = (key*)((char*)map->dest + map->dest->used);
@@ -309,21 +344,28 @@ static void _tk_copy_page(struct _tk_create* map, key* sub, key* prev, uint offs
 	dest->sub = 0;
 }
 
+/*
+	trace tree depth first.
+	find cut-point for half-page-sized subtrees and copy
+	final return gets copied to root page
+*/
 static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
 {
-	uint size = 0;
+	uint size = 0;	// in bits
 
+tailcall:
 	if(k->next != 0)
 	{
-		 size = _tk_measure(map,pw,parent,GOOFF(pw,k->next));
+		key* knext = GOOFF(pw,k->next);
+		size = _tk_measure(map,pw,parent,knext);
 
-		 if(size > map->dest->size/2)
-		 {
-			 _tk_copy_page(map,parent,k,k->offset);
-			 parent->length = k->offset;
-			 k->next = 0;
-			 size = sizeof(ptr);
-		 }
+		if(size + parent->length - k->offset > map->maxsize)
+		{
+			_tk_copy_page(map,parent,k,knext->offset);
+			parent->length = knext->offset;
+			k->next = _tk_make_ptr(map,pw,knext->offset);
+			size = sizeof(ptr) << 3;
+		}
 	}
 
 	if(k->length == 0)
@@ -333,83 +375,47 @@ static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key*
 		{
 			// go throu pointer?
 			if(map->id == pt->pg)
-				size += _tk_measure(map,map->pg,parent,GOKEY(map->pg,sizeof(page)));
+			{
+				parent = 0;
+				pw = map->pg;
+				k = GOKEY(pw,sizeof(page));
+				goto tailcall;
+				//size += _tk_measure(map,map->pg,0,GOKEY(map->pg,sizeof(page)));		// tail-call
+			}
 			else
-				size += sizeof(ptr);
+				size += sizeof(ptr) << 3;
 		}
 		else
+		{
 			// internal page-ptr
-			size += _tk_measure(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset));
-	}
-	else if(k->sub != 0)
-	{
-		uint sub_size = _tk_measure(map,pw,k,GOOFF(pw,k->sub));
-
-		if(sub_size > map->dest->size/2)
-		{
-			_tk_copy_page(map,GOOFF(pw,k->sub),0,0);
-			k->sub = 0;
-			size += sizeof(ptr);
+			pw = (page_wrap*)pt->pg;
+			k = GOKEY(pw,pt->koffset);
+			goto tailcall;
+			//size += _tk_measure(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset));	// tail-call
 		}
-		else
-			size += sub_size;
 	}
-
-	return size + (k->length + 7) >> 3;
-}
-
-///////////////////////////////////
-
-
-static void _tk_create_do_copy(struct _tk_create* map, void* data, int size, int pagedist)
-{
-	// need new dest-page?
-	if(size + pagedist + map->dest->used > map->dest->size/2)
-		;
-
-	memcpy((char*)map->dest + map->dest->used,data,size);
-	map->dest->used += size;
-}
-
-/**
-	rebuild (copy) page/create new io-pages form mem-pages
-*/
-static void _tk_create_iopages(struct _tk_create* map, page_wrap* pg, key* parent, key* k, int pagedist)
-{
-	// depth first
-	if(k->next != 0)
+	else
 	{
-		// continue-key
-		if(parent != 0 && k->offset == parent->length)
-			;
-
-		_tk_create_iopages(map,pg,parent,GOOFF(pg,k->next),pagedist + sizeof(key) + (k->length + 7 >> 3));
-	}
-
-	// pointer?
-	if(k->length == 0)
-	{
-		ptr* pt = (ptr*)k;
-		if(pt->koffset == 0)	// real page
+		if(k->sub != 0)
 		{
-			// go throu pointer?
-			if(map->id == pt->pg)
-				_tk_create_iopages(map,map->pg,0,GOKEY(map->pg,sizeof(page)),pagedist);
+			key* ksub = GOOFF(pw,k->sub);
+			uint sub_size = _tk_measure(map,pw,k,ksub);
+
+			if(sub_size + k->length > map->maxsize)
+			{
+				_tk_copy_page(map,ksub,0,ksub->offset);
+				k->length = ksub->offset;
+				k->sub = _tk_make_ptr(map,pw,ksub->offset);
+				size += sizeof(ptr) << 3;
+			}
 			else
-				// copy ptr
-				_tk_create_do_copy(map,pt,sizeof(ptr),pagedist);
+				size += sub_size;
 		}
-		else
-			// internal page-ptr
-			_tk_create_iopages(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset),pagedist);
 
-		return;
+		size += k->length + (sizeof(key) << 3);
 	}
-	else if(k->sub != 0)
-		_tk_create_iopages(map,pg,k,GOOFF(pg,k->sub),pagedist);
 
-	// copy
-	_tk_create_do_copy(map,k,sizeof(key) + (k->length + 7 >> 3),pagedist);
+	return size;
 }
 
 int tk_commit_task(task* t)
@@ -426,11 +432,16 @@ int tk_commit_task(task* t)
 		{
 			struct _tk_create map;
 			// TODO: pick up parent and rebuild from there
-			map.id = 0;
+			key* rootkey = GOKEY(pgw,sizeof(page));
+			map.id = pg->id;
 			map.pg = 0;
 			// TODO: create initial page
 			map.dest = 0;
-			_tk_create_iopages(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
+			map.maxsize = pg->size << 2;
+
+			_tk_measure(&map,pgw,0,rootkey);
+
+			_tk_copy_page(&map,rootkey,0,0);
 		}
 		else
 		/* just write it */
