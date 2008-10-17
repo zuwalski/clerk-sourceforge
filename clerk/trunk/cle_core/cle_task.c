@@ -296,7 +296,8 @@ struct _tk_create
 
 	page* dest;
 
-	uint maxsize;
+	uint halfsize;
+	uint fullsize;
 };
 
 // create pointer 
@@ -357,18 +358,55 @@ tailcall:
 	if(k->next != 0)
 	{
 		key* knext = GOOFF(pw,k->next);
+		uint offset = 0;
 		size = _tk_measure(map,pw,parent,knext);
 
-		if(size + parent->length - k->offset > map->maxsize)
+		if(size + parent->length - knext->offset >= map->halfsize)
+			offset = knext->offset;
+		else if(size + parent->length - k->offset >= map->halfsize)
 		{
-			_tk_copy_page(map,parent,k,knext->offset);
-			parent->length = knext->offset;
-			k->next = _tk_make_ptr(map,pw,knext->offset);
+			offset = (knext->offset - k->offset)/2 + k->offset;
+			if(offset == k->offset)
+				offset++;
+		}
+
+		if(offset != 0)
+		{
+			_tk_copy_page(map,parent,k,offset);
+			parent->length = offset;
+			k->next = _tk_make_ptr(map,pw,offset);
 			size = sizeof(ptr) << 3;
 		}
 	}
 
-	if(k->length == 0)
+	if(k->length != 0)
+	{
+		size += k->length + (sizeof(key) << 3);
+
+		if(k->sub != 0)
+		{
+			key* ksub = GOOFF(pw,k->sub);
+			uint sub_size = _tk_measure(map,pw,k,ksub);
+			
+			if(sub_size + k->length > map->halfsize)
+			{
+				uint offset = 0;
+				// continue-key?
+				if(ksub->offset == k->length)
+					offset = 0;
+				else
+					offset = 0;
+
+				_tk_copy_page(map,ksub,0,offset);
+				k->length = offset;
+				k->sub = _tk_make_ptr(map,pw,offset);
+				size += sizeof(ptr) << 3;
+			}
+			else
+				size += sub_size;
+		}
+	}
+	else
 	{
 		ptr* pt = (ptr*)k;
 		if(pt->koffset == 0)	// real page
@@ -380,7 +418,6 @@ tailcall:
 				pw = map->pg;
 				k = GOKEY(pw,sizeof(page));
 				goto tailcall;
-				//size += _tk_measure(map,map->pg,0,GOKEY(map->pg,sizeof(page)));		// tail-call
 			}
 			else
 				size += sizeof(ptr) << 3;
@@ -391,28 +428,7 @@ tailcall:
 			pw = (page_wrap*)pt->pg;
 			k = GOKEY(pw,pt->koffset);
 			goto tailcall;
-			//size += _tk_measure(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset));	// tail-call
 		}
-	}
-	else
-	{
-		if(k->sub != 0)
-		{
-			key* ksub = GOOFF(pw,k->sub);
-			uint sub_size = _tk_measure(map,pw,k,ksub);
-
-			if(sub_size + k->length > map->maxsize)
-			{
-				_tk_copy_page(map,ksub,0,ksub->offset);
-				k->length = ksub->offset;
-				k->sub = _tk_make_ptr(map,pw,ksub->offset);
-				size += sizeof(ptr) << 3;
-			}
-			else
-				size += sub_size;
-		}
-
-		size += k->length + (sizeof(key) << 3);
 	}
 
 	return size;
@@ -437,7 +453,8 @@ int tk_commit_task(task* t)
 			map.pg = 0;
 			// TODO: create initial page
 			map.dest = 0;
-			map.maxsize = pg->size << 2;
+			map.halfsize = pg->size << 2;
+			map.fullsize = pg->size << 3;
 
 			_tk_measure(&map,pgw,0,rootkey);
 
