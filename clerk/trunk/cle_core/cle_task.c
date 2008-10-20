@@ -335,19 +335,56 @@ static ushort _tk_make_ptr(struct _tk_create* map, page_wrap* pw, uint offset)
 */
 static void _tk_copy_page(struct _tk_create* map, key* sub, key* prev, uint offset)
 {
-	key* dest = (key*)((char*)map->dest + map->dest->used);
-	uint byteoffset = offset >> 3;
-	memcpy(dest + sizeof(key),KDATA(sub) + byteoffset,((sub->length + 7) >> 3) - byteoffset);
+	key* dest = 0;
+	if(sub->length == 0)	// pointer?
+	{
+	}
+	else if(sub->length - offset > 1)
+	{
+		uint byteoffset = offset >> 3;
+		dest = (key*)((char*)map->dest + map->dest->used);
+		memcpy(dest + sizeof(key),KDATA(sub) + byteoffset,((sub->length + 7) >> 3) - byteoffset);
 
-	dest->length = sub->length - offset;
-	dest->offset = sub->offset - offset;
-	dest->next = 0;
-	dest->sub = 0;
+		dest->length = sub->length - offset;
+		dest->offset = sub->offset - offset;
+		dest->next = 0;
+		dest->sub = 0;
+	}
+
+	if(prev)
+	{
+		if(dest != 0)
+			dest->sub = map->dest->used;
+	}
+	else if(sub->sub)
+	{
+		if(dest != 0)
+			dest->sub = map->dest->used;
+	}
+}
+
+static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key* prev, uint size)
+{
+	uint offset = 0;
+	// result in page overflow?
+	if(size > map->fullsize)
+	{}
+
+	// copy first (part-of) key
+	_tk_copy_page(map,sub,prev,offset);
+
+	// deep-copy rest of page-content
+
+	// cut off sub and...
+	sub->length = offset;
+	// make a pointer instead
+	return _tk_make_ptr(map,pw,offset);
 }
 
 /*
 	trace tree depth first.
 	find cut-point for half-page-sized subtrees and copy
+	of if root-relation is "continue" then proceed towards fullsize-page-copy
 	final return gets copied to root page
 */
 static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
@@ -358,53 +395,43 @@ tailcall:
 	if(k->next != 0)
 	{
 		key* knext = GOOFF(pw,k->next);
-		uint offset = 0;
 		size = _tk_measure(map,pw,parent,knext);
 
-		if(size + parent->length - knext->offset >= map->halfsize)
-			offset = knext->offset;
-		else if(size + parent->length - k->offset >= map->halfsize)
+		if(size + parent->length - k->offset >= map->halfsize)
 		{
-			offset = (knext->offset - k->offset)/2 + k->offset;
-			if(offset == k->offset)
-				offset++;
-		}
-
-		if(offset != 0)
-		{
-			_tk_copy_page(map,parent,k,offset);
-			parent->length = offset;
-			k->next = _tk_make_ptr(map,pw,offset);
+			k->next = _tk_make_page(map,pw,parent,k,size + parent->length - k->offset);
 			size = sizeof(ptr) << 3;
 		}
 	}
 
 	if(k->length != 0)
 	{
-		size += k->length + (sizeof(key) << 3);
-
 		if(k->sub != 0)
 		{
 			key* ksub = GOOFF(pw,k->sub);
 			uint sub_size = _tk_measure(map,pw,k,ksub);
 			
-			if(sub_size + k->length > map->halfsize)
+			if(sub_size + k->length >= map->halfsize)
 			{
-				uint offset = 0;
-				// continue-key?
-				if(ksub->offset == k->length)
-					offset = 0;
+				// build more on continue-key...?
+				if(ksub->offset == k->length && sub_size + k->length < map->fullsize)
+					size += sub_size + k->length;
 				else
-					offset = 0;
-
-				_tk_copy_page(map,ksub,0,offset);
-				k->length = offset;
-				k->sub = _tk_make_ptr(map,pw,offset);
-				size += sizeof(ptr) << 3;
+				{
+					k->sub = _tk_make_page(map,pw,k,0,sub_size + k->length);
+					size += sizeof(ptr) << 3;
+				}
 			}
 			else
-				size += sub_size;
+				size += sub_size + k->length + (sizeof(key) << 3);
 		}
+		else if(k->length >= map->halfsize)
+		{
+			k->sub = _tk_make_page(map,pw,k,0,k->length);
+			size += sizeof(ptr) << 3;
+		}
+		else
+			size += k->length + (sizeof(key) << 3);
 	}
 	else
 	{
