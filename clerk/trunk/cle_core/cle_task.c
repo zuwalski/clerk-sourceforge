@@ -333,33 +333,27 @@ static ushort _tk_make_ptr(struct _tk_create* map, page_wrap* pw, uint offset)
 /*
 	trace forward and copy one half-page
 */
-static void _tk_copy_page(struct _tk_create* map, key* sub, key* prev, uint offset)
+static void _tk_deep_copy(struct _tk_create* map, page_wrap* pw, ushort ko)
 {
-	key* dest = 0;
-	if(sub->length == 0)	// pointer?
+	while(ko != 0)
 	{
-	}
-	else if(sub->length - offset > 1)
-	{
-		uint byteoffset = offset >> 3;
-		dest = (key*)((char*)map->dest + map->dest->used);
-		memcpy(dest + sizeof(key),KDATA(sub) + byteoffset,((sub->length + 7) >> 3) - byteoffset);
+		key* sour = GOOFF(pw,ko);
+		if(sour->length == 0)
+		{}
+		else if(sour->length > 1)
+		{
+			key* dest = (key*)((char*)map->dest + map->dest->used);
+			memcpy(dest + sizeof(key),KDATA(sour),(sour->length + 7) >> 3);
 
-		dest->length = sub->length - offset;
-		dest->offset = sub->offset - offset;
-		dest->next = 0;
-		dest->sub = 0;
-	}
+			dest->length = sour->length;
+			dest->offset = sour->offset;
+			dest->sub = dest->next = 0;
+		}
 
-	if(prev)
-	{
-		if(dest != 0)
-			dest->sub = map->dest->used;
-	}
-	else if(sub->sub)
-	{
-		if(dest != 0)
-			dest->sub = map->dest->used;
+		if(sour->next != 0)
+		{}
+		
+		ko = sour->sub;
 	}
 }
 
@@ -371,9 +365,22 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 	{}
 
 	// copy first (part-of) key
-	_tk_copy_page(map,sub,prev,offset);
+	{
+		uint byteoffset = offset >> 3;
+		key* dest = (key*)((char*)map->dest + map->dest->used);
+		memcpy(dest + sizeof(key),KDATA(sub) + byteoffset,((sub->length + 7) >> 3) - byteoffset);
+
+		dest->length = sub->length - offset;
+		dest->offset = sub->offset - offset;
+		dest->next = 0;
+		dest->sub = 0;
+	}
 
 	// deep-copy rest of page-content
+	if(prev != 0)
+		_tk_deep_copy(map,pw,prev->next);
+	else
+		_tk_deep_copy(map,pw,sub->sub);
 
 	// cut off sub and...
 	sub->length = offset;
@@ -394,8 +401,7 @@ static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key*
 tailcall:
 	if(k->next != 0)
 	{
-		key* knext = GOOFF(pw,k->next);
-		size = _tk_measure(map,pw,parent,knext);
+		size = _tk_measure(map,pw,parent,GOOFF(pw,k->next));
 
 		if(size + parent->length - k->offset >= map->halfsize)
 		{
@@ -475,7 +481,6 @@ int tk_commit_task(task* t)
 		{
 			struct _tk_create map;
 			// TODO: pick up parent and rebuild from there
-			key* rootkey = GOKEY(pgw,sizeof(page));
 			map.id = pg->id;
 			map.pg = 0;
 			// TODO: create initial page
@@ -483,9 +488,9 @@ int tk_commit_task(task* t)
 			map.halfsize = pg->size << 2;
 			map.fullsize = pg->size << 3;
 
-			_tk_measure(&map,pgw,0,rootkey);
+			_tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
 
-			_tk_copy_page(&map,rootkey,0,0);
+			_tk_deep_copy(&map,pgw,sizeof(page));
 		}
 		else
 		/* just write it */
