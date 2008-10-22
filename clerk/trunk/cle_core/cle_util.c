@@ -25,14 +25,14 @@ struct _mem_psrc_data
 
 page _dummy_root = {ROOT_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0,0,0,1,0,0,0};
 
-static page* new_page(cle_psrc_data pd)
+static cle_pageid new_page(cle_psrc_data pd, page* data)
 {
-	page* pg = malloc(MEM_PAGE_SIZE);
+	page* pg = malloc(data->size);
+	if(pg == 0)
+		return 0;
+	memcpy(pg,data,data->used);
 	pg->id = pg;
-	pg->size = MEM_PAGE_SIZE;
-	pg->used = sizeof(page);
-	pg->waste = 0;
-	return pg;
+	return (cle_pageid)pg;
 }
 
 static page* read_page(cle_psrc_data pd, cle_pageid id)
@@ -40,29 +40,31 @@ static page* read_page(cle_psrc_data pd, cle_pageid id)
 	return (id == ROOT_ID)? &_dummy_root : (page*)id;
 }
 
-static int write_page(cle_psrc_data pd, cle_pageid id, page* pg)
+static void write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 {
 	if(id == ROOT_ID)
 	{
 		struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
-		md->root = id = new_page(pd);
+		if(md->root == 0)
+		{
+			md->root = (page*)new_page(pd,pg);
+			return;
+		}
+
+		id = md->root;
 	}
 
 	memcpy(id,pg,pg->used);
-	return 0;
 }
 
-static int remove_page(cle_psrc_data pd, cle_pageid id)
+static void remove_page(cle_psrc_data pd, cle_pageid id)
 {
 	if(id != ROOT_ID)
 		free(id);
-	return 0;
 }
 
-static int unref_page(cle_psrc_data pd, cle_pageid id)
-{
-	return 0;
-}
+static void unref_page(cle_psrc_data pd, cle_pageid id)
+{}
 
 static int page_error(cle_psrc_data pd)
 {

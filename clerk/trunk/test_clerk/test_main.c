@@ -363,7 +363,7 @@ int main(int argc, char* argv[])
 
 	test_iterate_c();
 
-	//test_task_c();
+	test_task_c();
 
 	// test
 	getchar();
