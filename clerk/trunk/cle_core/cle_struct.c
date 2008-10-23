@@ -557,7 +557,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 	pt->pg  = pg;
 	return read;
 }
-
+/*
 // should use repeatede calls to st_get(...) with own buffer
 char* st_get_all(task* t, st_ptr* pt, uint* length)
 {
@@ -641,8 +641,7 @@ char* st_get_all(task* t, st_ptr* pt, uint* length)
 
 // ------ USED? ----------------------
 
-/* FIXME */
-/*
+// FIXME 
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length)
 {
 	struct _st_lkup_res rt;

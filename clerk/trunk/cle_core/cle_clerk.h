@@ -82,7 +82,7 @@ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length
 
 int st_get(task* t, st_ptr* pt, char* buffer, uint buffer_length);
 
-char* st_get_all(task* t, st_ptr* pt, uint* length);
+//char* st_get_all(task* t, st_ptr* pt, uint* length);
 
 /* iterator functions */
 void it_create(task* t, it_ptr* it, st_ptr* pt);

@@ -40,6 +40,7 @@ typedef struct overflow
 typedef struct page_wrap
 {
 	struct page_wrap* next;
+	struct page_wrap* parent;
 	overflow* ovf;
 	page* pg;
 	cle_pageid ext_pageid;
