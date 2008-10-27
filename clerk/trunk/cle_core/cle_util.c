@@ -66,14 +66,14 @@ static void remove_page(cle_psrc_data pd, cle_pageid id)
 static void unref_page(cle_psrc_data pd, cle_pageid id)
 {}
 
-static int page_error(cle_psrc_data pd)
+static int pager_simple(cle_psrc_data pd)
 {
 	return 0;
 }
 
 cle_pagesource util_memory_pager = 
 {
-	new_page,read_page,write_page,remove_page,unref_page,page_error
+	new_page,read_page,write_page,remove_page,unref_page,pager_simple,pager_simple,pager_simple
 };
 
 cle_psrc_data util_create_mempager()

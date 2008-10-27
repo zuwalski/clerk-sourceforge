@@ -295,8 +295,6 @@ struct _tk_create
 	page_wrap* pg;
 
 	page* dest;
-	page_wrap* dpw;
-
 	task* t;
 
 	uint halfsize;
@@ -338,79 +336,110 @@ static ushort _tk_make_ptr_and_write(struct _tk_create* map, page_wrap* pw, uint
 /*
 	trace forward and copy to new page
 */
-static ushort _tk_deep_copy(struct _tk_create* map, page_wrap* pw, key* parent, int adjust, ushort ko)
+static ushort _tk_deep_copy(struct _tk_create* map, page_wrap* pw, key* parent, key* sour, int adjust)
 {
-	ushort ref = 0;
-	while(ko != 0)
+	ushort ptnxt = 0;
+	
+cp_tailcall:
+	// next first
+	if(sour->next != 0)
+		ptnxt = _tk_deep_copy(map,pw,parent,GOOFF(pw,sour->next),adjust);
+
+	if(sour->length == 0)
 	{
-		key* sour = GOOFF(pw,ko);
-
-		// next first
-		_tk_deep_copy(map,pw,parent,adjust,sour->next);
-
-		if(sour->length == 0)
+		ptr* pt = (ptr*)sour;
+		if(pt->koffset == 0)
 		{
-			ptr* pt = (ptr*)sour;
-			if(pt->koffset == 0)
+			// mapped pagelink?
+			if(map->id == pt->pg)
 			{
-				// mapped pagelink?
-				if(map->id == pt->pg)
+				pw = map->pg;
+				sour = GOKEY(pw,sizeof(page));
+				// key-continue 
+				if(parent != 0)
 				{
-					pw = map->pg;
-					sour = GOKEY(pw,sizeof(page));
+					char* dest = (char*)map->dest + map->dest->used;
+					uint bytelength = (sour->length + 7) >> 3;
+					memcpy(dest,KDATA(sour),bytelength);
+					adjust += parent->length;
+					parent->length += sour->length;
+					map->dest->used += bytelength;
+
+					if(sour->sub == 0)
+						return 0;
+
+					sour = GOOFF(pw,sour->sub);
 				}
-				else
-				{
-					// copy pointer
-					ptr* dest;
-					map->dest->used += map->dest->used & 1;
-					ref = map->dest->used;
-					dest = (ptr*)((char*)map->dest + map->dest->used);
-					memcpy(dest,sour,sizeof(ptr));
-					map->dest->used += sizeof(ptr);
-					return ref;
-				}
+				goto cp_tailcall;
 			}
 			else
 			{
-				// internal ptr (transparant)
-				pw = (page_wrap*)pt->pg;
-				sour = GOKEY(pw,pt->koffset);
-			}
-		}
-
-		if(sour->length > 1)
-		{
-			uint bytelength = (sour->length + 7) >> 3;
-			// key-continue?
-			if(parent != 0 && parent->length == sour->offset)
-			{
-				char* dest = (char*)map->dest + map->dest->used;
-				memcpy(dest,KDATA(sour),bytelength);
-				adjust += parent->length;
-				parent->length += sour->length;
-				map->dest->used += bytelength;
-			}
-			else
-			{
-				key* dest;
+				// copy pointer
+				ptr* dest;
+				ushort ref;
 				map->dest->used += map->dest->used & 1;
 				ref = map->dest->used;
-				dest = (key*)((char*)map->dest + map->dest->used);
-				memcpy(KDATA(dest),KDATA(sour),bytelength);
-				dest->length = sour->length;
-				dest->offset = sour->offset + adjust;
-				dest->sub = dest->next = 0;
-				map->dest->used += bytelength + sizeof(key);
-				adjust = 0;
+				dest = (ptr*)((char*)map->dest + map->dest->used);
+				memcpy(dest,sour,sizeof(ptr));
+				map->dest->used += sizeof(ptr);
+				dest->next = ptnxt;
+				return ref;
 			}
-
-			parent = sour;
 		}
-		
-		ko = sour->sub;
+		else
+		{
+			// internal ptr (transparant)
+			pw = (page_wrap*)pt->pg;
+			sour = GOKEY(pw,pt->koffset);
+		}
 	}
-	return ref;
+
+	if(sour->length > 1)
+	{
+		uint bytelength = (sour->length + 7) >> 3;
+		// key-continue?
+		if(parent != 0 && parent->length == sour->offset)
+		{
+			char* dest = (char*)map->dest + map->dest->used;
+			memcpy(dest,KDATA(sour),bytelength);
+			adjust += parent->length;
+			parent->length += sour->length;
+			map->dest->used += bytelength;
+
+			if(sour->sub != 0)
+			{
+				sour = GOOFF(pw,sour->sub);
+				goto cp_tailcall;
+			}
+		}
+		else
+		{
+			key* dest;
+			ushort ref;
+			map->dest->used += map->dest->used & 1;
+			ref = map->dest->used;
+			dest = (key*)((char*)map->dest + map->dest->used);
+			memcpy(KDATA(dest),KDATA(sour),bytelength);
+			dest->length = sour->length;
+			dest->offset = sour->offset + adjust;
+			dest->next = ptnxt;
+			map->dest->used += bytelength + sizeof(key);
+
+			if(sour->sub != 0)
+				dest->sub = _tk_deep_copy(map,pw,dest,GOOFF(pw,sour->sub),0);
+			else
+				dest->sub = 0;
+
+			return ref;
+		}
+	}
+	else if(sour->sub != 0)
+	{
+		sour = GOOFF(pw,sour->sub);
+		goto cp_tailcall;
+	}
+
+	return 0;
 }
 
 static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key* prev, uint size)
@@ -420,6 +449,15 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 	// result in page overflow?
 	if(size + sub->length - (prev != 0? prev->offset : 0) > map->fullsize)
 	{}
+
+	// cut between prev and prev->next
+	if(prev != 0)
+	{}
+	// cut between 0 and sub->sub
+	else if(sub->sub != 0)
+	{}
+	else
+		offset = 0;	// take all
 
 	// copy first (part-of) key and setup dest-page
 	byteoffset = offset >> 3;
@@ -434,9 +472,12 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 
 	// deep-copy rest of page-content
 	if(prev != 0)
-		dest->sub = _tk_deep_copy(map,pw,dest,-offset,prev->next);
-	else
-		dest->sub = _tk_deep_copy(map,pw,dest,-offset,sub->sub);
+	{
+		if(prev->next != 0)
+			dest->sub = _tk_deep_copy(map,pw,dest,GOOFF(pw,prev->next),-offset);
+	}
+	else if(sub->sub != 0)
+		dest->sub = _tk_deep_copy(map,pw,dest,GOOFF(pw,sub->sub),-offset);
 
 	// cut off sub and...
 	sub->length = offset;
@@ -454,7 +495,7 @@ static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key*
 {
 	uint size = 0;	// in bits
 
-tailcall:
+ms_tailcall:
 	if(k->next != 0)
 	{
 		size = _tk_measure(map,pw,parent,GOOFF(pw,k->next));
@@ -506,7 +547,7 @@ tailcall:
 				parent = 0;
 				pw = map->pg;
 				k = GOKEY(pw,sizeof(page));
-				goto tailcall;
+				goto ms_tailcall;
 			}
 			else
 				size += sizeof(ptr) << 3;
@@ -516,7 +557,7 @@ tailcall:
 			// internal page-ptr
 			pw = (page_wrap*)pt->pg;
 			k = GOKEY(pw,pt->koffset);
-			goto tailcall;
+			goto ms_tailcall;
 		}
 	}
 
@@ -543,6 +584,8 @@ int tk_commit_task(task* t)
 			map.halfsize = pg->size << 2;
 			map.fullsize = pg->size << 3;
 
+			map.t = t;
+
 			// pick up parent and rebuild from there (if not root)
 			if(pgw->parent != 0)
 			{
@@ -558,7 +601,7 @@ int tk_commit_task(task* t)
 
 			_tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
 
-			_tk_deep_copy(&map,pgw,0,0,sizeof(page));
+			_tk_deep_copy(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
 
 			t->ps->write_page(t->psrc_data,pgw->pg->id,map.dest);
 
@@ -572,9 +615,14 @@ int tk_commit_task(task* t)
 		/* just write it */
 			t->ps->write_page(t->psrc_data,pgw->ext_pageid,pg);
 
-		ret = t->ps->page_error(t->psrc_data);
+		ret = t->ps->pager_error(t->psrc_data);
 		pgw = tmp;
 	}
+
+	if(ret == 0)
+		ret = t->ps->pager_commit(t->psrc_data);
+	else
+		t->ps->pager_rollback(t->psrc_data);
 
 	tk_drop_task(t);
 
