@@ -27,4 +27,6 @@ cle_pagesource util_memory_pager;
 
 cle_psrc_data util_create_mempager();
 
+int util_get_pagecount(cle_psrc_data);
+
 #endif

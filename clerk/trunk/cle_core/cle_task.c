@@ -309,13 +309,30 @@ static ushort _tk_make_ptr_and_write(struct _tk_create* map, page_wrap* pw, uint
 
 	if(pw->pg->used + sizeof(ptr) > pw->pg->size)
 	{
-		if(pw->ovf == 0)
-		{}
-		else if(pw->ovf->used + 16 > pw->ovf->size)
-		{}
+		overflow* ovf = pw->ovf;
 
-		koff = pw->ovf->used >> 4;
-		pw->ovf->used += 16;
+		if(ovf == 0)
+		{
+			ovf = (overflow*)tk_malloc(map->t,OVERFLOW_GROW);
+
+			ovf->size = OVERFLOW_GROW;
+			ovf->used = 16;
+
+			pw->ovf = ovf;
+		}
+		else if(ovf->used + 16 > ovf->size)
+		{
+			ovf->size += OVERFLOW_GROW;
+
+			ovf = (overflow*)tk_realloc(map->t,ovf,ovf->size);
+
+			pw->ovf = ovf;
+		}
+
+		pt = (ptr*)((char*)ovf + ovf->used);
+
+		koff = ovf->used >> 4;
+		ovf->used += 16;
 		koff |= 0x8000;
 	}
 	else
@@ -442,22 +459,43 @@ cp_tailcall:
 	return 0;
 }
 
+static uint _tk_overflow_mincut(struct _tk_create* map, page_wrap* pw, key* sub, key* k, uint size)
+{
+	// pageoverflow on min-cut?
+	if(sub->length - k->offset + size <= map->fullsize - (sizeof(key) << 3))
+		return k->offset - 1;	// no: use it
+
+	// yes: cut out piece of sub as new page
+	if(k->next != 0)
+		;
+
+	return 0;
+}
+
 static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key* prev, uint size)
 {
 	key* dest;
 	uint ksize,byteoffset,offset = 0;
-	// result in page overflow?
-	if(size + sub->length - (prev != 0? prev->offset : 0) > map->fullsize)
-	{}
 
 	// cut between prev and prev->next
 	if(prev != 0)
-	{}
+	{
+		// pageoverflow on max-cut?
+		if(sub->length - prev->offset + size > map->fullsize - (sizeof(key) << 3))
+			offset = _tk_overflow_mincut(map,pw,sub,GOOFF(pw,prev->next),size);
+		else
+			offset = prev->offset + 1;
+	}
 	// cut between 0 and sub->sub
 	else if(sub->sub != 0)
-	{}
-	else
-		offset = 0;	// take all
+	{
+		// pageoverflow on max-cut?
+		if(sub->length + size > map->fullsize - (sizeof(key) << 3))
+			offset = _tk_overflow_mincut(map,pw,sub,GOOFF(pw,sub->sub),size);
+	}
+	// single key - page overflow?
+	else if(sub->length > map->fullsize - (sizeof(key) << 3))
+		offset = sub->length - (map->fullsize - (sizeof(key) << 3));
 
 	// copy first (part-of) key and setup dest-page
 	byteoffset = offset >> 3;
@@ -478,6 +516,10 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 	}
 	else if(sub->sub != 0)
 		dest->sub = _tk_deep_copy(map,pw,dest,GOOFF(pw,sub->sub),-offset);
+
+	// not to be confused with a pointer...
+	if(offset == 0)
+		offset = 1;
 
 	// cut off sub and...
 	sub->length = offset;
@@ -517,7 +559,7 @@ ms_tailcall:
 			if(sub_size + k->length >= map->halfsize)
 			{
 				// build more on key-continue...?
-				if(ksub->offset == k->length && sub_size + k->length < map->fullsize)
+				if(ksub->offset == k->length && sub_size + k->length < map->fullsize - (sizeof(key) << 3))
 					size += sub_size + k->length;
 				else
 				{
@@ -576,6 +618,7 @@ int tk_commit_task(task* t)
 		/* overflowed or underflow? */
 		if(pgw->ovf || pg->waste > pg->size/2)
 		{
+			uint msize;
 			struct _tk_create map;
 			map.dest = tk_malloc(t,pg->size);
 			map.dest->size = pg->size;
@@ -599,11 +642,13 @@ int tk_commit_task(task* t)
 				map.pg = 0;
 			}
 
-			_tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
+			msize = _tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
 
+			// reset and copy remaing rootpage
+			map.dest->used = sizeof(page);
 			_tk_deep_copy(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
 
-			t->ps->write_page(t->psrc_data,pgw->pg->id,map.dest);
+			t->ps->write_page(t->psrc_data,pgw->ext_pageid,map.dest);
 
 			// release old (now rebuild) page (if we found parent)
 			if(map.id != 0)

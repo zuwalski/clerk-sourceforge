@@ -50,12 +50,14 @@ char test2_3[] = "t1set\0t2set";
 void test_struct_c()
 {
 	st_ptr root,tmp,tmp2;
-	//  new task
-	task* t = tk_create_task(0,0);
+	task* t;
 
 	page_size = 0;
 	resize_count = 0;
 	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(0,0);
 
 	// should not happen.. but
 	ASSERT(t);
@@ -149,6 +151,8 @@ void test_struct_c()
 	// .. and the old one
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
+	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
 	tk_drop_task(t);
 }
 
@@ -156,15 +160,17 @@ void test_iterate_c()
 {
 	clock_t start,stop;
 
+	task* t;
 	st_ptr root,tmp;
 	it_ptr it;
 	int i;
-	//  new task
-	task* t = tk_create_task(0,0);
 
 	page_size = 0;
 	resize_count = 0;
 	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(0,0);
 
 	// should not happen.. but
 	ASSERT(t);
@@ -220,6 +226,8 @@ void test_iterate_c()
 	// destroy
 	it_dispose(t,&it);
 
+	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
 	tk_drop_task(t);
 }
 
@@ -228,15 +236,16 @@ void time_struct_c()
 	clock_t start,stop;
 
 	st_ptr root,tmp;
+	task* t;
 
 	int counter,notfound;
-
-	//  new task
-	task* t = tk_create_task(0,0);
 
 	page_size = 0;
 	resize_count = 0;
 	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(0,0);
 
 	// should not happen.. but
 	ASSERT(t);
@@ -284,6 +293,7 @@ void time_struct_c()
 	// collection now empty again
 	ASSERT(st_is_empty(&root));
 
+	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	tk_drop_task(t);
 }
 
@@ -293,16 +303,18 @@ void test_task_c()
 
 	st_ptr root,tmp;
 	it_ptr it;
+	task* t;
 	int i;
+
 	cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
-
-	//  new task
-	task* t = tk_create_task(psource,pdata);
 
 	page_size = 0;
 	resize_count = 0;
 	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(psource,pdata);
 
 	// should not happen.. but
 	ASSERT(t);
@@ -314,23 +326,29 @@ void test_task_c()
 	it_create(t,&it,&root);
 
 	// insert data
+	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		if(it_new(t,&it,&tmp))
 			break;
 	}
+	stop = clock();
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
+	printf("(commit)it_new. Time %d\n",stop - start);
+
 	// destroy
 	it_dispose(t,&it);
+
+	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	// commit!
 	start = clock();
 	tk_commit_task(t);
 	stop = clock();
 
-	printf("tk_commit_task. Time %d\n",stop - start);
+	printf("tk_commit_task. Time %d - pages %d\n",stop - start,util_get_pagecount(pdata));
 
 	// new task, same source
 	t = tk_create_task(psource,pdata);
@@ -341,17 +359,23 @@ void test_task_c()
 	// read back collection
 	it_create(t,&it,&root);
 
+	i = 0;
+	start = clock();
 	while(it_next(t,0,&it))
 	{
 		i++;
 	}
+	stop = clock();
 
 	// should have same count
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
+	printf("(commit)it_next. Time %d\n",stop - start);
+
 	// destroy
 	it_dispose(t,&it);
 
+	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	tk_drop_task(t);
 }
 
