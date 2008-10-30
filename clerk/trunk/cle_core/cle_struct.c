@@ -161,7 +161,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	/* reset values */
 	rt->pg = rt->t->stack;
 	rt->prev = rt->sub = 0;
-	rt->diff = 0;
+//	rt->diff = 0;			// goes into "offset" - still relates to parent (?)
 	
 	rt->pg->refcount++;
 	return pt;	// for update to manipulate pointer

@@ -57,6 +57,7 @@ static void write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 		if(md->root == 0)
 		{
 			md->root = (page*)new_page(pd,pg);
+			md->root->id = ROOT_ID;
 			return;
 		}
 
@@ -68,12 +69,18 @@ static void write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 
 static void remove_page(cle_psrc_data pd, cle_pageid id)
 {
+	struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
 	if(id != ROOT_ID)
 	{
-		struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
 		free(id);
 		md->pagecount--;
 	}
+	else
+	{
+		free(md->root);
+		md->root = 0;
+		md->pagecount = 0;
+	}	
 }
 
 static void unref_page(cle_psrc_data pd, cle_pageid id)

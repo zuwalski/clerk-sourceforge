@@ -172,7 +172,15 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
+				RelativePath=".\test.h"
+				>
+			</File>
+			<File
 				RelativePath=".\test_main.c"
+				>
+			</File>
+			<File
+				RelativePath=".\test_util.c"
 				>
 			</File>
 		</Filter>

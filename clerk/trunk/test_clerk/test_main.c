@@ -23,8 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include "../cle_core/cle_clerk.h"
-#include "../cle_core/cle_util.h"
+#include "test.h"
 
 void unimplm()
 {
@@ -336,6 +335,8 @@ void test_task_c()
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
+	st_prt_distribution(&root,t);
+
 	printf("(commit)it_new. Time %d\n",stop - start);
 
 	// destroy
@@ -355,6 +356,8 @@ void test_task_c()
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
+
+	st_prt_distribution(&root,t);
 
 	// read back collection
 	it_create(t,&it,&root);
@@ -381,11 +384,11 @@ void test_task_c()
 
 int main(int argc, char* argv[])
 {
-	test_struct_c();
+	//test_struct_c();
 
-	time_struct_c();
+	//time_struct_c();
 
-	test_iterate_c();
+	//test_iterate_c();
 
 	test_task_c();
 
