@@ -335,14 +335,14 @@ void test_task_c()
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	st_prt_distribution(&root,t);
-
 	printf("(commit)it_new. Time %d\n",stop - start);
 
 	// destroy
 	it_dispose(t,&it);
 
 	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	st_prt_distribution(&root,t);
 
 	// commit!
 	start = clock();
@@ -357,7 +357,11 @@ void test_task_c()
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
+	// TEST
 	st_prt_distribution(&root,t);
+
+	//st_prt_page(&root);
+	_tk_print(root.pg->pg);
 
 	// read back collection
 	it_create(t,&it,&root);
@@ -379,6 +383,9 @@ void test_task_c()
 	it_dispose(t,&it);
 
 	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	st_prt_distribution(&root,t);
+
 	tk_drop_task(t);
 }
 

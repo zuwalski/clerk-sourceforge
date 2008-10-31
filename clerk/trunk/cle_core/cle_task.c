@@ -419,7 +419,8 @@ static ushort _tk_deep_copy(struct _tk_create* map, page_wrap* pw, key* parent, 
 					map->dest->used += sizeof(ptr);
 					dest = (ptr*)((char*)map->dest + ref);
 
-					dest->next = dest->zero = dest->koffset = 0;
+					dest->zero = dest->koffset = 0;
+					dest->next = ptnxt;
 					dest->offset = pt->offset + adjust;
 					dest->pg = pt->pg;
 					return ref;
@@ -468,20 +469,6 @@ static ushort _tk_deep_copy(struct _tk_create* map, page_wrap* pw, key* parent, 
 				dest->sub = (sour->sub != 0)?
 					_tk_deep_copy(map,pw,sour,GOOFF(pw,sour->sub),0) : 0;
 
-				//if(ptnxt != 0)
-				//{
-				//	key* tst = (key*)((char*)map->dest + ptnxt);
-
-				//	if(dest->offset >= tst->offset)
-				//	{
-				//		printf("oops");
-				//	}
-
-				//	if(ptnxt == 324 && dest->offset == 7)
-				//	{
-				//		ptnxt = ptnxt;
-				//	}
-				//}
 				return ref;
 			}
 		}
@@ -532,7 +519,7 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 	byteoffset = offset >> 3;
 	dest = map->lastkey = (key*)((char*)map->dest + sizeof(page));
 	ksize = ((sub->length + 7) >> 3) - byteoffset;
-	map->dest->used = ksize + sizeof(page);
+	map->dest->used = ksize + sizeof(page) + sizeof(key);
 
 	memcpy(KDATA(dest),KDATA(sub) + byteoffset,ksize);
 
