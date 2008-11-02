@@ -290,7 +290,7 @@ void time_struct_c()
 	printf("delete %d items. Time %d\n",HIGH_ITERATION_COUNT, stop - start);
 
 	// collection now empty again
-	ASSERT(st_is_empty(&root));
+	//ASSERT(st_is_empty(&root));
 
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	tk_drop_task(t);
@@ -333,9 +333,23 @@ void test_task_c()
 	}
 	stop = clock();
 
+	printf("(pre-commit)it_new. Time %d\n",stop - start);
+
+	it_reset(&it);
+
+	i = 0;
+	start = clock();
+	while(it_next(t,0,&it))
+	{
+		i++;
+		ASSERT(i <= HIGH_ITERATION_COUNT);
+	}
+	stop = clock();
+
+	// should have same count
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	printf("(commit)it_new. Time %d\n",stop - start);
+	printf("(pre-commit)it_next. Time %d\n",stop - start);
 
 	// destroy
 	it_dispose(t,&it);
@@ -357,20 +371,24 @@ void test_task_c()
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
-	// TEST
 	st_prt_distribution(&root,t);
-
-	//st_prt_page(&root);
-	_tk_print(root.pg->pg);
 
 	// read back collection
 	it_create(t,&it,&root);
 
 	i = 0;
 	start = clock();
-	while(it_next(t,0,&it))
+	while(it_next(t,&tmp,&it))
 	{
+		//int j;
 		i++;
+
+		//for(j = 0; j < it.kused; j++)
+		//{
+		//	printf("%d ",it.kdata[j]);
+		//}
+		//printf(" %p\n",tmp.pg->pg->id);
+		ASSERT(i <= HIGH_ITERATION_COUNT);
 	}
 	stop = clock();
 
@@ -384,18 +402,16 @@ void test_task_c()
 
 	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
-	st_prt_distribution(&root,t);
-
 	tk_drop_task(t);
 }
 
 int main(int argc, char* argv[])
 {
-	//test_struct_c();
+	test_struct_c();
 
-	//time_struct_c();
+	time_struct_c();
 
-	//test_iterate_c();
+	test_iterate_c();
 
 	test_task_c();
 

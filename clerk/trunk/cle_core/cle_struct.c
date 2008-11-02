@@ -36,38 +36,41 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 
 	while(1)
 	{
-		uint a,max = (rt->length + rt->diff < me->length) ? rt->length + rt->diff : me->length;
-		cdat maxkey = ckey + ((max - rt->diff + 7) >> 3);
-		cdat ckeyhold = ckey;
+		uint max = (rt->length + rt->diff < me->length) ? rt->length + rt->diff : me->length;
 
-		while(ckey < maxkey)
+		if(rt->diff < max)
 		{
-			a = *(rt->path++) ^ *ckey++;	// compare bytes
-
-			if(a)
+			while(1)
 			{
-				// fold 1's after msb
-				a |= (a >> 1);
-				a |= (a >> 2);
-				a |= (a >> 4);
-				// lzc(a)
-				a -= ((a >> 1) & 0x55);
-				a = (((a >> 2) & 0x33) + (a & 0x33));
-				a = (((a >> 4) + a) & 0x0f);
+				uint a = *(rt->path) ^ *ckey;	// compare bytes
 
-				rt->diff += 8 - a;
-				// to avoid a branche inside the main loop...
-				rt->path--;
-				ckey--;
-				break;
+				if(a)
+				{
+					// fold 1's after msb
+					a |= (a >> 1);
+					a |= (a >> 2);
+					a |= (a >> 4);
+					// lzc(a)
+					a -= ((a >> 1) & 0x55);
+					a = (((a >> 2) & 0x33) + (a & 0x33));
+					a = (((a >> 4) + a) & 0x0f);
+
+					rt->diff += 8 - a;
+					if(rt->diff > max)
+						rt->diff = max;
+					break;
+				}
+
+				rt->diff += 8;
+				if(rt->diff > max)
+				{
+					rt->diff = max;
+					break;
+				}
+				rt->length -= 8;
+				rt->path++;ckey++;
 			}
 		}
-
-		a = ckey - ckeyhold;
-		rt->length -= a << 3;
-		rt->diff += a << 3;
-		if(rt->diff > max)
-			rt->diff = max;
 
 		rt->sub  = me;
 		rt->prev = 0;
@@ -201,7 +204,6 @@ static void _st_write(struct _st_lkup_res* rt)
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
 		rt->pg->pg->used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)(rt->pg->pg) + sizeof(key);
-		rt->pg->pg->used += rt->pg->pg->used & 1;
 
 		rt->diff = rt->sub->length;		
 		size -= length;

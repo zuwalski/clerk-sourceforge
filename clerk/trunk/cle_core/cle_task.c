@@ -70,16 +70,17 @@ static void _tk_release_page(task* t, page_wrap* wp)
 static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 {
 	/* have a wrapper? */
-	page_wrap* pw = t->wpages;
+	st_ptr root_ptr;
+	page_wrap* pw;
 
-	while(pw && pw->ext_pageid != pid)
-		pw = pw->next;
+	root_ptr.key = t->pagemap_root_key;
+	root_ptr.pg  = t->pagemap_root_wrap;
+	root_ptr.offset = 0;
 
-	if(pw != 0)
-		pw->refcount++;
-	else
+	// find pid in pagemap
+	if(st_insert(t,&root_ptr,(cdat)&pid,sizeof(pid)))
 	{
-		/* call pager to get page */
+		/* not found: call pager to get page */
 		page* npage = t->ps->read_page(t->psrc_data,pid);
 
 		/* create wrapper and add to w-list */
@@ -92,9 +93,45 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 
 		pw->next = t->wpages;
 		t->wpages = pw;
+
+		// insert pw into pagemap
+		st_append(t,&root_ptr,(cdat)&pw,sizeof(pw));
+	}
+	else
+	{
+		// found: read address of page_wrapper
+		if(st_get(t,&root_ptr,(char*)&pw,sizeof(pw)) != -1)
+			pw = 0;	// panic
 	}
 
 	return pw;
+	//////////
+
+	//page_wrap* pw = t->wpages;
+
+	//while(pw && pw->ext_pageid != pid)
+	//	pw = pw->next;
+
+	//if(pw != 0)
+	//	pw->refcount++;
+	//else
+	//{
+	//	/* call pager to get page */
+	//	page* npage = t->ps->read_page(t->psrc_data,pid);
+
+	//	/* create wrapper and add to w-list */
+	//	pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap));
+	//	pw->ext_pageid = pid;
+	//	pw->ovf = 0;
+	//	pw->pg = npage;
+	//	pw->refcount = 1;
+	//	pw->parent = parent;
+
+	//	pw->next = t->wpages;
+	//	t->wpages = pw;
+	//}
+
+	//return pw;
 }
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
@@ -245,6 +282,7 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 {
 	task* t;
 	page* p;
+	key* k;
 	task xt;
 	xt.stack = 0;
 	_tk_stack_new(&xt);
@@ -259,6 +297,16 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 	t->ps = ps;
 	t->stack = xt.stack;
 	t->wpages = 0;
+
+	// setup pagemap
+	t->pagemap_root_wrap = xt.stack;
+	t->pagemap_root_key = p->used;
+
+	k = (key*)((char*)p + p->used);
+	memset(k,0,sizeof(key) + 2);
+	k->length = 1;
+
+	p->used += sizeof(key) + 2;
 	return t;
 }
 
@@ -517,23 +565,24 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 
 	// copy first (part-of) key and setup dest-page
 	byteoffset = offset >> 3;
-	dest = map->lastkey = (key*)((char*)map->dest + sizeof(page));
 	ksize = ((sub->length + 7) >> 3) - byteoffset;
+
+	dest = map->lastkey = (key*)((char*)map->dest + sizeof(page));
 	map->dest->used = ksize + sizeof(page) + sizeof(key);
 
 	memcpy(KDATA(dest),KDATA(sub) + byteoffset,ksize);
 
-	dest->length = sub->length - offset;
+	dest->length = sub->length - (byteoffset << 3);
 	dest->offset = dest->sub = dest->next = 0;
 
 	// deep-copy rest of page-content
 	if(prev != 0)
 	{
 		if(prev->next != 0)
-			dest->sub = _tk_deep_copy(map,pw,sub,GOOFF(pw,prev->next),-offset);
+			dest->sub = _tk_deep_copy(map,pw,sub,GOOFF(pw,prev->next),-(byteoffset << 3));
 	}
 	else if(sub->sub != 0)
-		dest->sub = _tk_deep_copy(map,pw,sub,GOOFF(pw,sub->sub),-offset);
+		dest->sub = _tk_deep_copy(map,pw,sub,GOOFF(pw,sub->sub),-(byteoffset << 3));
 
 	// not to be confused with a pointer
 	if(offset == 0)

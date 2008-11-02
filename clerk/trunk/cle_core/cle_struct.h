@@ -67,9 +67,11 @@ typedef struct ptr
 struct task
 {
 	page_wrap* stack;
-	page_wrap* wpages;		// USE MAP INSTEAD OF LIST?
+	page_wrap* wpages;
 	cle_pagesource* ps;
 	cle_psrc_data psrc_data;
+	page_wrap* pagemap_root_wrap;
+	ushort pagemap_root_key;
 };
 
 //#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))
