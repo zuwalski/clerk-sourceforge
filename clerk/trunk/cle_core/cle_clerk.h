@@ -39,6 +39,7 @@ typedef struct st_ptr
 typedef struct ptr_list
 {
 	struct ptr_list* link;
+	task* t;
 	st_ptr pt;
 } ptr_list;
 

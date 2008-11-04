@@ -55,6 +55,7 @@ void cle_pop(_ipt* inpt);
 void cle_push(_ipt* inpt);
 void cle_next(_ipt* inpt);
 void cle_end(_ipt* inpt, cdat code, uint length);
+void cle_submit(_ipt* inpt, task* t, st_ptr* root);
 
 // system-event-handlers
 
@@ -75,11 +76,6 @@ struct sys_event_id
 
 typedef struct sys_handler_data
 {
-	ptr_list* input;
-	task* mem_tk;
-	task* instance_tk;
-	st_ptr instance;
-	uint next_call;
 	cdat eventid;
 	uint event_len;
 	cdat userid;
@@ -94,9 +90,9 @@ typedef struct event_handler event_handler;
 typedef struct cle_syshandler
 {
 	struct cle_syshandler* next_handler;
-	void (*do_setup)(sys_handler_data*,event_handler*);
-	void (*do_next)(sys_handler_data*,event_handler*,uint);
-	void (*do_end)(sys_handler_data*,event_handler*,cdat,uint);
+	void (*do_setup)(event_handler*);
+	void (*do_next)(event_handler*,uint);
+	void (*do_end)(event_handler*,cdat,uint);
 	enum handler_type systype;
 }
 cle_syshandler;
@@ -105,9 +101,12 @@ struct event_handler
 {
 	struct event_handler* next;
 	cle_syshandler* thehandler;
-	void* handdata;
+	sys_handler_data* eventdata;
+	void* handler_data;
 	cle_output* response;
 	void* respdata;
+	task* instance_tk;
+	st_ptr instance;
 	struct sys_event_id event_id;
 };
 
@@ -116,5 +115,10 @@ void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handl
 
 // hook-handler for the core runtimesystem
 extern cle_syshandler _runtime_handler;
+
+// thread-subsystem hook
+uint cle_notify_start(event_handler* handler, sys_handler_data* data);
+uint cle_notify_next(event_handler* handler, sys_handler_data* data, ptr_list* nxtelement);
+void cle_notify_end(event_handler* handler, sys_handler_data* data);
 
 #endif
