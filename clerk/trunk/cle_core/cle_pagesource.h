@@ -38,10 +38,11 @@ typedef struct cle_pagesource
 	page* (*read_page)(cle_psrc_data, cle_pageid);
 	void (*write_page)(cle_psrc_data, cle_pageid, page*);
 	void (*remove_page)(cle_psrc_data, cle_pageid);
-	void (*unref_page)(cle_psrc_data, cle_pageid);
+	void (*unref_page)(cle_psrc_data, page*);
 	int (*pager_error)(cle_psrc_data);
 	int (*pager_commit)(cle_psrc_data);
 	int (*pager_rollback)(cle_psrc_data);
+	int (*pager_close)(cle_psrc_data);
 }
 cle_pagesource;
 

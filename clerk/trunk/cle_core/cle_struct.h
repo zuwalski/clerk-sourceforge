@@ -30,6 +30,8 @@
 
 #define IT_GROW_SIZE 32
 
+#define PID_CACHE_SIZE 8
+
 /* Defs */
 typedef struct overflow
 {
@@ -64,8 +66,15 @@ typedef struct ptr
 	void*  pg;
 } ptr;
 
+struct pidcache
+{
+	cle_pageid pid;
+	page_wrap* wrapper;
+};
+
 struct task
 {
+	struct pidcache cache[PID_CACHE_SIZE];
 	page_wrap* stack;
 	page_wrap* wpages;
 	cle_pagesource* ps;

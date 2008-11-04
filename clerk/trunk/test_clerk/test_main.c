@@ -28,6 +28,7 @@
 void unimplm()
 {
 	puts("failed in unimpl in test_main.c");
+	getchar();
 	exit(-1);
 }
 
@@ -45,6 +46,8 @@ char test2[] = "t1set";
 char test3[] = "t2set";
 char test2x2[] = "t1set\0t1set";
 char test2_3[] = "t1set\0t2set";
+
+const char testdbfilename[] = "testdb.dat";
 
 void test_struct_c()
 {
@@ -308,6 +311,7 @@ void test_task_c()
 	cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
 
+	puts("\nRunning mempager\n");
 	page_size = 0;
 	resize_count = 0;
 	overflow_size = 0;
@@ -363,7 +367,7 @@ void test_task_c()
 	tk_commit_task(t);
 	stop = clock();
 
-	printf("tk_commit_task. Time %d - pages %d\n",stop - start,util_get_pagecount(pdata));
+	printf("mempager: tk_commit_task. Time %d - pages %d\n",stop - start,mempager_get_pagecount(pdata));
 
 	// new task, same source
 	t = tk_create_task(psource,pdata);
@@ -405,6 +409,112 @@ void test_task_c()
 	tk_drop_task(t);
 }
 
+void test_task_c_filepager()
+{
+	clock_t start,stop;
+
+	st_ptr root,tmp;
+	it_ptr it;
+	task* t;
+	int i;
+
+	cle_pagesource* psource = &util_file_pager;
+	cle_psrc_data pdata;
+	
+	puts("\nRunning filepager\n");
+	// remove old test-database first
+	_unlink(testdbfilename);
+	
+	pdata = util_create_filepager(testdbfilename);
+
+	page_size = 0;
+	resize_count = 0;
+	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(psource,pdata);
+
+	// should not happen.. but
+	ASSERT(t);
+
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	// create
+	it_create(t,&it,&root);
+
+	// insert data
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		if(it_new(t,&it,&tmp))
+			break;
+	}
+	stop = clock();
+
+	printf("(pre-commit)it_new. Time %d\n",stop - start);
+
+	it_reset(&it);
+
+	i = 0;
+	start = clock();
+	while(it_next(t,0,&it))
+	{
+		i++;
+		ASSERT(i <= HIGH_ITERATION_COUNT);
+	}
+	stop = clock();
+
+	// should have same count
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	printf("(pre-commit)it_next. Time %d\n",stop - start);
+
+	// destroy
+	it_dispose(t,&it);
+
+	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	// commit!
+	start = clock();
+	tk_commit_task(t);
+	stop = clock();
+
+	printf("filepager: tk_commit_task. Time %d\n",stop - start);
+
+	// reopen
+	pdata = util_create_filepager(testdbfilename);
+
+	// new task, same source
+	t = tk_create_task(psource,pdata);
+
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	// read back collection
+	it_create(t,&it,&root);
+
+	i = 0;
+	start = clock();
+	while(it_next(t,&tmp,&it))
+	{
+		i++;
+	}
+	stop = clock();
+
+	// should have same count
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	printf("(commit)it_next. Time %d\n",stop - start);
+
+	// destroy
+	it_dispose(t,&it);
+
+	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	tk_drop_task(t);
+}
+
 int main(int argc, char* argv[])
 {
 	test_struct_c();
@@ -415,7 +525,10 @@ int main(int argc, char* argv[])
 
 	test_task_c();
 
+	test_task_c_filepager();
+
 	// test
+	puts("\nTesting done...");
 	getchar();
 	return 0;
 }

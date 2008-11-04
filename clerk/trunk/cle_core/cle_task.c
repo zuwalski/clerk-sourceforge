@@ -67,12 +67,45 @@ static void _tk_release_page(task* t, page_wrap* wp)
 	tk_mfree(t,wp->pg);
 }
 
+static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid)
+{
+	cle_pageid firstpid = pid;
+	int i;
+	for(i = 0; i < PID_CACHE_SIZE; i++)
+	{
+		page_wrap* twrap = t->cache[i].wrapper;
+		cle_pageid tid = t->cache[i].pid;
+
+		t->cache[i].wrapper = wrapper;
+		t->cache[i].pid = pid;
+
+		if(tid == 0 || tid == firstpid)
+			break;
+
+		pid = tid;
+		wrapper = twrap;
+	}
+}
+
 static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 {
 	/* have a wrapper? */
 	st_ptr root_ptr;
 	page_wrap* pw;
+	int i;
 
+	// try cache..
+	for(i = 0; i < PID_CACHE_SIZE && t->cache[i].pid != 0; i++)
+	{
+		if(t->cache[i].pid == pid)
+		{
+			pw = t->cache[i].wrapper;
+			_cache_pushdown(t,pw,pid);
+			return pw;
+		}
+	}
+
+	// not found in cache...
 	root_ptr.key = t->pagemap_root_key;
 	root_ptr.pg  = t->pagemap_root_wrap;
 	root_ptr.offset = 0;
@@ -104,34 +137,10 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 			pw = 0;	// panic
 	}
 
+	// into cache
+	_cache_pushdown(t,pw,pid);
+
 	return pw;
-	//////////
-
-	//page_wrap* pw = t->wpages;
-
-	//while(pw && pw->ext_pageid != pid)
-	//	pw = pw->next;
-
-	//if(pw != 0)
-	//	pw->refcount++;
-	//else
-	//{
-	//	/* call pager to get page */
-	//	page* npage = t->ps->read_page(t->psrc_data,pid);
-
-	//	/* create wrapper and add to w-list */
-	//	pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap));
-	//	pw->ext_pageid = pid;
-	//	pw->ovf = 0;
-	//	pw->pg = npage;
-	//	pw->refcount = 1;
-	//	pw->parent = parent;
-
-	//	pw->next = t->wpages;
-	//	t->wpages = pw;
-	//}
-
-	//return pw;
 }
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
@@ -191,7 +200,7 @@ void _tk_write_copy(task* t, page_wrap* pg)
 	npg->id = 0;
 
 	/* swap pages */
-	t->ps->unref_page(t->psrc_data,pg->pg->id);
+	t->ps->unref_page(t->psrc_data,pg->pg);
 	pg->pg = npg;
 }
 
@@ -307,6 +316,9 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 	k->length = 1;
 
 	p->used += sizeof(key) + 2;
+
+	// pagecache
+	memset(t->cache,0,sizeof(struct pidcache) * PID_CACHE_SIZE);
 	return t;
 }
 
@@ -319,12 +331,16 @@ void tk_drop_task(task* t)
 		tk_mfree(t,pg->ovf);
 		// unref external pages
 		if(pg->pg->id != 0)
-			t->ps->unref_page(t->psrc_data,pg->pg->id);
+			t->ps->unref_page(t->psrc_data,pg->pg);
 		else
 			// free internal (written) pages
 			tk_mfree(t,pg->pg);
 		pg = tmp;
 	}
+
+	// quit the pager here
+	if(t->ps != 0)
+		t->ps->pager_close(t->psrc_data);
 
 	pg = t->stack;
 	while(pg)

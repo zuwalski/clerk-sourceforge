@@ -178,15 +178,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_core\cle_runtime.h"
-				>
-			</File>
-			<File
 				RelativePath=".\cle_core\cle_struct.h"
-				>
-			</File>
-			<File
-				RelativePath=".\cle_core\cle_test.h"
 				>
 			</File>
 			<File
