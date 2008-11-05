@@ -107,6 +107,8 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
 /* Task functions */
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 
+task* tk_clone_task(task* parent);
+
 void tk_drop_task(task* t);
 int tk_commit_task(task* t);
 

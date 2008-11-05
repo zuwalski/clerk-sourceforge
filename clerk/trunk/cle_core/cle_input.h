@@ -39,16 +39,11 @@ typedef struct cle_output
 
 /* output interface end */
 
-/* initializer: call this once(!) before anything else */
-void cle_initialize_system();
-
 /* event input functions */
 typedef struct _ipt_internal _ipt;
 
-_ipt* cle_start(cdat eventid, uint event_len, cdat userid, uint userid_len, char* user_roles[],
-				cle_output* response, void* responsedata, 
-					cle_pagesource* app_source, cle_psrc_data app_source_data, 
-						cle_pagesource* session_source, cle_psrc_data session_source_data);
+_ipt* cle_start(st_ptr config_root, cdat eventid, uint event_len, cdat userid, uint userid_len, char* user_roles[],
+				cle_output* response, void* responsedata, task* app_instance);
 
 void cle_data(_ipt* inpt, cdat data, uint length);
 void cle_pop(_ipt* inpt);
@@ -67,7 +62,7 @@ enum handler_type
 	PIPELINE_RESPONSE
 };
 
-struct sys_event_id
+struct mod_target
 {
 	char handlertype;
 	char appid[2];
@@ -76,6 +71,7 @@ struct sys_event_id
 
 typedef struct sys_handler_data
 {
+	st_ptr config;
 	cdat eventid;
 	uint event_len;
 	cdat userid;
@@ -107,13 +103,21 @@ struct event_handler
 	void* respdata;
 	task* instance_tk;
 	st_ptr instance;
-	struct sys_event_id event_id;
+	struct mod_target target;
 };
 
-/* single threaded calls only */
-void cle_add_sys_handler(cdat eventmask, uint mask_length, cle_syshandler* handler);
+/* setup system-level handler */
+void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
 
-// hook-handler for the core runtimesystem
+/* setup module-level handler */
+void cle_add_mod_handler(task* app_instance, cdat eventmask, uint mask_length, struct mod_target* target);
+
+/* control role-access */
+void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
+
+void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
+
+// hook-ref for the ignite-interpreter
 extern cle_syshandler _runtime_handler;
 
 // thread-subsystem hook
