@@ -36,8 +36,6 @@ uint page_size = 0;
 uint resize_count = 0;
 uint overflow_size = 0;
 
-#define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
-
 #define HIGH_ITERATION_COUNT 1000000
 
 char test1[] = "test1";

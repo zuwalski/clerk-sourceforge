@@ -15,142 +15,202 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "cle_input.h"
-#include "cle_runtime.h"
+#include "cle_stream.h"
 
 /*
 *	The main input-interface to the running system
 *	Events/messages are "pumped" in through the exported set of functions
 */
 
-#define HEAD_TYPE "\0T"
-#define HEAD_APPS  "\0A"
-#define HEAD_USERS "\0u"
+#ifdef CLERK_SINGLE_THREAD
+
+void cle_notify_start(event_handler* handler)
+{
+	while(handler != 0)
+	{
+		if(handler->thehandler->input.start != 0)
+			handler->thehandler->input.start(handler);
+
+		handler = handler->next;
+	}
+}
+
+void cle_notify_next(event_handler* handler, ptr_list* nxtelement)
+{
+	while(handler != 0)
+	{
+		if(handler->thehandler->input.next != 0)
+			handler->thehandler->input.next(handler);
+
+		handler = handler->next;
+	}
+}
+
+void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
+{
+	while(handler != 0)
+	{
+		if(handler->thehandler->input.end != 0)
+			handler->thehandler->input.end(handler,msg,msglength);
+
+		handler = handler->next;
+	}
+}
+
+#endif
+
 #define HEAD_EVENT "\0e"
 #define HEAD_HANDLER "\0h"
 #define HEAD_ROLES "\0r"
 
 // error-messages
-static char input_underflow[] = "input underflow";
-static char input_incomplete[] = "input incomplete";
-static char event_not_allowed[] = "event not allowed";
+static char input_underflow[] = "stream:input underflow";
+static char input_incomplete[] = "stream:input incomplete";
+static char event_not_allowed[] = "stream:event not allowed";
 
-#define _error(txt) ipt->response->end(ipt->respdata,txt,sizeof(txt))
+enum request_state
+{
+	INITIAL = 0
+};
 
 // structs
 struct _ipt_internal
 {
+	task* mem_tk;
+
 	ptr_list* top;
 	ptr_list* free;
-
-	cle_output* response;
-	void* respdata;
+	ptr_list* input;
 
 	event_handler* event_chain_begin;
-
-	ptr_list* input;
-	task* mem_tk;
 
 	sys_handler_data sys;
 
 	uint depth;
+	enum request_state state;
 };
 
-// nil-output-handler (used for async-handlers)
+// nil output-handler
+
 static int _nil1(void* v){return 0;}
 static int _nil2(void* v,cdat c,uint u){return 0;}
-static cle_output _nil_out = {_nil1,_nil2,_nil1,_nil1,_nil2,_nil1};
+static int _nil3(void* v, st_ptr* st){return 0;}
+static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2,_nil3};
 
-// pipeline-output-to-input (chain functions)
-
-static int _po_start(void* hdl)
+// async output-handler
+static int _async_end(void* t, cdat c, uint clen)
 {
-	event_handler* ehdl = (event_handler*)hdl;
-	if(ehdl->thehandler->do_setup != 0)
-		ehdl->thehandler->do_setup(ehdl);
+	// end async-task
+	if(clen == 0)
+		return tk_commit_task((task*)t);
+
+	tk_drop_task((task*)t);
 	return 0;
 }
 
-static int _po_end(void* hdl, cdat msg, uint msglength)
+static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1,_nil1,_nil2,_nil3};
+
+// convenience functions for implementing the cle_pipe-interface
+int cle_standard_pop(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
-	if(ehdl->thehandler->do_end != 0)
-		ehdl->thehandler->do_end(ehdl,msg,msglength);
+	ptr_list* elm = hdl->top;
+	hdl->top = hdl->top->link;
+
+	elm->link = hdl->free;
+	hdl->free = elm;
 	return 0;
 }
 
-static int _po_pop(void* hdl)
+int cle_standard_push(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	ptr_list* elm;
+	if(hdl->free)
+	{
+		elm = hdl->free;
+		hdl->free = elm->link;
+	}
+	else
+		elm = (ptr_list*)tk_alloc(hdl->instance_tk,sizeof(ptr_list));
+
+	elm->pt = hdl->top->pt;
+	elm->link = hdl->top;
 	return 0;
 }
 
-static int _po_push(void* hdl)
+int cle_standard_data(event_handler* hdl, cdat data, uint length)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	st_append(hdl->instance_tk,&hdl->top->pt,data,length);
 	return 0;
 }
 
-static int _po_data(void* hdl, cdat data, uint length)
+int cle_standard_submit(event_handler* hdl, st_ptr* st)
 {
-	event_handler* ehdl = (event_handler*)hdl;
 	return 0;
 }
 
-static int _po_next(void* hdl)
+// pipeline activate All handlers
+
+static int _pa_start(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	cle_notify_start(hdl);
 	return 0;
 }
 
-static cle_output _pipeline_out = {_po_start,_po_end,_po_pop,_po_push,_po_data,_po_next};
-
-// pipeline activate all handlers
-
-static int _pa_start(void* hdl)
+static int _pa_end(event_handler* hdl, cdat msg, uint msglength)
 {
-	event_handler* ehdl = (event_handler*)hdl;
-	if(ehdl->thehandler->do_setup != 0)
-		ehdl->thehandler->do_setup(ehdl);
+	cle_notify_end(hdl,msg,msglength);
 	return 0;
 }
 
-static int _pa_end(void* hdl, cdat msg, uint msglength)
+static int _pa_next(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
-	if(ehdl->thehandler->do_end != 0)
-		ehdl->thehandler->do_end(ehdl,msg,msglength);
+	cle_notify_next(hdl,hdl->top);
 	return 0;
 }
 
-static int _pa_pop(void* hdl)
+static int _pa_pop(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	while(hdl != 0)
+	{
+		cle_standard_pop(hdl);
+		hdl = hdl->next;
+	}
 	return 0;
 }
 
-static int _pa_push(void* hdl)
+static int _pa_push(event_handler* hdl)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	while(hdl != 0)
+	{
+		cle_standard_push(hdl);
+		hdl = hdl->next;
+	}
 	return 0;
 }
 
-static int _pa_data(void* hdl, cdat data, uint length)
+static int _pa_data(event_handler* hdl, cdat data, uint length)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	while(hdl != 0)
+	{
+		cle_standard_data(hdl,data,length);
+		hdl = hdl->next;
+	}
 	return 0;
 }
 
-static int _pa_next(void* hdl)
+static int _pa_submit(event_handler* hdl, st_ptr* st)
 {
-	event_handler* ehdl = (event_handler*)hdl;
+	while(hdl != 0)
+	{
+		cle_standard_submit(hdl,st);
+		hdl = hdl->next;
+	}
 	return 0;
 }
 
-static cle_output _pipeline_all = {_pa_start,_pa_end,_pa_pop,_pa_push,_pa_data,_pa_next};
+static cle_pipe _pipeline_all = {_pa_start,_pa_next,_pa_end,_pa_pop,_pa_push,_pa_data,_pa_submit};
 
-
-static ptr_list* _new_ptr_stack(_ipt* ipt, task* t, st_ptr* pt, ptr_list* link)
+static ptr_list* _new_ptr_stack(_ipt* ipt, st_ptr* pt, ptr_list* link)
 {
 	ptr_list* elm;
 	if(ipt->free)
@@ -163,7 +223,6 @@ static ptr_list* _new_ptr_stack(_ipt* ipt, task* t, st_ptr* pt, ptr_list* link)
 
 	elm->pt = *pt;
 	elm->link = link;
-	elm->t = t;
 
 	return elm;
 }
@@ -192,23 +251,39 @@ void cle_add_mod_handler(task* app_instance, cdat eventmask, uint mask_length, s
 
 /* control role-access */
 void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
-{}
+{
+	it_ptr it;
+	st_ptr root;
+	tk_root_ptr(app_instance,&root);
+
+	st_insert(app_instance,&root,eventmask,mask_length);
+
+	st_insert(app_instance,&root,HEAD_ROLES,HEAD_SIZE);
+
+	it_create(app_instance,&it,&root);
+
+	it_new(app_instance,&it,&root);
+
+	it_dispose(app_instance,&it);
+
+	st_insert(app_instance,&root,role,role_length);
+}
 
 void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {}
 
 // input-functions
+#define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				cdat userid, uint userid_len, char* user_roles[],
-					cle_output* response, void* responsedata, task* app_instance)
+					cle_pipe* response, void* responsedata, task* app_instance)
 {
 	_ipt* ipt;
 	event_handler* hdlists[4];
 	event_handler* hdl;
-	int from,i,allowed;
-
 	st_ptr pt,eventpt,syspt,instance;
+	int from,i,allowed;
 
 	// ipt setup - internal task
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt));
@@ -219,9 +294,6 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 	if(response == 0)
 		response = &_nil_out;
-
-	ipt->response = response;
-	ipt->respdata = responsedata;
 
 	ipt->sys.config = config;
 	ipt->sys.eventid = eventid;
@@ -396,12 +468,13 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 		do
 		{
-			// "no output"-handler on all async's
-			hdl->response = &_nil_out;
-
 			// put in separat tasks/transactions
 			hdl->instance_tk = tk_clone_task(app_instance);
 			tk_root_ptr(hdl->instance_tk,&hdl->instance);
+
+			// "no output"-handler on all async's
+			hdl->response = &_async_out;
+			hdl->respdata = hdl->instance_tk;
 
 			hdl = hdl->next;
 		}
@@ -413,9 +486,6 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	{
 		event_handler* sync_handler = hdlists[SYNC_REQUEST_HANDLER];
 
-		sync_handler->instance_tk = app_instance;
-		sync_handler->instance = instance;
-
 		// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
 		// setup response-handler chain (only make sense with sync handlers)
 		if(hdlists[PIPELINE_RESPONSE] != 0)
@@ -424,20 +494,17 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// in correct order (most specific handler comes first)
 			hdl = hdlists[PIPELINE_RESPONSE];
 
-			// sync-handler outputs through this chain
-			sync_handler->response = &_pipeline_out;
-			sync_handler->respdata = hdl;
-
+			last = sync_handler;
 			do
 			{
-				last = hdl;
-				hdl->response = &_pipeline_out;
-				hdl->respdata = hdl->next;
+				last->response = &hdl->thehandler->input;
+				last->respdata = hdl;
 
 				// same task as request-handler
-				hdl->instance_tk = app_instance;
-				hdl->instance = instance;
+				last->instance_tk = app_instance;
+				last->instance = instance;
 
+				last = hdl;
 				hdl = hdl->next;
 			}
 			while(hdl != 0);
@@ -445,11 +512,17 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// and finally the original output-target
 			last->response = response;
 			last->respdata = responsedata;
+
+			last->instance_tk = app_instance;
+			last->instance = instance;
 		}
 		else
 		{
 			sync_handler->response = response;
 			sync_handler->respdata = responsedata;
+
+			sync_handler->instance_tk = app_instance;
+			sync_handler->instance = instance;
 		}
 
 		sync_handler->next = ipt->event_chain_begin;
@@ -459,14 +532,14 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	// setup request-handler chain
 	if(hdlists[PIPELINE_REQUEST] != 0)
 	{
-		// inverse order (most general handlers comes first)
+		// reverse order (most general handlers comes first)
 		event_handler* last;
-		cle_output* resp;
+		cle_pipe* resp;
 		void* data = ipt->event_chain_begin;
 
 		// just a single receiver -> just (hard)chain together
-		if(ipt->event_chain_begin->next == 0)
-			resp = &_pipeline_out;
+		if(ipt->event_chain_begin->next != 0)
+			resp = &ipt->event_chain_begin->thehandler->input;
 		else
 			resp = &_pipeline_all;
 
@@ -481,7 +554,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			hdl->instance_tk = app_instance;
 			hdl->instance = instance;
 
-			resp = &_pipeline_out;
+			resp = &hdl->thehandler->input;
 			data = hdl;
 
 			hdl = hdl->next;
@@ -492,11 +565,10 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		ipt->event_chain_begin = last;
 	}
 
-	if(cle_notify_start(ipt->event_chain_begin,&ipt->sys))
-		return 0;
-
 	// prepare for event-stream
 	st_empty(app_instance,&ipt->top->pt);
+
+	cle_notify_start(ipt->event_chain_begin);
 	return ipt;
 }
 
@@ -509,11 +581,11 @@ void cle_next(_ipt* ipt)
 
 	if(ipt->depth != 0)
 	{
-		_error(input_incomplete);
+		cle_end(ipt,input_incomplete,sizeof(input_incomplete));
 		return;
 	}
 
-	elm = _new_ptr_stack(ipt,ipt->mem_tk,&ipt->top->pt,0);
+	elm = _new_ptr_stack(ipt,&ipt->top->pt,0);
 
 	if(ipt->input != 0)
 		ipt->input->link = elm;
@@ -521,32 +593,11 @@ void cle_next(_ipt* ipt)
 	ipt->input = elm;
 	ipt->depth = 0;
 
-	// run handler next's
-	if(cle_notify_next(ipt->event_chain_begin,&ipt->sys,elm))
-		return;
-
 	// done processing .. clear and ready for next
 	st_empty(ipt->mem_tk,&ipt->top->pt);
-}
-
-void cle_submit(_ipt* ipt, task* t, st_ptr* root)
-{
-	event_handler* hdl;
-	ptr_list* elm;
-
-	if(ipt == 0 || ipt->sys.error != 0)
-		return;
-
-	elm = _new_ptr_stack(ipt,t,root,0);
-
-	if(ipt->input != 0)
-		ipt->input->link = elm;
-
-	ipt->input = elm;
 
 	// run handler next's
-	if(cle_notify_next(ipt->event_chain_begin,&ipt->sys,elm))
-		return;
+	cle_notify_next(ipt->event_chain_begin,elm);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
@@ -567,7 +618,7 @@ void cle_end(_ipt* ipt, cdat code, uint length)
 		ipt->sys.error = "";
 
 	// run handlers end
-	cle_notify_end(ipt->event_chain_begin,&ipt->sys);
+	cle_notify_end(ipt->event_chain_begin,code,length);
 }
 
 void cle_pop(_ipt* ipt)
@@ -578,7 +629,7 @@ void cle_pop(_ipt* ipt)
 
 	if(ipt->depth == 0)
 	{
-		_error(input_underflow);
+		cle_end(ipt,input_underflow,sizeof(input_underflow));
 		return;
 	}
 
@@ -596,7 +647,7 @@ void cle_push(_ipt* ipt)
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
-	ipt->top = _new_ptr_stack(ipt,ipt->mem_tk,&ipt->top->pt,ipt->top);
+	ipt->top = _new_ptr_stack(ipt,&ipt->top->pt,ipt->top);
 
 	ipt->depth++;
 }
@@ -607,4 +658,17 @@ void cle_data(_ipt* ipt, cdat data, uint length)
 		return;
 
 	st_append(ipt->mem_tk,&ipt->top->pt,data,length);
+}
+
+void cle_submit(_ipt* ipt, st_ptr* root)
+{
+	if(ipt == 0 || ipt->sys.error != 0)
+		return;
+
+	if(ipt->depth == 0 && st_is_empty(&ipt->top->pt))
+		ipt->top->pt = *root;
+	else
+	{
+		// pointer to "root" from "top"
+	}
 }
