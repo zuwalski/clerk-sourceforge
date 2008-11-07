@@ -515,15 +515,18 @@ void test_task_c_filepager()
 
 int main(int argc, char* argv[])
 {
-	test_struct_c();
+	//test_struct_c();
 
-	time_struct_c();
+	//time_struct_c();
 
-	test_iterate_c();
+	//test_iterate_c();
 
-	test_task_c();
+	//test_task_c();
 
-	test_task_c_filepager();
+	//test_task_c_filepager();
+
+
+	test_stream_c();
 
 	// test
 	puts("\nTesting done...");

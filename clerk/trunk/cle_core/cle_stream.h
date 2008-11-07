@@ -118,6 +118,8 @@ void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat r
 
 void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
+void cle_format_instance(task* app_instance);
+
 // convenience-functions for implementing the cle_pipe-interface
 int cle_standard_pop(event_handler* hdl);
 int cle_standard_push(event_handler* hdl);

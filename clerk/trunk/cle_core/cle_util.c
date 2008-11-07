@@ -25,6 +25,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#ifdef CLERK_SINGLE_THREAD
+
 /*
 	simple mem pager
 */
@@ -302,3 +304,6 @@ int filepager_get_pagecount(cle_psrc_data pd)
 	struct _file_psrc_data* fd = (struct _file_psrc_data*)pd;
 	return fd->header.pagecount;
 }
+
+#endif	// #ifdef CLERK_SINGLE_THREAD
+

@@ -38,6 +38,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
+				PreprocessorDefinitions="CLERK_SINGLE_THREAD"
 				RuntimeLibrary="1"
 				DebugInformationFormat="1"
 			/>

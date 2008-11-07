@@ -98,13 +98,13 @@ static int _nil3(void* v, st_ptr* st){return 0;}
 static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2,_nil3};
 
 // async output-handler
-static int _async_end(void* t, cdat c, uint clen)
+static int _async_end(event_handler* hdl, cdat c, uint clen)
 {
 	// end async-task
 	if(clen == 0)
-		return tk_commit_task((task*)t);
+		return tk_commit_task(hdl->instance_tk);
 
-	tk_drop_task((task*)t);
+	tk_drop_task(hdl->instance_tk);
 	return 0;
 }
 
@@ -234,7 +234,7 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 
 	st_insert(config_task,&config_root,eventmask,mask_length);
 
-	st_insert(config_task,&config_root,HEAD_EVENT,HEAD_SIZE);
+	st_insert(config_task,&config_root,HEAD_HANDLER,HEAD_SIZE);
 
 	if(st_get(config_task,&config_root,(char*)&exsisting,sizeof(cle_syshandler*)) == -1)
 		// prepend to list
@@ -252,19 +252,20 @@ void cle_add_mod_handler(task* app_instance, cdat eventmask, uint mask_length, s
 /* control role-access */
 void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {
-	it_ptr it;
 	st_ptr root;
+
+	// max length!
+	if(role_length > 255)
+		return;
+
 	tk_root_ptr(app_instance,&root);
+
+	if(st_move(app_instance,&root,HEAD_EVENT,HEAD_SIZE) != 0)
+		return;
 
 	st_insert(app_instance,&root,eventmask,mask_length);
 
 	st_insert(app_instance,&root,HEAD_ROLES,HEAD_SIZE);
-
-	it_create(app_instance,&it,&root);
-
-	it_new(app_instance,&it,&root);
-
-	it_dispose(app_instance,&it);
 
 	st_insert(app_instance,&root,role,role_length);
 }
@@ -272,8 +273,20 @@ void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat r
 void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {}
 
+void cle_format_instance(task* app_instance)
+{
+	st_ptr root;
+	tk_root_ptr(app_instance,&root);
+
+	// all clear
+	st_delete(app_instance,&root,0,0);
+
+	// insert event-hook
+	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
+}
+
 // input-functions
-#define _error(txt) response->end(responsedata,txt,sizeof(txt))
+#define _error(txt) response->start(responsedata);response->end(responsedata,txt,sizeof(txt))
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				cdat userid, uint userid_len, char* user_roles[],
@@ -289,6 +302,8 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt));
 	// default null
 	memset(ipt,0,sizeof(_ipt));
+
+	memset(hdlists,0,sizeof(hdlists));
 
 	ipt->mem_tk = app_instance;
 
@@ -329,27 +344,21 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			continue;
 
 		// lookup event-part (module-level)
-		if(eventpt.pg != 0 && st_move(app_instance,&eventpt,eventid + from,i - from) != 0)
+		if(eventpt.pg != 0 && st_move(app_instance,&eventpt,eventid + from,i + 1 - from) != 0)
 		{
 			eventpt.pg = 0;
-			// not found! No such event allowed/no possible end-handlers
-			if(syspt.pg == 0)
-			{
-				allowed = 0;
+			// not found! scan end (or no possible grants)
+			if(syspt.pg == 0 || allowed == 0)
 				break;
-			}
 		}
 
 		// lookup system-level handlers
-		if(syspt.pg != 0 && st_move(0,&syspt,eventid + from,i - from) != 0)
+		if(syspt.pg != 0 && st_move(0,&syspt,eventid + from,i + 1 - from) != 0)
 		{
 			syspt.pg = 0;
-			// not found! No such event allowed/no possible end-handlers
+			// not found! scan end
 			if(eventpt.pg == 0)
-			{
-				allowed = 0;
 				break;
-			}
 		}
 
 		// lookup allowed roles (if no access yet)
@@ -366,30 +375,42 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 				while(allowed == 0 && user_roles[r] != 0)
 				{
+					int cmp;
 					it_load(app_instance,&it,user_roles[r] + 1,*user_roles[r]);
 
-					if(it_next_eq(app_instance,&pt,&it) == 0)
-						break;
-
-					do
+					cmp = it_next_eq(app_instance,&pt,&it);
+					if(cmp == 0)
 					{
-						int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
+						allowed = 1;
+						break;
+					}
+
+					for(r++;user_roles[r] != 0;r++)
+					{
+						cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
 						if(cmp > 0)
 							break;
-						else if(cmp == 0)
-						{
-							if(it.kused == *user_roles[r])
-							{
-								allowed = 1;
-								break;
-							}
-							else if(it.kused < *user_roles[r])
-								break;
-						}
-						
-						r++;
 					}
-					while(user_roles[r] != 0);
+
+					//do
+					//{
+					//	int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
+					//	if(cmp > 0)
+					//		break;
+					//	else if(cmp == 0)
+					//	{
+					//		if(it.kused == *user_roles[r])
+					//		{
+					//			allowed = 1;
+					//			break;
+					//		}
+					//		else if(it.kused < *user_roles[r])
+					//			break;
+					//	}
+					//	
+					//	r++;
+					//}
+					//while(user_roles[r] != 0);
 				}
 
 				it_dispose(app_instance,&it);
@@ -474,7 +495,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 			// "no output"-handler on all async's
 			hdl->response = &_async_out;
-			hdl->respdata = hdl->instance_tk;
+			hdl->respdata = hdl;
 
 			hdl = hdl->next;
 		}
