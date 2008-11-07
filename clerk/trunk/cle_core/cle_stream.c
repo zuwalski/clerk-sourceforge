@@ -380,6 +380,8 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 					cmp = it_next_eq(app_instance,&pt,&it);
 					if(cmp == 0)
+						break;
+					else if(cmp == 2)
 					{
 						allowed = 1;
 						break;
@@ -388,29 +390,14 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					for(r++;user_roles[r] != 0;r++)
 					{
 						cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
-						if(cmp > 0)
+						if(cmp == 0)
+						{
+							allowed = 1;
+							break;
+						}
+						else if(cmp > 0)
 							break;
 					}
-
-					//do
-					//{
-					//	int cmp = memcmp(user_roles[r] + 1,it.kdata,it.kused < *user_roles[r]?it.kused:*user_roles[r]);
-					//	if(cmp > 0)
-					//		break;
-					//	else if(cmp == 0)
-					//	{
-					//		if(it.kused == *user_roles[r])
-					//		{
-					//			allowed = 1;
-					//			break;
-					//		}
-					//		else if(it.kused < *user_roles[r])
-					//			break;
-					//	}
-					//	
-					//	r++;
-					//}
-					//while(user_roles[r] != 0);
 				}
 
 				it_dispose(app_instance,&it);
@@ -587,6 +574,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	}
 
 	// prepare for event-stream
+	ipt->top = _new_ptr_stack(ipt,&pt,0);
 	st_empty(app_instance,&ipt->top->pt);
 
 	cle_notify_start(ipt->event_chain_begin);
