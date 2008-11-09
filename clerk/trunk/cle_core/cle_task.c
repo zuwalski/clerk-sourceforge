@@ -230,7 +230,7 @@ void* tk_alloc(task* t, uint size)
 {
 	uint offset;
 	page* pg = t->stack->pg;
-	if(pg->used + size + 3 > PAGE_SIZE)
+	if(pg->used + size + 7 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
 			return 0;
@@ -239,8 +239,8 @@ void* tk_alloc(task* t, uint size)
 	}
 
 	pg = t->stack->pg;
-	if(pg->used & 3)
-		pg->used += 4 - (pg->used & 3);
+	if(pg->used & 7)
+		pg->used += 8 - (pg->used & 7);
 
 	offset = pg->used;
 	pg->used += size;
@@ -698,64 +698,77 @@ int tk_commit_task(task* t)
 {
 	page_wrap* pgw = t->wpages;
 	int ret = 0;
-	while(pgw != 0 && ret == 0)
+	int have_pages_written = 0;
+	while(pgw != 0)
 	{
 		page_wrap* tmp = pgw->next;
 		page* pg = pgw->pg;
 
-		/* overflowed or underflow? */
-		if(pgw->ovf || pg->waste > pg->size/2)
+		// written to?
+		if(pg->id == 0)
 		{
-			struct _tk_create map;
-			map.dest = tk_malloc(t,pg->size);
-			map.dest->size = pg->size;
-			map.dest->waste = 0;
+			have_pages_written = 1;
 
-			map.halfsize = pg->size << 2;
-			map.fullsize = pg->size << 3;
-
-			map.t = t;
-			map.lastkey = 0;
-
-			// pick up parent and rebuild from there (if not root)
-			if(pgw->parent != 0)
+			/* overflowed or underflow? */
+			if(pgw->ovf || pg->waste > pg->size/2)
 			{
-				map.id = pg->id;
-				map.pg = pgw;
-				pgw = pgw->parent;
+				struct _tk_create map;
+				map.dest = tk_malloc(t,pg->size);
+				map.dest->size = pg->size;
+				map.dest->waste = 0;
+
+				map.halfsize = pg->size << 2;
+				map.fullsize = pg->size << 3;
+
+				map.t = t;
+				map.lastkey = 0;
+
+				// pick up parent and rebuild from there (if not root)
+				if(pgw->parent != 0)
+				{
+					map.id = pg->id;
+					map.pg = pgw;
+					pgw = pgw->parent;
+				}
+				else
+				{
+					map.id = 0;
+					map.pg = 0;
+				}
+
+				_tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
+
+				// reset and copy remaing rootpage
+				map.dest->used = sizeof(page);
+				_tk_deep_copy(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
+
+				t->ps->write_page(t->psrc_data,pgw->ext_pageid,map.dest);
+
+				// release old (now rebuild) page (if we found parent)
+				if(map.id != 0)
+					t->ps->remove_page(t->psrc_data,map.id);
+
+				tk_mfree(t,map.dest);
 			}
 			else
-			{
-				map.id = 0;
-				map.pg = 0;
-			}
+			/* just write it */
+				t->ps->write_page(t->psrc_data,pgw->ext_pageid,pg);
 
-			_tk_measure(&map,pgw,0,GOKEY(pgw,sizeof(page)));
-
-			// reset and copy remaing rootpage
-			map.dest->used = sizeof(page);
-			_tk_deep_copy(&map,pgw,0,GOKEY(pgw,sizeof(page)),0);
-
-			t->ps->write_page(t->psrc_data,pgw->ext_pageid,map.dest);
-
-			// release old (now rebuild) page (if we found parent)
-			if(map.id != 0)
-				t->ps->remove_page(t->psrc_data,map.id);
-
-			tk_mfree(t,map.dest);
+			ret = t->ps->pager_error(t->psrc_data);
+			if(ret != 0)
+				break;
 		}
-		else
-		/* just write it */
-			t->ps->write_page(t->psrc_data,pgw->ext_pageid,pg);
 
-		ret = t->ps->pager_error(t->psrc_data);
 		pgw = tmp;
 	}
 
-	if(ret == 0)
-		ret = t->ps->pager_commit(t->psrc_data);
-	else
-		t->ps->pager_rollback(t->psrc_data);
+	if(have_pages_written)
+	{
+		if(ret == 0)
+			ret = t->ps->pager_commit(t->psrc_data);
+		else
+			t->ps->pager_rollback(t->psrc_data);
+	}
 
 	tk_drop_task(t);
 

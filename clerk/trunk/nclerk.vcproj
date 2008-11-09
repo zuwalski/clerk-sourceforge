@@ -41,6 +41,7 @@
 				PreprocessorDefinitions="CLERK_SINGLE_THREAD"
 				RuntimeLibrary="1"
 				DebugInformationFormat="1"
+				CompileAs="1"
 			/>
 			<Tool
 				Name="VCManagedResourceCompilerTool"
@@ -96,6 +97,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				WholeProgramOptimization="true"
+				PreprocessorDefinitions="CLERK_SINGLE_THREAD"
 				ExceptionHandling="0"
 				BufferSecurityCheck="false"
 				EnableEnhancedInstructionSet="0"

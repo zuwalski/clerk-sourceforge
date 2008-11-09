@@ -484,7 +484,7 @@ void it_load(task* t, it_ptr* it, cdat path, uint length)
 {
 	if(it->ksize < length)
 	{
-		it->ksize = length;
+		it->ksize = length + IT_GROW_SIZE;
 		it->kdata = (uchar*)tk_realloc(t,it->kdata,it->ksize);
 	}
 

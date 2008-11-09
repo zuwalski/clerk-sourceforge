@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <malloc.h>
+#include <errno.h>
 #include "test.h"
 
 void unimplm()
@@ -513,20 +515,54 @@ void test_task_c_filepager()
 	tk_drop_task(t);
 }
 
+void heap_check()
+{
+   int heapstatus = _heapchk();
+   switch( heapstatus )
+   {
+   case _HEAPOK:
+      printf(" OK - heap is fine\n" );
+      break;
+   case _HEAPEMPTY:
+      printf(" OK - heap is empty\n" );
+      break;
+   case _HEAPBADBEGIN:
+      printf( "ERROR - bad start of heap\n" );
+      break;
+   case _HEAPBADNODE:
+      printf( "ERROR - bad node in heap\n" );
+      break;
+   default:
+      printf( "ERROR - other\n" );
+   }
+
+}
+
 int main(int argc, char* argv[])
 {
 	test_struct_c();
 
+	heap_check();
+
 	time_struct_c();
+
+	heap_check();
 
 	test_iterate_c();
 
+	heap_check();
+
 	test_task_c();
+
+	heap_check();
 
 	test_task_c_filepager();
 
+	heap_check();
 
 	test_stream_c();
+
+	heap_check();
 
 	// test
 	puts("\nTesting done...");
