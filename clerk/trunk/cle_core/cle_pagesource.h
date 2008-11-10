@@ -43,6 +43,7 @@ typedef struct cle_pagesource
 	int (*pager_commit)(cle_psrc_data);
 	int (*pager_rollback)(cle_psrc_data);
 	int (*pager_close)(cle_psrc_data);
+	cle_psrc_data (*pager_clone)(cle_psrc_data);
 }
 cle_pagesource;
 

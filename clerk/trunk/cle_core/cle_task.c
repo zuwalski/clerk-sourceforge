@@ -324,7 +324,8 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 
 task* tk_clone_task(task* parent)
 {
-	return tk_create_task(parent->ps,parent->psrc_data);
+	return tk_create_task(parent->ps,(parent->ps == 0)? 0 :
+		parent->ps->pager_clone(parent->psrc_data));
 }
 
 void tk_drop_task(task* t)

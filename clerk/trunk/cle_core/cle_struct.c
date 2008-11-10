@@ -546,6 +546,24 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 	pt->pg  = pg;
 	return read;
 }
+
+uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
+{
+	struct _st_lkup_res rt;
+
+	// the same task
+	if(t == t_from)
+	{}
+	// ref to same page
+	else if(from->pg->pg->id != 0)
+	{}
+	// copy all
+	else
+	{}
+
+	return 0;
+}
+
 /*
 // should use repeatede calls to st_get(...) with own buffer
 char* st_get_all(task* t, st_ptr* pt, uint* length)

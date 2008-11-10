@@ -75,6 +75,10 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length);
 
+//if task's are the same then create a simple pointer
+//not same: copy from one task to the other
+uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from);
+
 /*
 uint st_offset(st_ptr* pt, uint offset);
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);

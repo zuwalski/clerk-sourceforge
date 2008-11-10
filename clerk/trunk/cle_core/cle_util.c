@@ -103,9 +103,14 @@ static int mem_pager_simple(cle_psrc_data pd)
 	return 0;
 }
 
+static cle_psrc_data mem_pager_clone(cle_psrc_data dat)
+{
+	return dat;
+}
+
 cle_pagesource util_memory_pager = 
 {
-	mem_new_page,mem_read_page,mem_write_page,mem_remove_page,mem_unref_page,mem_pager_simple,mem_pager_simple,mem_pager_simple,mem_pager_simple
+	mem_new_page,mem_read_page,mem_write_page,mem_remove_page,mem_unref_page,mem_pager_simple,mem_pager_simple,mem_pager_simple,mem_pager_simple,mem_pager_clone
 };
 
 cle_psrc_data util_create_mempager()
@@ -252,17 +257,33 @@ static int file_pager_close(cle_psrc_data pd)
 	return 0;
 }
 
+static cle_psrc_data file_pager_clone(cle_psrc_data pd)
+{
+	struct _file_psrc_data* fd = (struct _file_psrc_data*)pd;
+	struct _file_psrc_data* new_fd = (struct _file_psrc_data*)malloc(sizeof(struct _file_psrc_data));
+	if(new_fd == 0)
+		return 0;
+
+	new_fd->fh = _dup(fd->fh);
+	new_fd->header = fd->header;
+
+	return new_fd;
+}
+
 cle_pagesource util_file_pager = 
 {
-	file_new_page,file_read_page,file_write_page,file_remove_page,file_unref_page,file_pager_error,file_pager_commit,file_pager_rollback,file_pager_close
+	file_new_page,file_read_page,file_write_page,file_remove_page,file_unref_page,file_pager_error,file_pager_commit,file_pager_rollback,file_pager_close,file_pager_clone
 };
 
 
 cle_psrc_data util_create_filepager(const char* filename)
 {
 	struct _file_psrc_data* fd = (struct _file_psrc_data*)malloc(sizeof(struct _file_psrc_data));
+	errno_t err;
+	if(fd == 0)
+		return 0;
 
-	errno_t err = _sopen_s(&fd->fh,filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
+	err = _sopen_s(&fd->fh,filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
 
 	if(err != 0)
 	{

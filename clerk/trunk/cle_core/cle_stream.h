@@ -31,11 +31,11 @@ typedef struct cle_pipe
 {
 	int (*start)(void*);
 	int (*next)(void*);
-	int (*end)(void*,cdat,uint);
-	int (*pop)(void*);
-	int (*push)(void*);
-	int (*data)(void*,cdat,uint);
-	int (*submit)(void*,st_ptr*);
+	void (*end)(void*,cdat,uint);
+	void (*pop)(void*);
+	void (*push)(void*);
+	void (*data)(void*,cdat,uint);
+	void (*submit)(void*,task*,st_ptr*);
 } cle_pipe;
 
 /* output interface end */
@@ -51,7 +51,7 @@ void cle_end(_ipt* inpt, cdat code, uint length);
 void cle_pop(_ipt* inpt);
 void cle_push(_ipt* inpt);
 void cle_data(_ipt* inpt, cdat data, uint length);
-void cle_submit(_ipt* inpt, st_ptr* root);
+void cle_submit(_ipt* inpt, task* t, st_ptr* root);
 
 // system-event-handlers
 
@@ -121,14 +121,14 @@ void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat 
 void cle_format_instance(task* app_instance);
 
 // convenience-functions for implementing the cle_pipe-interface
-int cle_standard_pop(event_handler* hdl);
-int cle_standard_push(event_handler* hdl);
-int cle_standard_data(event_handler* hdl, cdat data, uint length);
-int cle_standard_submit(event_handler* hdl, st_ptr* st);
+void cle_standard_pop(event_handler* hdl);
+void cle_standard_push(event_handler* hdl);
+void cle_standard_data(event_handler* hdl, cdat data, uint length);
+void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
 // thread-subsystem hook
 void cle_notify_start(event_handler* handler);
-void cle_notify_next(event_handler* handler, ptr_list* nxtelement);
+void cle_notify_next(event_handler* handler, st_ptr nxtelement);
 void cle_notify_end(event_handler* handler, cdat msg, uint msglength);
 
 // hook-ref for the ignite-interpreter

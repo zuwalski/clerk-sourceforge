@@ -38,8 +38,6 @@ uint page_size = 0;
 uint resize_count = 0;
 uint overflow_size = 0;
 
-#define HIGH_ITERATION_COUNT 1000000
-
 char test1[] = "test1";
 char test1x2[] = "test1\0test1";
 char test2[] = "t1set";
