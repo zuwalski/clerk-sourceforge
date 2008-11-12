@@ -155,6 +155,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_core\cle_instance.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_iterate.c"
 				>
 			</File>
@@ -168,10 +172,6 @@
 			</File>
 			<File
 				RelativePath=".\cle_core\cle_task.c"
-				>
-			</File>
-			<File
-				RelativePath=".\cle_core\cle_util.c"
 				>
 			</File>
 		</Filter>
@@ -189,6 +189,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_core\cle_instance.h"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_pagesource.h"
 				>
 			</File>
@@ -198,10 +202,6 @@
 			</File>
 			<File
 				RelativePath=".\cle_core\cle_struct.h"
-				>
-			</File>
-			<File
-				RelativePath=".\cle_core\cle_util.h"
 				>
 			</File>
 		</Filter>

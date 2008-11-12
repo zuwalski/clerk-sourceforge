@@ -134,13 +134,4 @@ extern uint page_size;
 extern uint resize_count;
 extern uint overflow_size;
 
-#define HEAD_SIZE 2
-#define HEAD_FUNCTION "\0F"
-#define HEAD_EXPR "\0E"
-#define HEAD_INT "\0I"
-#define HEAD_STR "\0S"
-#define HEAD_NEXT "\0N"
-
-
-
 #endif

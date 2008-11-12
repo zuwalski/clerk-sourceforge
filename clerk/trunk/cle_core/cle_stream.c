@@ -16,6 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_stream.h"
+#include "cle_instance.h"
 
 /*
 *	The main input-interface to the running system
@@ -64,10 +65,6 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
 }
 
 #endif
-
-#define HEAD_EVENT "\0e"
-#define HEAD_HANDLER "\0h"
-#define HEAD_ROLES "\0r"
 
 // error-messages
 static char input_underflow[] = "stream:input underflow";
@@ -217,82 +214,6 @@ static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop
 void cle_stream_leave(event_handler* hdl)
 {
 	hdl->thehandler = &_copy_handler;
-}
-
-/* system event-handler setup */
-void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
-{
-	cle_syshandler* exsisting;
-
-	st_insert(config_task,&config_root,eventmask,mask_length);
-
-	st_insert(config_task,&config_root,HEAD_HANDLER,HEAD_SIZE);
-
-	if(st_get(config_task,&config_root,(char*)&exsisting,sizeof(cle_syshandler*)) == -1)
-		// prepend to list
-		handler->next_handler = exsisting;
-	else
-		handler->next_handler = 0;
-
-	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
-}
-
-/* setup module-level handler */
-void cle_add_mod_handler(task* app_instance, cdat eventmask, uint mask_length, struct mod_target* target)
-{}
-
-/* control role-access */
-void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
-{
-	st_ptr root;
-
-	// max length!
-	if(role_length > 255)
-		return;
-
-	tk_root_ptr(app_instance,&root);
-
-	if(st_move(app_instance,&root,HEAD_EVENT,HEAD_SIZE) != 0)
-		return;
-
-	st_insert(app_instance,&root,eventmask,mask_length);
-
-	st_insert(app_instance,&root,HEAD_ROLES,HEAD_SIZE);
-
-	st_insert(app_instance,&root,role,role_length);
-}
-
-void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
-{}
-
-void cle_give_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
-{}
-
-void cle_format_instance(task* app_instance)
-{
-	st_ptr root;
-	tk_root_ptr(app_instance,&root);
-
-	// all clear
-	st_delete(app_instance,&root,0,0);
-
-	// insert event-hook
-	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
-}
-
-cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
-{
-	cle_syshandler hdl;
-	hdl.next_handler = 0;
-	hdl.input.start = start;
-	hdl.input.next = next;
-	hdl.input.end = end;
-	hdl.input.pop = cle_standard_pop;
-	hdl.input.push = cle_standard_push;
-	hdl.input.data = cle_standard_data;
-	hdl.input.submit = cle_standard_submit;
-	hdl.systype = type;
-	return hdl;
 }
 
 // input-functions

@@ -19,11 +19,14 @@
 /*
 	Dev-functions:
 	dev.new.object , objectname
-	dev.new [.<extend-objectname>] , objectname
-	dev.set.<val|expr>.<objectname> , path.path , value	'if expr -> value is compiled else raw-copy
+	dev.new.<extend-objectname> , objectname
+	dev.set.val.<objectname> , path.path , value
+	dev.set.expr.<objectname> , path.path , expr
+	dev.set.state.<objectname> , state
+	dev.set.handler.<objectname> , state, event, handler
 
 */
-#include "cle_stream.h"
+#include "cle_instance.h"
 
 static const char _new_object_name[] = "dev.new.object";
 static const char _new_extends_name[] = "dev.new";
@@ -39,14 +42,33 @@ static cle_syshandler _set_expr;
 static cle_syshandler _set_state;
 static cle_syshandler _set_handler;
 
+static const char _illegal_argument[] = "dev:illegal argument";
+
+static void new_object_next(event_handler* hdl)
+{
+	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0) < 2)
+		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+	else
+		cle_stream_end(hdl);
+}
+
+static void new_extends_name_next(event_handler* hdl)
+{
+	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
+	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
+
+	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->top->pt,0) < 2)
+		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+	else
+		cle_stream_end(hdl);
+}
+
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
 {
-	//_allow_role = cle_create_simple_handler(0,allow_next,0,SYNC_REQUEST_HANDLER);
-	//_revoke_role = cle_create_simple_handler(0,revoke_next,0,SYNC_REQUEST_HANDLER);
-	//_give_role = cle_create_simple_handler(0,give_next,0,SYNC_REQUEST_HANDLER);
+	_new_object = cle_create_simple_handler(0,new_object_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_new_object_name,sizeof(_new_object_name),&_new_object);
 
-	//cle_add_sys_handler(config_t,*config_root,_allow_role_name,sizeof(_allow_role_name),&_allow_role);
-	//cle_add_sys_handler(config_t,*config_root,_revoke_role_name,sizeof(_revoke_role_name),&_revoke_role);
-	//cle_add_sys_handler(config_t,*config_root,_give_role_name,sizeof(_give_role_name),&_give_role);
+	_new_extends = cle_create_simple_handler(0,new_extends_name_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_new_extends_name,sizeof(_new_extends_name),&_new_extends);
 }

@@ -15,8 +15,8 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#ifndef __CLE_INPUT_H__
-#define __CLE_INPUT_H__
+#ifndef __CLE_STREAM_H__
+#define __CLE_STREAM_H__
 
 #include "cle_clerk.h"
 #include "cle_pagesource.h"
@@ -111,21 +111,6 @@ struct event_handler
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen);
 void cle_stream_end(event_handler* hdl);
 void cle_stream_leave(event_handler* hdl);
-
-/* setup system-level handler */
-void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
-
-/* setup module-level handler */
-void cle_add_mod_handler(task* app_instance, cdat eventmask, uint mask_length, struct mod_target* target);
-
-/* control role-access */
-void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
-void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
-void cle_give_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
-void cle_format_instance(task* app_instance);
 
 // convenience-functions for implementing the cle_pipe-interface
 void cle_standard_pop(event_handler* hdl);
