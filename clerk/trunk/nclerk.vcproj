@@ -143,6 +143,14 @@
 			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
 			>
 			<File
+				RelativePath=".\cle_core\cle_admin.c"
+				>
+			</File>
+			<File
+				RelativePath=".\cle_core\cle_dev.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_iterate.c"
 				>
 			</File>

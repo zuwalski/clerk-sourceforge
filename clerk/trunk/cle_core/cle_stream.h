@@ -26,11 +26,11 @@
 *	Commands and external events are "pumped" in through this set of functions
 */
 
-/* output interface begin */
+/* pipe interface begin */
 typedef struct cle_pipe
 {
-	int (*start)(void*);
-	int (*next)(void*);
+	void (*start)(void*);
+	void (*next)(void*);
 	void (*end)(void*,cdat,uint);
 	void (*pop)(void*);
 	void (*push)(void*);
@@ -38,7 +38,7 @@ typedef struct cle_pipe
 	void (*submit)(void*,task*,st_ptr*);
 } cle_pipe;
 
-/* output interface end */
+/* pipe interface end */
 
 /* event input functions */
 typedef struct _ipt_internal _ipt;
@@ -107,6 +107,11 @@ struct event_handler
 	struct mod_target target;
 };
 
+/* event-handler exit-functions */
+void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen);
+void cle_stream_end(event_handler* hdl);
+void cle_stream_leave(event_handler* hdl);
+
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
 
@@ -118,6 +123,8 @@ void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat r
 
 void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
+void cle_give_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length);
+
 void cle_format_instance(task* app_instance);
 
 // convenience-functions for implementing the cle_pipe-interface
@@ -126,9 +133,11 @@ void cle_standard_push(event_handler* hdl);
 void cle_standard_data(event_handler* hdl, cdat data, uint length);
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type);
+
 // thread-subsystem hook
 void cle_notify_start(event_handler* handler);
-void cle_notify_next(event_handler* handler, st_ptr nxtelement);
+void cle_notify_next(event_handler* handler);
 void cle_notify_end(event_handler* handler, cdat msg, uint msglength);
 
 // hook-ref for the ignite-interpreter

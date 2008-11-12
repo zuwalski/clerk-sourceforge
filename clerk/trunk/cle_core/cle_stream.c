@@ -26,7 +26,7 @@
 
 void cle_notify_start(event_handler* handler)
 {
-	while(handler != 0)
+	while(handler != 0 && handler->eventdata->error == 0)
 	{
 		if(handler->thehandler->input.start != 0)
 			handler->thehandler->input.start(handler);
@@ -35,20 +35,23 @@ void cle_notify_start(event_handler* handler)
 	}
 }
 
-void cle_notify_next(event_handler* handler, st_ptr nxtelement)
+void cle_notify_next(event_handler* handler)
 {
-	while(handler != 0)
+	while(handler != 0 && handler->eventdata->error == 0)
 	{
-		if(handler->thehandler->input.submit != 0)
-			handler->thehandler->input.submit(handler,handler->instance_tk,&nxtelement);
+		handler->thehandler->input.submit(handler,handler->instance_tk,&handler->top->pt);
 
 		if(handler->thehandler->input.next != 0)
 			handler->thehandler->input.next(handler);
+
+		// done processing .. clear and ready for next input-stream
+		st_empty(handler->instance_tk,&handler->top->pt);
 
 		handler = handler->next;
 	}
 }
 
+// TODO: make sure end is called on all handlers - and the message gets to the caller
 void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
 {
 	while(handler != 0)
@@ -83,11 +86,10 @@ struct _ipt_internal
 
 // nil output-handler
 
-static int _nil0(void* v){return 0;}
 static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
 static void _nil3(void* v,task* t,st_ptr* st){}
-static cle_pipe _nil_out = {_nil0,_nil0,_nil2,_nil1,_nil1,_nil2,_nil3};
+static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2,_nil3};
 
 // async output-handler
 static int _async_end(event_handler* hdl, cdat c, uint clen)
@@ -100,7 +102,7 @@ static int _async_end(event_handler* hdl, cdat c, uint clen)
 	return 0;
 }
 
-static cle_pipe _async_out = {_nil0,_nil0,_async_end,_nil1,_nil1,_nil2,_nil3};
+static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1,_nil1,_nil2,_nil3};
 
 // convenience functions for implementing the cle_pipe-interface
 void cle_standard_pop(event_handler* hdl)
@@ -147,27 +149,6 @@ void cle_standard_submit(event_handler* hdl, task* t_from, st_ptr* from)
 }
 
 // pipeline activate All handlers
-
-static int _pa_start(event_handler* hdl)
-{
-	cle_notify_start(hdl);
-	return 0;
-}
-
-static int _pa_next(event_handler* hdl)
-{
-	cle_notify_next(hdl,hdl->top->pt);
-
-	// done processing .. clear and ready for next input-stream
-	st_empty(hdl->instance_tk,&hdl->top->pt);
-	return 0;
-}
-
-static void _pa_end(event_handler* hdl, cdat msg, uint msglength)
-{
-	cle_notify_end(hdl,msg,msglength);
-}
-
 static void _pa_pop(event_handler* hdl)
 {
 	do
@@ -208,7 +189,35 @@ static void _pa_submit(event_handler* hdl, task* t, st_ptr* st)
 	while(hdl != 0);
 }
 
-static cle_pipe _pipeline_all = {_pa_start,_pa_next,_pa_end,_pa_pop,_pa_push,_pa_data,_pa_submit};
+static cle_pipe _pipeline_all = {cle_notify_start,cle_notify_next,cle_notify_end,_pa_pop,_pa_push,_pa_data,_pa_submit};
+
+/* event-handler exit-functions */
+void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
+{
+	hdl->eventdata->error = msg;
+	hdl->eventdata->errlength = msglen;
+}
+
+void cle_stream_end(event_handler* hdl)
+{
+	cle_stream_fail(hdl,"",0);
+}
+
+/* copy-handler */
+static void _cpy_start(event_handler* hdl) {hdl->response->start(hdl->respdata);}
+static void _cpy_next(event_handler* hdl) {hdl->response->next(hdl->respdata);}
+static void _cpy_end(event_handler* hdl,cdat c,uint u) {hdl->response->end(hdl->respdata,c,u);}
+static void _cpy_pop(event_handler* hdl) {hdl->response->pop(hdl->respdata);}
+static void _cpy_push(event_handler* hdl) {hdl->response->push(hdl->respdata);}
+static void _cpy_data(event_handler* hdl,cdat c,uint u) {hdl->response->data(hdl->respdata,c,u);}
+static void _cpy_submit(event_handler* hdl,task* t,st_ptr* s) {hdl->response->submit(hdl->respdata,t,s);}
+
+static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop,_cpy_push,_cpy_data,_cpy_submit},0};
+
+void cle_stream_leave(event_handler* hdl)
+{
+	hdl->thehandler = &_copy_handler;
+}
 
 /* system event-handler setup */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
@@ -256,6 +265,9 @@ void cle_allow_role(task* app_instance, cdat eventmask, uint mask_length, cdat r
 void cle_revoke_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {}
 
+void cle_give_role(task* app_instance, cdat eventmask, uint mask_length, cdat role, uint role_length)
+{}
+
 void cle_format_instance(task* app_instance)
 {
 	st_ptr root;
@@ -268,8 +280,23 @@ void cle_format_instance(task* app_instance)
 	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
 }
 
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
+{
+	cle_syshandler hdl;
+	hdl.next_handler = 0;
+	hdl.input.start = start;
+	hdl.input.next = next;
+	hdl.input.end = end;
+	hdl.input.pop = cle_standard_pop;
+	hdl.input.push = cle_standard_push;
+	hdl.input.data = cle_standard_data;
+	hdl.input.submit = cle_standard_submit;
+	hdl.systype = type;
+	return hdl;
+}
+
 // input-functions
-#define _error(txt) response->start(responsedata);response->end(responsedata,txt,sizeof(txt))
+#define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				cdat userid, uint userid_len, char* user_roles[],
@@ -321,7 +348,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	for(i = 0; i < event_len; i++)
 	{
 		// event-part-boundary
-		if(eventid[i] != 0)
+		if(eventid[i] != 0 && eventid[i] != '.')
 			continue;
 
 		// lookup event-part (module-level)
@@ -401,7 +428,6 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 				if(st_get(app_instance,&pt,(char*)&target,sizeof(struct mod_target)) < 0)
 				{
-					// TODO: verify application is activated - dont send events to sleeping apps
 					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
 					hdl->next = hdlists[target.handlertype];
@@ -575,15 +601,13 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	}
 
 	// do start
-	_pa_start(ipt->event_chain_begin);
+	cle_notify_start(ipt->event_chain_begin);
 
 	return ipt;
 }
 
 void cle_next(_ipt* ipt)
 {
-	event_handler* hdl;
-	ptr_list* elm;
 	if(ipt == 0 || ipt->sys.error != 0)
 		return;
 
@@ -591,7 +615,7 @@ void cle_next(_ipt* ipt)
 		cle_end(ipt,input_incomplete,sizeof(input_incomplete));
 	else
 		// do next
-		_pa_next(ipt->event_chain_begin);
+		cle_notify_next(ipt->event_chain_begin);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
@@ -610,7 +634,7 @@ void cle_end(_ipt* ipt, cdat code, uint length)
 		// signal end of input
 		ipt->sys.error = "";
 
-	_pa_end(ipt->event_chain_begin,code,length);
+	cle_notify_end(ipt->event_chain_begin,code,length);
 }
 
 void cle_pop(_ipt* ipt)

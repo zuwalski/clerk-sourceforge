@@ -565,7 +565,7 @@ uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
 }
 
 /*
-// should use repeatede calls to st_get(...) with own buffer
+// should use repeated calls to st_get(...) with own buffer
 char* st_get_all(task* t, st_ptr* pt, uint* length)
 {
 	char* buffer  = 0;
