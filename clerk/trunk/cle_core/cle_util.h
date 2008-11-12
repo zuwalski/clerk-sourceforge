@@ -19,21 +19,5 @@
 #ifndef __CLE_UTIL_H__
 #define __CLE_UTIL_H__
 
-#include "cle_pagesource.h"
-
-#define MEM_PAGE_SIZE 1024
-#define PAGER_MAGIC 0x240673
-
-cle_pagesource util_memory_pager;
-
-cle_psrc_data util_create_mempager();
-
-int mempager_get_pagecount(cle_psrc_data);
-
-cle_pagesource util_file_pager;
-
-cle_psrc_data util_create_filepager(const char* filename);
-
-int filepager_get_pagecount(cle_psrc_data);
 
 #endif

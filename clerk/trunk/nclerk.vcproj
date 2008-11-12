@@ -147,6 +147,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_core\backends\cle_backends.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_dev.c"
 				>
 			</File>
@@ -176,6 +180,10 @@
 			Filter="h;hpp;hxx;hm;inl;inc;xsd"
 			UniqueIdentifier="{93995380-89BD-4b04-88EB-625FBE52EBFB}"
 			>
+			<File
+				RelativePath=".\cle_core\backends\cle_backends.h"
+				>
+			</File>
 			<File
 				RelativePath=".\cle_core\cle_clerk.h"
 				>
