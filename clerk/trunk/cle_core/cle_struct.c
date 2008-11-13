@@ -547,6 +547,76 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 	return read;
 }
 
+uint st_offset(task* t, st_ptr* pt, uint offset)
+{
+	page_wrap* pg = pt->pg;
+	key* me       = GOKEY(pt->pg,pt->key);
+	key* nxt;
+	cdat ckey     = KDATA(me) + (pt->offset >> 3);
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < pt->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+	}
+
+	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
+
+	offset <<= 3;
+
+	while(1)
+	{
+		uint max = offset > klen?klen:offset;
+		offset -= max;
+
+		// move to next key for more data?
+		if(offset > 0 && nxt && nxt->offset == me->length)
+		{
+			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+			ckey = KDATA(me);
+			if(me->sub)
+			{
+				nxt = GOOFF(pg,me->sub);
+				klen = nxt->offset;
+			}
+			else
+			{
+				klen = me->length;
+				nxt = 0;
+			}
+		}
+		// is there any more data?
+		else
+		{
+			max <<= 3;
+
+			if(max <= klen)
+				pt->offset = max;
+			else if(nxt)
+			{
+				pt->offset = 0;
+				me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+			}
+			else
+				pt->offset = me->length;
+
+			// move st_ptr
+			pt->pg  = pg;
+			pt->key = (uint)me - (uint)&pg->pg;
+			return (offset >> 3);
+		}
+	}
+}
+
 uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
 {
 	struct _st_lkup_res rt;
@@ -725,75 +795,5 @@ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length
 	}
 
 	return 0;
-}
-
-uint st_offset(st_ptr* pt, uint offset)
-{
-	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint klen;
-
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < pt->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
-
-	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
-
-	offset <<= 3;
-
-	while(1)
-	{
-		uint max = offset > klen?klen:offset;
-		offset -= max;
-
-		// move to next key for more data?
-		if(offset > 0 && nxt && nxt->offset == me->length)
-		{
-			me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
-			ckey = KDATA(me);
-			if(me->sub)
-			{
-				nxt = GOOFF(pg,me->sub);
-				klen = nxt->offset;
-			}
-			else
-			{
-				klen = me->length;
-				nxt = 0;
-			}
-		}
-		// is there any more data?
-		else
-		{
-			max <<= 3;
-
-			if(max <= klen)
-				pt->offset = max;
-			else if(nxt)
-			{
-				pt->offset = 0;
-				me = (nxt->length == 0)?_tk_get_ptr(&pg,nxt):nxt;
-			}
-			else
-				pt->offset = me->length;
-
-			// move st_ptr
-			pt->pg  = pg;
-			pt->key = (uint)me - (uint)&pg->pg;
-			return (offset >> 3);
-		}
-	}
 }
 */

@@ -35,10 +35,11 @@
 #define HEAD_EXTENDS "\0x"
 #define HEAD_STATES "\0s"
 
-#define HEAD_FUNCTION "\0F"
+#define HEAD_METHOD "\0M"
 #define HEAD_EXPR "\0E"
 #define HEAD_INT "\0I"
 #define HEAD_STR "\0S"
+#define HEAD_REF "\0R"
 
 /* create blank instance (destroys any content) */
 void cle_format_instance(task* app_instance);
@@ -61,10 +62,14 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj);
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
 
+int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
+
 int cle_set_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
 
 int cle_set_value(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr value);
 
 int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr);
+
+int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
 
 #endif

@@ -20,7 +20,7 @@
 // helper-functions
 static int _copy_insert(task* t, st_ptr* to, st_ptr from)
 {
-	char buffer[500];
+	char buffer[200];
 	int total = 0;
 
 	while(1)
@@ -59,7 +59,7 @@ static void _dot_to_null(char* buffer, int size)
 
 static int _copy_move(task* t, st_ptr* to, st_ptr from)
 {
-	char buffer[500];
+	char buffer[200];
 
 	while(1)
 	{
@@ -82,21 +82,6 @@ static int _copy_move(task* t, st_ptr* to, st_ptr from)
 			return (st_move(t,to,buffer,length) != 0);
 		}
 	}
-}
-
-static int _goto_object(task* t, st_ptr* root, cdat name, uint name_length)
-{
-	st_ptr pt = *root;
-	if(st_move(t,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
-		return 1;
-	
-	if(st_move(t,&pt,name,name_length) != 0)
-		return 1;
-
-	if(st_move(t,root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-
-	return _copy_move(t,root,pt);
 }
 
 /****************************************************
@@ -180,7 +165,7 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 
 	// must be unique
 	if(len < 2 || st_is_empty(&pt) == 0)
-		return 0;
+		return 1;
 
 	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
 
@@ -191,22 +176,21 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 	st_insert(app_instance,&pt,it.kdata,it.kused);
 
 	it_dispose(app_instance,&it);
-	return len;
+	return 0;
 }
 
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj)
 {
-	st_ptr newobj,pt;
-	int len;
-	
-	pt = app_root;
+	st_ptr newobj,pt = app_root;
+
 	if(st_move(app_instance,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
-		return 0;
+		return 1;
 	
 	if(st_move(app_instance,&pt,extends_name,exname_length) != 0)
-		return 0;
+		return 1;
 
-	len = cle_new_object(app_instance,app_root,name,&newobj);
+	if(cle_new_object(app_instance,app_root,name,&newobj))
+		return 1;
 
 	st_insert(app_instance,&newobj,HEAD_EXTENDS,HEAD_SIZE);
 
@@ -215,23 +199,38 @@ int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_
 
 	if(obj != 0)
 		*obj = newobj;
-	return len;
+	return 0;
+}
+
+int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
+{
+	st_ptr pt = *root;
+	if(st_move(t,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
+		return 1;
+	
+	if(st_move(t,&pt,name,name_length) != 0)
+		return 1;
+
+	if(st_move(t,root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	return _copy_move(t,root,pt);
 }
 
 int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	if(_goto_object(app_instance,&root,object_name,object_length))
-		return 0;
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
+		return 1;
 
 	st_insert(app_instance,&root,HEAD_STATES,HEAD_SIZE);
 
 	// copy state-name
-	return _copy_insert(app_instance,&root,state);
+	return (_copy_insert(app_instance,&root,state) < 2);
 }
 
 int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr value)
 {
-	if(_goto_object(app_instance,&root,object_name,object_length))
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
 	_copy_insert(app_instance,&root,path);
@@ -242,5 +241,75 @@ int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object
 
 int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr)
 {
-	return 0;
+	st_ptr pt = app_root;
+	if(cle_goto_object(app_instance,&pt,object_name,object_length))
+		return 1;
+
+	_copy_insert(app_instance,&pt,path);
+
+	while(1)
+	{
+		st_ptr pt2;
+		char first;
+		if(st_get(app_instance,&expr,&first,1) != -1)
+			return 1;
+
+		switch(first)
+		{
+		case ':':	// ref to named object
+			st_insert(app_instance,&pt,HEAD_REF,HEAD_SIZE);
+
+			pt2 = app_root;
+			if(st_move(app_instance,&pt2,HEAD_NAMES,HEAD_SIZE) != 0)
+				return 1;
+			if(_copy_move(app_instance,&pt2,expr))
+				return 1;
+
+			// copy oid
+			_copy_insert(app_instance,&pt,pt2);
+			return 0;
+		case '=':	// expr
+			st_insert(app_instance,&pt,HEAD_EXPR,HEAD_SIZE);
+		// call compiler
+			return 0;
+		case '(':	// method
+			st_insert(app_instance,&pt,HEAD_METHOD,HEAD_SIZE);
+		// call compiler
+			return 0;
+		case ' ':
+		case '\t':
+		case '\r':
+		case '\n':
+			break;
+		default:
+			return 1;
+		}
+	}
 }
+
+int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)
+{
+	int super_prop = 0;
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return -1;
+
+	// seach inheritance-chain
+	while(1)
+	{
+		st_ptr pt;
+		// in this object?
+		if(st_move(app_instance,object,propname,name_length) == 0)
+			return super_prop;
+
+		// no more extends -> property not found
+		if(st_move(app_instance,object,HEAD_EXTENDS,HEAD_SIZE) != 0)
+			return -1;
+
+		pt = root;
+		if(_copy_move(app_instance,&pt,*object))
+			return -1;
+
+		super_prop++;
+	}
+}
+

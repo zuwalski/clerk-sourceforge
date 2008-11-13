@@ -24,6 +24,7 @@
 	dev.set.expr.<objectname> , path.path , expr
 	dev.set.state.<objectname> , state
 	dev.set.handler.<objectname> , state, event, handler
+	dev.get.<objectname> , path.path
 
 */
 #include "cle_instance.h"
@@ -34,6 +35,10 @@ static const char _set_val_name[] = "dev.set.val";
 static const char _set_expr_name[] = "dev.set.expr";
 static const char _set_state_name[] = "dev.set.state";
 static const char _set_handler_name[] = "dev.set.handler";
+static const char _get_name[] = "dev.get";
+static const char _list_object_name[] = "dev.list.object";
+static const char _list_state_name[] = "dev.list.state";
+static const char _list_prop_name[] = "dev.list.prop";
 
 static cle_syshandler _new_object;
 static cle_syshandler _new_extends;
@@ -41,12 +46,13 @@ static cle_syshandler _set_val;
 static cle_syshandler _set_expr;
 static cle_syshandler _set_state;
 static cle_syshandler _set_handler;
+static cle_syshandler _get;
 
 static const char _illegal_argument[] = "dev:illegal argument";
 
 static void new_object_next(event_handler* hdl)
 {
-	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0) < 2)
+	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -57,7 +63,7 @@ static void new_extends_next(event_handler* hdl)
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
 
-	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->top->pt,0) < 2)
+	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->top->pt,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -117,10 +123,40 @@ static void _set_state_next(event_handler* hdl)
 	cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
 	uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
 
-	if(cle_set_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt) < 2)
+	if(cle_set_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
+}
+
+static void _get_next(event_handler* hdl)
+{
+	st_ptr obj = hdl->instance;
+	cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
+	uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
+
+	if(cle_goto_object(hdl->instance_tk,&obj,obname,obname_length))
+		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+	else
+	{
+		char buffer[200];
+		int len = st_get(hdl->instance_tk,&hdl->top->pt,buffer,sizeof(buffer));
+
+		if(len <= 0)
+			cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+		else
+		{
+			st_ptr orig_obj = obj;
+			int i;
+			for(i = 0; i < len; i++)
+			{
+				if(buffer[i] == 0)
+					break;
+			}
+
+			cle_get_property(hdl->instance_tk,hdl->instance,&obj,buffer,i);
+		}
+	}
 }
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
@@ -139,4 +175,7 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 
 	_set_state = cle_create_simple_handler(0,_set_state_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_state_name,sizeof(_set_state_name),&_set_state);
+
+	_get = cle_create_simple_handler(0,_get_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_get_name,sizeof(_set_state_name),&_get);
 }
