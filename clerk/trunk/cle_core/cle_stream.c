@@ -216,6 +216,21 @@ void cle_stream_leave(event_handler* hdl)
 	hdl->thehandler = &_copy_handler;
 }
 
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
+{
+	cle_syshandler hdl;
+	hdl.next_handler = 0;
+	hdl.input.start = start;
+	hdl.input.next = next;
+	hdl.input.end = end;
+	hdl.input.pop = cle_standard_pop;
+	hdl.input.push = cle_standard_push;
+	hdl.input.data = cle_standard_data;
+	hdl.input.submit = cle_standard_submit;
+	hdl.systype = type;
+	return hdl;
+}
+
 // input-functions
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
@@ -357,6 +372,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					hdl->thehandler = &_runtime_handler;
 					hdl->target = target;
 					hdl->eventdata = &ipt->sys;
+					hdl->handler_data = 0;
 				}
 			}
 
@@ -378,6 +394,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					hdlists[syshdl->systype] = hdl;
 					hdl->thehandler = syshdl;
 					hdl->eventdata = &ipt->sys;
+					hdl->handler_data = 0;
 
 					// next in list...
 					syshdl = syshdl->next_handler;

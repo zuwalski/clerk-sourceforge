@@ -66,8 +66,7 @@ enum handler_type
 struct mod_target
 {
 	char handlertype;
-	char appid[2];
-	char objid[5];
+	char objid[7];
 };
 
 typedef struct sys_handler_data

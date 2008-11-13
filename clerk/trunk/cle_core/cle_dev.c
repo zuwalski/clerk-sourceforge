@@ -52,7 +52,7 @@ static void new_object_next(event_handler* hdl)
 		cle_stream_end(hdl);
 }
 
-static void new_extends_name_next(event_handler* hdl)
+static void new_extends_next(event_handler* hdl)
 {
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
@@ -63,12 +63,80 @@ static void new_extends_name_next(event_handler* hdl)
 		cle_stream_end(hdl);
 }
 
+struct _dev_set
+{
+	st_ptr path;
+};
+
+static void _set_val_next(event_handler* hdl)
+{
+	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
+
+	// first hit?
+	if(state == 0)
+	{
+		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
+		state = (struct _dev_set*)hdl->handler_data;
+
+		state->path = hdl->top->pt;
+	}
+	else
+	{
+		cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
+		uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
+
+		cle_set_value(hdl->instance_tk,hdl->instance,obname,obname_length,state->path,hdl->top->pt);
+		cle_stream_end(hdl);
+	}
+}
+
+static void _set_expr_next(event_handler* hdl)
+{
+	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
+
+	// first hit?
+	if(state == 0)
+	{
+		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
+		state = (struct _dev_set*)hdl->handler_data;
+
+		state->path = hdl->top->pt;
+	}
+	else
+	{
+		cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
+		uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
+
+		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->path,hdl->top->pt);
+		cle_stream_end(hdl);
+	}
+}
+
+static void _set_state_next(event_handler* hdl)
+{
+	cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
+	uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
+
+	if(cle_set_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt) < 2)
+		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+	else
+		cle_stream_end(hdl);
+}
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
 {
 	_new_object = cle_create_simple_handler(0,new_object_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_new_object_name,sizeof(_new_object_name),&_new_object);
 
-	_new_extends = cle_create_simple_handler(0,new_extends_name_next,0,SYNC_REQUEST_HANDLER);
+	_new_extends = cle_create_simple_handler(0,new_extends_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_new_extends_name,sizeof(_new_extends_name),&_new_extends);
+
+	_set_val = cle_create_simple_handler(0,_set_val_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_val_name,sizeof(_set_val_name),&_set_val);
+
+	_set_expr = cle_create_simple_handler(0,_set_expr_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_expr_name,sizeof(_set_expr_name),&_set_expr);
+
+	_set_state = cle_create_simple_handler(0,_set_state_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_state_name,sizeof(_set_state_name),&_set_state);
 }
