@@ -170,6 +170,21 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	return pt;	// for update to manipulate pointer
 }
 
+/* make a writable copy of external pages before write */
+static void _st_make_writable(struct _st_lkup_res* rt)
+{
+	page* old = rt->pg->pg;
+	
+	_tk_write_copy(rt->t,rt->pg);
+
+	/* fix pointers */
+	if(rt->prev)
+		rt->prev = GOKEY(rt->pg,(uint)rt->prev - (uint)old);
+
+	if(rt->sub)
+		rt->sub = GOKEY(rt->pg,(uint)rt->sub - (uint)old);
+}
+
 #define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)(pag) + sizeof(page) + sizeof(key) + 3 > (pag)->used)
 
 static void _st_write(struct _st_lkup_res* rt)
@@ -177,20 +192,8 @@ static void _st_write(struct _st_lkup_res* rt)
 	key* newkey;
 	uint size = rt->length >> 3;
 
-	/* make a writable copy of external pages before write */
 	if(rt->pg->pg->id)
-	{
-		page* old = rt->pg->pg;
-		
-		_tk_write_copy(rt->t,rt->pg);
-
-		/* fix pointers */
-		if(rt->prev)
-			rt->prev = GOKEY(rt->pg,(uint)rt->prev - (uint)old);
-
-		if(rt->sub)
-			rt->sub = GOKEY(rt->pg,(uint)rt->sub - (uint)old);
-	}
+		_st_make_writable(rt);
 
 	/* continue/append (last)key? */
 	if(rt->diff == rt->sub->length && IS_LAST_KEY(rt->sub,rt->pg->pg))
@@ -344,52 +347,67 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 	return (rt.path != 0);
 }
 
-uint st_update(task* t, st_ptr* pt, cdat path, uint length)
+struct _prepare_update
 {
-	struct _st_lkup_res rt;
-	page_wrap* rm_pg;
-	ushort remove = 0;
+	ushort remove;
 	ushort waste;
+};
 
-	rm_pg = rt.pg = pt->pg;
-	rt.diff = pt->offset;
-	rt.sub  = GOKEY(pt->pg,pt->key);
-	rt.prev = 0;
-	rt.t    = t;
+static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* t, st_ptr* pt)
+{
+	struct _prepare_update pu;
+	pu.remove = 0;
 
-	if(rt.sub->sub)
+	rt->pg = pt->pg;
+	rt->diff = pt->offset;
+	rt->sub  = GOKEY(pt->pg,pt->key);
+	rt->prev = 0;
+	rt->t    = t;
+
+	if(rt->pg->pg->id)
+		_st_make_writable(rt);
+
+	if(rt->sub->sub)
 	{
-		key* nxt = GOOFF(rt.pg,rt.sub->sub);
+		key* nxt = GOOFF(rt->pg,rt->sub->sub);
 		while(nxt->next && nxt->offset < pt->offset)
 		{
-			rt.prev = nxt;
-			nxt = GOOFF(rt.pg,nxt->next);
+			rt->prev = nxt;
+			nxt = GOOFF(rt->pg,nxt->next);
 		}
 
-		if(rt.prev)
+		if(rt->prev)
 		{
-			remove = rt.prev->next;
-			rt.prev->next = 0;
+			pu.remove = rt->prev->next;
+			rt->prev->next = 0;
 		}
 		else
 		{
-			remove = rt.sub->sub;
-			rt.sub->sub = 0;
+			pu.remove = rt->sub->sub;
+			rt->sub->sub = 0;
 		}
 	}
 
-	waste = rt.sub->length - rt.diff;
-	rt.sub->length = (rt.diff > 0)? rt.diff : 1;
+	pu.waste = rt->sub->length - rt->diff;
+	rt->sub->length = (rt->diff > 0)? rt->diff : 1;
+
+	return pu;
+}
+
+uint st_update(task* t, st_ptr* pt, cdat path, uint length)
+{
+	struct _st_lkup_res rt;
+	struct _prepare_update pu = _st_prepare_update(&rt,t,pt);
 
 	if(length > 0)
 	{
 		length <<= 3;
 		/* old key has room for this update*/
-		if(waste >= length)
+		if(pu.waste >= length)
 		{
 			memcpy(KDATA(rt.sub)+(rt.diff >> 3),path,length >> 3);
 			rt.diff = rt.sub->length = length + rt.diff;
-			waste -= length;
+			pu.waste -= length;
 		}
 		else
 		{
@@ -399,15 +417,49 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 		}
 	}
 
-	if(rm_pg->pg->id)	// should we care about cleanup?
+	if(rt.pg->pg->id)	// should we care about cleanup?
 	{
-		rm_pg->pg->waste += waste >> 3;
-		_tk_remove_tree(t,rm_pg,remove);
+		rt.pg->pg->waste += pu.waste >> 3;
+		_tk_remove_tree(t,rt.pg,pu.remove);
 	}
 
 	pt->pg     = rt.pg;
 	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
 	pt->offset = rt.diff;
+	return 0;
+}
+
+uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
+{
+	struct _st_lkup_res rt;
+	struct _prepare_update pu = _st_prepare_update(&rt,t,to);
+
+	// the same task -> set link
+	if(t == t_from)
+	{
+		ptr* pt = _st_page_overflow(&rt,0);
+
+		if(from->offset > 0)
+		{
+			unimplm();
+		}
+		else
+		{
+			pt->pg = from->pg;
+			pt->koffset = from->key;
+		}
+	}
+	// copy all
+	else
+	{
+		unimplm();
+	}
+
+	if(rt.pg->pg->id)	// should we care about cleanup?
+	{
+		rt.pg->pg->waste += pu.waste >> 3;
+		_tk_remove_tree(t,rt.pg,pu.remove);
+	}
 	return 0;
 }
 
@@ -611,27 +663,47 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 
 			// move st_ptr
 			pt->pg  = pg;
-			pt->key = (uint)me - (uint)&pg->pg;
+			pt->key = (uint)me - (uint)pg->pg;
 			return (offset >> 3);
 		}
 	}
 }
 
-uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
+int st_scan(task* t, st_ptr* pt)
 {
-	struct _st_lkup_res rt;
+	key* k = GOOFF(pt->pg,pt->key);
 
-	// the same task
-	if(t == t_from)
-	{}
-	// ref to same page
-	else if(from->pg->pg->id != 0)
-	{}
-	// copy all
-	else
-	{}
+	while(1)
+	{
+		uint tmp;
 
-	return 0;
+		if((k->length - pt->offset) & 0xfff8)
+		{
+			tmp = pt->offset >> 3;
+			pt->offset += 8;
+			return *(KDATA(k) + tmp);
+		}
+
+		if(k->sub == 0)
+			return -1;
+
+		tmp = k->length;
+		k = GOOFF(pt->pg,k->sub);
+
+		while(k->offset != tmp)
+		{
+			if(k->next == 0)
+				return -1;
+
+			k = GOOFF(pt->pg,k->next);
+		}
+		
+		if(k->length == 0)
+			k = _tk_get_ptr(t,&pt->pg,k);
+
+		pt->offset = 0;
+		pt->key = (char*)k - (char*)pt->pg;
+	}
 }
 
 /*

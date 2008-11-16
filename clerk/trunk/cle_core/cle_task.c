@@ -496,6 +496,8 @@ static ushort _tk_deep_copy(struct _tk_create* map, page_wrap* pw, key* parent, 
 					return ref;
 				}
 			}
+			//else if()
+			//{}
 			else
 			{
 				// internal ptr (transparent)

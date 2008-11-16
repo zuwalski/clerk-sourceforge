@@ -23,6 +23,11 @@
 *	Events/messages are "pumped" in through the exported set of functions
 */
 
+// error-messages
+static char input_underflow[] = "stream:input underflow";
+static char input_incomplete[] = "stream:input incomplete";
+static char event_not_allowed[] = "stream:event not allowed";
+
 #ifdef CLERK_SINGLE_THREAD
 
 void cle_notify_start(event_handler* handler)
@@ -40,13 +45,16 @@ void cle_notify_next(event_handler* handler)
 {
 	while(handler != 0 && handler->eventdata->error == 0)
 	{
-		handler->thehandler->input.submit(handler,handler->instance_tk,&handler->top->pt);
+		if(handler->top->link != 0)
+			cle_stream_fail(handler,input_underflow,sizeof(input_underflow));
+		else
+		{
+			if(handler->thehandler->input.next != 0)
+				handler->thehandler->input.next(handler);
 
-		if(handler->thehandler->input.next != 0)
-			handler->thehandler->input.next(handler);
-
-		// done processing .. clear and ready for next input-stream
-		st_empty(handler->instance_tk,&handler->top->pt);
+			// done processing .. clear and ready for next input-stream
+			st_empty(handler->instance_tk,&handler->top->pt);
+		}
 
 		handler = handler->next;
 	}
@@ -65,11 +73,6 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
 }
 
 #endif
-
-// error-messages
-static char input_underflow[] = "stream:input underflow";
-static char input_incomplete[] = "stream:input incomplete";
-static char event_not_allowed[] = "stream:event not allowed";
 
 // structs
 struct _ipt_internal
@@ -189,16 +192,6 @@ static void _pa_submit(event_handler* hdl, task* t, st_ptr* st)
 static cle_pipe _pipeline_all = {cle_notify_start,cle_notify_next,cle_notify_end,_pa_pop,_pa_push,_pa_data,_pa_submit};
 
 /* event-handler exit-functions */
-void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
-{
-	hdl->eventdata->error = msg;
-	hdl->eventdata->errlength = msglen;
-}
-
-void cle_stream_end(event_handler* hdl)
-{
-	cle_stream_fail(hdl,"",0);
-}
 
 /* copy-handler */
 static void _cpy_start(event_handler* hdl) {hdl->response->start(hdl->respdata);}
@@ -214,6 +207,22 @@ static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop
 void cle_stream_leave(event_handler* hdl)
 {
 	hdl->thehandler = &_copy_handler;
+}
+
+void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
+{
+	if(hdl->eventdata->error == 0)
+	{
+		hdl->eventdata->error = msg;
+		hdl->eventdata->errlength = msglen;
+	}
+	cle_stream_leave(hdl);
+}
+
+void cle_stream_end(event_handler* hdl)
+{
+	cle_stream_fail(hdl,"",0);
+	cle_stream_leave(hdl);
 }
 
 cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)

@@ -21,9 +21,9 @@
 	dev.new.object , objectname
 	dev.new.<extend-objectname> , objectname
 	dev.set.val.<objectname> , path.path , value
-	dev.set.expr.<objectname> , path.path , expr
+	dev.set.expr.<objectname> , path.path , expr/method/ref
 	dev.set.state.<objectname> , state
-	dev.set.handler.<objectname> , state, event, handler
+	dev.set.handler.<objectname> , state, event, handler (-method)
 	dev.get.<objectname> , path.path
 
 */
@@ -71,7 +71,9 @@ static void new_extends_next(event_handler* hdl)
 
 struct _dev_set
 {
-	st_ptr path;
+	st_ptr p1;
+	st_ptr p2;
+	uint hit;
 };
 
 static void _set_val_next(event_handler* hdl)
@@ -84,14 +86,14 @@ static void _set_val_next(event_handler* hdl)
 		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
 		state = (struct _dev_set*)hdl->handler_data;
 
-		state->path = hdl->top->pt;
+		state->p1= hdl->top->pt;
 	}
 	else
 	{
 		cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
 		uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
 
-		cle_set_value(hdl->instance_tk,hdl->instance,obname,obname_length,state->path,hdl->top->pt);
+		cle_set_value(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->top->pt);
 		cle_stream_end(hdl);
 	}
 }
@@ -106,14 +108,44 @@ static void _set_expr_next(event_handler* hdl)
 		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
 		state = (struct _dev_set*)hdl->handler_data;
 
-		state->path = hdl->top->pt;
+		state->p1 = hdl->top->pt;
 	}
 	else
 	{
 		cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
 		uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
 
-		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->path,hdl->top->pt);
+		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->top->pt,hdl->response,hdl->respdata);
+		cle_stream_end(hdl);
+	}
+}
+
+static void _set_handler_next(event_handler* hdl)
+{
+	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
+
+	// first hit?
+	if(state == 0)
+	{
+		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
+		state = (struct _dev_set*)hdl->handler_data;
+
+		state->p1 = hdl->top->pt;
+		state->hit = 0;
+	}
+	// 2. hit
+	else if(state->hit == 0)
+	{
+		state->p2 = hdl->top->pt;
+		state->hit = 1;
+	}
+	// 3. hit
+	else
+	{
+		cdat obname = hdl->eventdata->eventid + sizeof(_set_state_name);
+		uint obname_length = hdl->eventdata->event_len - sizeof(_set_state_name);
+
+		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->top->pt,hdl->response,hdl->respdata);
 		cle_stream_end(hdl);
 	}
 }
@@ -175,6 +207,9 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 
 	_set_state = cle_create_simple_handler(0,_set_state_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_state_name,sizeof(_set_state_name),&_set_state);
+
+	_set_handler = cle_create_simple_handler(0,_set_handler_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_handler_name,sizeof(_set_handler_name),&_set_handler);
 
 	_get = cle_create_simple_handler(0,_get_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_get_name,sizeof(_set_state_name),&_get);

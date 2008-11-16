@@ -151,6 +151,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_core\cle_compile.c"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_dev.c"
 				>
 			</File>
@@ -189,11 +193,19 @@
 				>
 			</File>
 			<File
+				RelativePath=".\cle_core\cle_compile.h"
+				>
+			</File>
+			<File
 				RelativePath=".\cle_core\cle_instance.h"
 				>
 			</File>
 			<File
 				RelativePath=".\cle_core\cle_pagesource.h"
+				>
+			</File>
+			<File
+				RelativePath=".\cle_core\cle_runtime.h"
 				>
 			</File>
 			<File

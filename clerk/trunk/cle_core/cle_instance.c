@@ -16,6 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_instance.h"
+#include "cle_compile.h"
 
 // helper-functions
 static int _copy_insert(task* t, st_ptr* to, st_ptr from)
@@ -239,43 +240,60 @@ int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object
 	return 0;
 }
 
-int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr)
+static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr)
 {
-	st_ptr pt = app_root;
+	st_ptr pt = dest;
+	// insert path
+	st_insert(app_instance,&dest,"p",1);
+	_copy_insert(app_instance,&dest,path);
+
+	dest = pt;
+	// insert source
+	st_insert(app_instance,&dest,"s",1);
+	_copy_insert(app_instance,&dest,expr);
+}
+
+int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data)
+{
+	st_ptr pt0,pt = app_root;
+	int c;
 	if(cle_goto_object(app_instance,&pt,object_name,object_length))
 		return 1;
 
 	_copy_insert(app_instance,&pt,path);
 
-	while(1)
-	{
-		st_ptr pt2;
-		char first;
-		if(st_get(app_instance,&expr,&first,1) != -1)
-			return 1;
+	// clear old
+	st_delete(app_instance,&pt,0,0);
 
-		switch(first)
+	c = st_scan(app_instance,&expr);
+	while(c >= 0)
+	{
+		switch(c)
 		{
 		case ':':	// ref to named object
 			st_insert(app_instance,&pt,HEAD_REF,HEAD_SIZE);
 
-			pt2 = app_root;
-			if(st_move(app_instance,&pt2,HEAD_NAMES,HEAD_SIZE) != 0)
+			pt0 = app_root;
+			if(st_move(app_instance,&pt0,HEAD_NAMES,HEAD_SIZE) != 0)
 				return 1;
-			if(_copy_move(app_instance,&pt2,expr))
+			if(_copy_move(app_instance,&pt0,expr))
 				return 1;
 
 			// copy oid
-			_copy_insert(app_instance,&pt,pt2);
+			_copy_insert(app_instance,&pt,pt0);
 			return 0;
 		case '=':	// expr
 			st_insert(app_instance,&pt,HEAD_EXPR,HEAD_SIZE);
-		// call compiler
-			return 0;
+
+			_record_source_and_path(app_instance,pt,path,expr);
+			// call compiler
+			return cmp_expr(app_instance,&pt,&expr,response,data);
 		case '(':	// method
 			st_insert(app_instance,&pt,HEAD_METHOD,HEAD_SIZE);
-		// call compiler
-			return 0;
+
+			_record_source_and_path(app_instance,pt,path,expr);
+			// call compiler
+			return cmp_method(app_instance,&pt,&expr,response,data);
 		case ' ':
 		case '\t':
 		case '\r':
@@ -284,7 +302,21 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 		default:
 			return 1;
 		}
+
+		c = st_scan(app_instance,&expr);
 	}
+
+	return 1;
+}
+
+int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data)
+{
+	st_ptr pt = app_root;
+	if(cle_goto_object(app_instance,&pt,object_name,object_length))
+		return 1;
+
+	// method must start with '(' -> parameterlist begin
+	return 0;
 }
 
 int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)

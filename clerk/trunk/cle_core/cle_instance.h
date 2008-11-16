@@ -68,7 +68,9 @@ int cle_set_state(task* app_instance, st_ptr app_root, cdat object_name, uint ob
 
 int cle_set_value(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr value);
 
-int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr);
+int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
+
+int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data);
 
 int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
 
