@@ -94,11 +94,10 @@ struct _body_
 	ushort firsthandler;
 };
 
-
-#define whitespace(c) (c == ' ' || c == '\t' || c == '\n' || c == '\r')
-#define num(c) (c >= '0' && c <= '9')
-#define minusnum(c) (c == '-' || num(c))
-#define alpha(c) ((c & 0x80) || (c >= 'a' && c <= 'z')  || (c >= 'A' && c <= 'Z') || (c == '_'))
-#define alphanum(c) (alpha(c) || num(c))
+#define HEAD_SIZE 2
+#define HEAD_FUNCTION "\0F"
+#define HEAD_EXPR "\0E"
+#define HEAD_INT "\0I"
+#define HEAD_STR "\0S"
 
 #endif

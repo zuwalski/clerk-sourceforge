@@ -20,13 +20,6 @@
 #include "cle_stream.h"
 
 #define BUFFER_GROW 256
-#define READ_BUFFER 1000
-
-#define HEAD_SIZE 2
-#define HEAD_FUNCTION "\0F"
-#define HEAD_EXPR "\0E"
-#define HEAD_INT "\0I"
-#define HEAD_STR "\0S"
 
 #define ST_0 1
 #define ST_ALPHA 2
@@ -45,6 +38,12 @@
 #define NEST_EXPR 2
 #define ASGN_EXPR 4
 #define FOR_EXPR 8
+
+#define whitespace(c) (c == ' ' || c == '\t' || c == '\n' || c == '\r')
+#define num(c) (c >= '0' && c <= '9')
+#define minusnum(c) (c == '-' || num(c))
+#define alpha(c) ((c & 0x80) || (c >= 'a' && c <= 'z')  || (c >= 'A' && c <= 'Z') || (c == '_'))
+#define alphanum(c) (alpha(c) || num(c))
 
 #define NUMBER_OF_SKIPS 32
 struct _skips

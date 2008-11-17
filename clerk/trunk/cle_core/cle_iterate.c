@@ -171,7 +171,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 static void _it_grow_kdata(it_ptr* it, struct _st_lkup_it_res* rt)
 {
-	uint path_offset = (uint)rt->path - (uint)it->kdata;
+	uint path_offset = (char*)rt->path - (char*)it->kdata;
 	it->ksize += IT_GROW_SIZE;
 	it->kdata = (uchar*)tk_realloc(rt->t,it->kdata,it->ksize);
 	rt->path = it->kdata + path_offset;
@@ -198,7 +198,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 	key* prev   = rt->prev;
 	uint offset = rt->diff & 0xFFF8;
 
-	it->kused = (uint)rt->path - (uint)it->kdata;
+	it->kused = (char*)rt->path - (char*)it->kdata;
 
 	do
 	{
@@ -311,7 +311,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -340,7 +340,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)rt.pg;
+				pt->key = (char*)rt.sub - (char*)rt.pg;
 				pt->offset = rt.diff;
 			}
 			return 2;
@@ -366,7 +366,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -415,7 +415,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -444,7 +444,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (uint)rt.sub - (uint)rt.pg;
+				pt->key = (char*)rt.sub - (char*)rt.pg;
 				pt->offset = rt.diff;
 			}
 			else
@@ -472,7 +472,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -590,7 +590,7 @@ static uint _st_splice_key(page_wrap* rm_pg, ushort remove)
 		key* nxt = (tmp->next)?GOKEY(rm_pg,tmp->next):0;
 		tmp->next = 0;
 		if(nxt)
-			return (uint)nxt - (uint)rm_pg;
+			return (char*)nxt - (char*)rm_pg;
 	}
 	return 0;
 }

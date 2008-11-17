@@ -121,8 +121,8 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	{
 		/* as ovf may change and prev might point inside it .. */
 		uint prev_offset = 
-		((uint)rt->prev > (uint)ovf && (uint)rt->prev < (uint)ovf + ovf->size)?
-			(uint)rt->prev - (uint)ovf : 0;
+		((char*)rt->prev > (char*)ovf && (char*)rt->prev < (char*)ovf + ovf->size)?
+			(char*)rt->prev - (char*)ovf : 0;
 
 		ovf->size += OVERFLOW_GROW;
 
@@ -131,7 +131,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		rt->pg->ovf = ovf;
 		/* rebuild prev-pointer in (possibly) new ovf */
 		if(prev_offset)
-			rt->prev = (key*)((uint)ovf + prev_offset);
+			rt->prev = (key*)((char*)ovf + prev_offset);
 
 		resize_count++;	// TEST
 		overflow_size += OVERFLOW_GROW;	// TEST
@@ -179,13 +179,13 @@ static void _st_make_writable(struct _st_lkup_res* rt)
 
 	/* fix pointers */
 	if(rt->prev)
-		rt->prev = GOKEY(rt->pg,(uint)rt->prev - (uint)old);
+		rt->prev = GOKEY(rt->pg,(char*)rt->prev - (char*)old);
 
 	if(rt->sub)
-		rt->sub = GOKEY(rt->pg,(uint)rt->sub - (uint)old);
+		rt->sub = GOKEY(rt->pg,(char*)rt->sub - (char*)old);
 }
 
-#define IS_LAST_KEY(k,pag) ((uint)(k) + ((k)->length >> 3) - (uint)(pag) + sizeof(page) + sizeof(key) + 3 > (pag)->used)
+#define IS_LAST_KEY(k,pag) ((char*)(k) + ((k)->length >> 3) - (char*)(pag) + sizeof(page) + sizeof(key) + 3 > (pag)->used)
 
 static void _st_write(struct _st_lkup_res* rt)
 {
@@ -202,7 +202,7 @@ static void _st_write(struct _st_lkup_res* rt)
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
-		rt->pg->pg->used = (uint)rt->sub + (rt->sub->length >> 3) - (uint)(rt->pg->pg) + sizeof(key);
+		rt->pg->pg->used = (char*)rt->sub + (rt->sub->length >> 3) - (char*)(rt->pg->pg) + sizeof(key);
 
 		rt->diff = rt->sub->length;		
 		size -= length;
@@ -275,7 +275,7 @@ uint st_empty(task* t, st_ptr* pt)
 {
 	key* nk = tk_alloc(t,sizeof(key) + 2);
 
-	pt->key = (uint)nk - (uint)t->stack->pg;
+	pt->key = (char*)nk - (char*)t->stack->pg;
 	pt->pg = t->stack;
 	pt->offset = 0;
 
@@ -321,7 +321,7 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length)
 	if(_st_lookup(&rt))
 	{
 		pt->pg  = rt.pg;
-		pt->key = (uint)rt.sub - (uint)rt.pg->pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	return (rt.length != 0);
@@ -342,7 +342,7 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 	else rt.path = 0;
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
 	pt->offset = rt.diff;
 	return (rt.path != 0);
 }
@@ -424,7 +424,7 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 	}
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
 	pt->offset = rt.diff;
 	return 0;
 }
@@ -499,7 +499,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	_st_write(&rt);
 
 	pt->pg     = rt.pg;
-	pt->key    = (uint)rt.sub - (uint)rt.pg->pg;
+	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
 	pt->offset = rt.diff;
 	return 0;
 }
@@ -594,7 +594,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 		}
 	}
 
-	pt->key = (uint)me - (uint)pg->pg;
+	pt->key = (char*)me - (char*)pg->pg;
 	pt->pg  = pg;
 	return read;
 }
@@ -663,7 +663,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 
 			// move st_ptr
 			pt->pg  = pg;
-			pt->key = (uint)me - (uint)pg->pg;
+			pt->key = (char*)me - (char*)pg->pg;
 			return (offset >> 3);
 		}
 	}
