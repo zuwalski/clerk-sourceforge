@@ -702,7 +702,7 @@ int st_scan(task* t, st_ptr* pt)
 			k = _tk_get_ptr(t,&pt->pg,k);
 
 		pt->offset = 0;
-		pt->key = (char*)k - (char*)pt->pg;
+		pt->key = (char*)k - (char*)pt->pg->pg;
 	}
 }
 

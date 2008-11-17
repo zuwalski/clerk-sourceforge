@@ -16,8 +16,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_runtime.h"
-#include "cle_struct.h"
 #include "cle_stream.h"
+#include "cle_compile.h"
 
 #define BUFFER_GROW 256
 
@@ -616,7 +616,7 @@ static void _cmp_string(struct _cmp_state* cst, st_ptr* out, int c, uchar append
 	int ic = 0,i = 0;
 
 	if(!append)
-		st_update(cst->t,out,HEAD_STR,HEAD_SIZE);
+		st_update(cst->t,out,"S",2);
 
 	while(1)
 	{
@@ -1178,7 +1178,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		switch(cst->c)
 		{
 		case -1:
-			if(cst->glevel != 0) err(__LINE__)
+			if(cst->glevel != 1) err(__LINE__)
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
 			if((nest & NEST_EXPR) == 0 || (nest & PURE_EXPR))
 			{end_expr_nest()}
@@ -1721,11 +1721,8 @@ static int _cmp_header(struct _cmp_state* cst)
 {
 	st_ptr params;
 
-	// clean and mark expr
-	st_update(cst->t,&cst->root,HEAD_FUNCTION,HEAD_SIZE);
-	cst->strs = cst->root;
-
 	// strings
+	cst->strs = cst->root;
 	st_insert(cst->t,&cst->strs,"S",2);
 
 	params = cst->root;
@@ -1865,11 +1862,8 @@ int cmp_expr(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* data)
 
 	_cmp_init(&cst,t,body,ref,response,data);
 
-	// clean and mark expr
-	st_update(t,&cst.root,HEAD_EXPR,HEAD_SIZE);
-	cst.strs = cst.root;
-
 	// strings
+	cst.strs = cst.root;
 	st_insert(t,&cst.strs,"S",2);
 
 	_cmp_nextc(&cst);

@@ -311,7 +311,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (char*)rt.sub - (char*)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -340,7 +340,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (char*)rt.sub - (char*)rt.pg;
+				pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 				pt->offset = rt.diff;
 			}
 			return 2;
@@ -366,7 +366,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (char*)rt.sub - (char*)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -415,7 +415,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (char*)rt.sub - (char*)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	else
@@ -444,7 +444,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 			if(pt)
 			{
 				pt->pg  = rt.pg;
-				pt->key = (char*)rt.sub - (char*)rt.pg;
+				pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 				pt->offset = rt.diff;
 			}
 			else
@@ -472,7 +472,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	if(pt)
 	{
 		pt->pg  = rt.pg;
-		pt->key = (char*)rt.sub - (char*)rt.pg;
+		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
 	else

@@ -439,7 +439,7 @@ static const char* _rt_opc_name(uint opc)
 	}
 }
 
-static void _rt_dump_function(task* t, st_ptr* root)
+void _rt_dump_function(task* t, st_ptr* root)
 {
 	st_ptr strings,tmpptr;
 	char* bptr,*bptr2;
@@ -597,7 +597,7 @@ static void _rt_dump_function(task* t, st_ptr* root)
 			{
 				char buffer[200];
 				uint slen = st_get(t,&tmpptr,buffer,sizeof(buffer));
-				printf("%-10s %.*s\n",_rt_opc_name(opc),slen > HEAD_SIZE? slen - HEAD_SIZE : 0,buffer + HEAD_SIZE);
+				printf("%-10s %.*s\n",_rt_opc_name(opc),slen - 2,buffer + 2);
 			}
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
@@ -665,14 +665,14 @@ static void _rt_dump_function(task* t, st_ptr* root)
 int rt_do_read(task* t, st_ptr root)
 {
 	st_ptr rroot = root;
-	char head[HEAD_SIZE];
+	char head[2];
 
 	if(st_get(t,&root,head,sizeof(head)) <= 0 && head[0] == 0)
 	{
 		switch(head[1])
 		{
 		case 'E':
-		case 'F':
+		case 'M':
 			_rt_dump_function(t,&root);
 			break;
 		case 'I':

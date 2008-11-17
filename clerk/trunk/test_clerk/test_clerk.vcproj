@@ -178,6 +178,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\test_compile.c"
+				>
+			</File>
+			<File
 				RelativePath=".\test_main.c"
 				>
 			</File>
