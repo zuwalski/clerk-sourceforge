@@ -34,7 +34,13 @@ struct _mem_psrc_data
 	int pagecount;
 };
 
-page _dummy_root = {ROOT_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0,0,0,1,0,0,0};
+//page _dummy_root = {ROOT_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0,0,0,1,0,0,0};
+struct _dummy_rt
+{
+	page pg;
+	short s[6];
+}
+_dummy_root = {{ROOT_ID,MEM_PAGE_SIZE,sizeof(page) + 10,0},{0,1,0,0,0,0}};
 
 static cle_pageid mem_new_page(cle_psrc_data pd, page* data)
 {
@@ -53,7 +59,7 @@ static page* mem_read_page(cle_psrc_data pd, cle_pageid id)
 	if(id == ROOT_ID)
 	{
 		struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
-		return (md->root == 0)? &_dummy_root : md->root;
+		return (md->root == 0)? (page*)&_dummy_root : md->root;
 	}
 
 	return (page*)id;
@@ -171,7 +177,7 @@ static page* file_read_page(cle_psrc_data pd, cle_pageid pid)
 	if(pid == ROOT_ID)
 	{
 		if(fd->header.pagecount == 0)
-			return &_dummy_root;
+			return (page*)&_dummy_root;
 
 		pid = (cle_pageid)sizeof(struct _file_pager_header);
 	}
@@ -215,7 +221,7 @@ static void file_unref_page(cle_psrc_data pd, page* pg)
 {
 	struct _file_psrc_data* fd = (struct _file_psrc_data*)pd;
 
-	if(pg != &_dummy_root)
+	if(pg != (page*)&_dummy_root)
 		free(pg);
 }
 
@@ -277,11 +283,13 @@ cle_pagesource util_file_pager =
 cle_psrc_data util_create_filepager(const char* filename)
 {
 	struct _file_psrc_data* fd = (struct _file_psrc_data*)malloc(sizeof(struct _file_psrc_data));
-	errno_t err;
+//	errno_t err;
+	char* err = 0;
 	if(fd == 0)
 		return 0;
 
-	err = _sopen_s(&fd->fh,filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
+//	err = _sopen_s(&fd->fh,filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
+	fd->fh = _sopen(filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
 
 	if(err != 0)
 	{

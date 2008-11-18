@@ -27,11 +27,11 @@ typedef unsigned char uchar;
 typedef const unsigned char* cdat;
 
 typedef struct task task;
-typedef struct page_wrap page_wrap;
+//typedef struct page_wrap page_wrap;
 
 typedef struct st_ptr
 {
-	page_wrap* pg;
+	struct page_wrap* pg;
 	ushort key;
 	ushort offset;
 } st_ptr;
@@ -44,7 +44,7 @@ typedef struct ptr_list
 
 typedef struct it_ptr
 {
-	page_wrap* pg;
+	struct page_wrap* pg;
 	uchar* kdata;
 	ushort key;
 	ushort offset;
@@ -124,7 +124,7 @@ void* tk_malloc(task* t, uint size);
 void* tk_realloc(task* t, void* mem, uint size);
 void tk_mfree(task* t, void* mem);
 
-void tk_unref(task* t, page_wrap* pg);
+void tk_unref(task* t, struct page_wrap* pg);
 void tk_dup_ptr(st_ptr* to, st_ptr* from);
 
 void tk_root_ptr(task* t, st_ptr* pt);

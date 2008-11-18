@@ -35,6 +35,7 @@
 #define HEAD_EXTENDS "\0x"
 #define HEAD_STATES "\0s"
 #define HEAD_STATE_NAMES "\0z"
+#define HEAD_PROPERTY "\0y"
 
 #define HEAD_METHOD "\0M"
 #define HEAD_EXPR "\0E"
@@ -75,5 +76,7 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data);
 
 int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
+
+int cle_get_val(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, cle_pipe* response, void* data);
 
 #endif

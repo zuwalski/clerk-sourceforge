@@ -29,7 +29,7 @@ typedef struct page
 	unsigned short size;
 	unsigned short used;
 	unsigned short waste;
-	short data[];
+	//short data[0];
 } page;
 
 typedef struct cle_pagesource

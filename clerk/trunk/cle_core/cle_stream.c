@@ -148,6 +148,30 @@ void cle_standard_submit(event_handler* hdl, task* t_from, st_ptr* from)
 		st_link(hdl->instance_tk,&hdl->top->pt,t_from,from);
 }
 
+// TODO: could use up alot of RAM for no reason - write better streamer
+// FAIL: data-leaf can not have null-char !
+void cle_stream_submit_beta(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt)
+{
+	if(st_is_empty(pt) == 0)
+	{
+		it_ptr it;
+		st_ptr tpt;
+
+		it_create(t_pt,&it,pt);
+
+		recv->push(data);
+		while(it_next(t_pt,&tpt,&it))
+		{
+			recv->data(data,it.kdata,it.kused);
+
+			cle_stream_submit_beta(t,recv,data,t_pt,&tpt);
+		}
+		recv->pop(data);
+
+		it_dispose(t_pt,&it);
+	}
+}
+
 // pipeline activate All handlers
 static void _pa_pop(event_handler* hdl)
 {
@@ -373,6 +397,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 				if(st_get(app_instance,&pt,(char*)&target,sizeof(struct mod_target)) < 0)
 				{
+					// test if this handler is "live"
 					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
 					hdl->next = hdlists[target.handlertype];

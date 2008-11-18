@@ -117,6 +117,8 @@ void cle_standard_push(event_handler* hdl);
 void cle_standard_data(event_handler* hdl, cdat data, uint length);
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
+void cle_stream_submit_beta(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt);
+
 cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type);
 
 // thread-subsystem hook

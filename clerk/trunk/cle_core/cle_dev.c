@@ -23,7 +23,7 @@
 	dev.set.val.<objectname> , path.path , value
 	dev.set.expr.<objectname> , path.path , expr/method/ref
 	dev.set.state.<objectname> , state
-	dev.set.handler.<objectname> , state, event, handler (-method)
+	dev.set.handler.<objectname> , state, event, method/expr (handler)
 	dev.get.<objectname> , path.path
 
 */
@@ -167,28 +167,10 @@ static void _get_next(event_handler* hdl)
 	cdat obname = hdl->eventdata->eventid + sizeof(_get_name);
 	uint obname_length = hdl->eventdata->event_len - sizeof(_get_name);
 
-	if(cle_goto_object(hdl->instance_tk,&obj,obname,obname_length))
+	if(cle_get_val(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt,hdl->response,hdl->respdata))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
-	{
-		char buffer[200];
-		int len = st_get(hdl->instance_tk,&hdl->top->pt,buffer,sizeof(buffer));
-
-		if(len <= 0)
-			cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
-		else
-		{
-			st_ptr orig_obj = obj;
-			int i;
-			for(i = 0; i < len; i++)
-			{
-				if(buffer[i] == 0)
-					break;
-			}
-
-			cle_get_property(hdl->instance_tk,hdl->instance,&obj,buffer,i);
-		}
-	}
+		cle_stream_end(hdl);
 }
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
