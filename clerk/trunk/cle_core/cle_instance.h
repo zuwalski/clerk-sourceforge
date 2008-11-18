@@ -34,6 +34,7 @@
 #define HEAD_NAMES "\0o"
 #define HEAD_EXTENDS "\0x"
 #define HEAD_STATES "\0s"
+#define HEAD_STATE_NAMES "\0z"
 
 #define HEAD_METHOD "\0M"
 #define HEAD_EXPR "\0E"
@@ -59,12 +60,13 @@ void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint m
 void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
 /* object-store */
+void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj);
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj);
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
 
-int cle_set_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
+int cle_create_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
 
 int cle_set_value(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr value);
 

@@ -154,10 +154,32 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 
 /* object store */
 
+void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj)
+{
+	it_ptr it;
+	st_ptr pt;
+
+	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
+
+	it_create(app_instance,&it,&app_root);
+
+	it_new(app_instance,&it,obj);
+
+	st_insert(app_instance,&pt,it.kdata,it.kused);
+
+	// reflect oid in object
+	pt = *obj;
+	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
+
+	st_insert(app_instance,&pt,it.kdata,it.kused);
+
+	it_dispose(app_instance,&it);
+}
+
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj)
 {
 	it_ptr it;
-	st_ptr pt = app_root;
+	st_ptr newobj,pt = app_root;
 	int len;
 
 	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
@@ -172,11 +194,26 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 
 	it_create(app_instance,&it,&app_root);
 
-	it_new(app_instance,&it,obj);
+	it_new(app_instance,&it,&newobj);
+
+	st_insert(app_instance,&pt,it.kdata,it.kused);
+
+	// reflect name in object
+	pt = newobj;
+	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
+
+	_copy_insert(app_instance,&pt,name);
+
+	// reflect oid in object
+	pt = newobj;
+	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
 
 	st_insert(app_instance,&pt,it.kdata,it.kused);
 
 	it_dispose(app_instance,&it);
+
+	if(obj != 0)
+		*obj = newobj;
 	return 0;
 }
 
@@ -216,17 +253,6 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 		return 1;
 
 	return _copy_move(t,root,pt);
-}
-
-int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
-{
-	if(cle_goto_object(app_instance,&root,object_name,object_length))
-		return 1;
-
-	st_insert(app_instance,&root,HEAD_STATES,HEAD_SIZE);
-
-	// copy state-name
-	return (_copy_insert(app_instance,&root,state) < 2);
 }
 
 int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr value)
@@ -309,13 +335,93 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 	return 1;
 }
 
-int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data)
+int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	st_ptr pt = app_root;
-	if(cle_goto_object(app_instance,&pt,object_name,object_length))
+	it_ptr it;
+	st_ptr pt;
+	int len;
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	// method must start with '(' -> parameterlist begin
+	pt = root;
+	st_insert(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE);
+
+	// copy state-name
+	len = _copy_insert(app_instance,&pt,state);
+
+	// must be unique
+	if(len < 2 || st_is_empty(&pt) == 0)
+		return 1;
+
+	// go to state-store
+	st_insert(app_instance,&root,HEAD_STATES,HEAD_SIZE);
+
+	it_create(app_instance,&it,&root);
+
+	it_new(app_instance,&it,0);
+
+	// link name to new id
+	st_insert(app_instance,&pt,it.kdata,it.kused);
+
+	it_dispose(app_instance,&it);
+	return 0;
+}
+
+int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr expr, cle_pipe* response, void* data)
+{
+	st_ptr pt;
+	int len,c;
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
+		return 1;
+
+	// find state
+	pt = root;
+	if(st_move(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE) != 0)
+		return 1;
+
+	// to name
+	if(_copy_move(app_instance,&pt,state) != 0)
+		return 1;
+
+	if(st_move(app_instance,&root,HEAD_STATES,HEAD_SIZE) != 0)
+		return 1;
+
+	// to id
+	if(_copy_move(app_instance,&root,pt) != 0)
+		return 1;
+
+	// insert event-name
+	len = _copy_insert(app_instance,&root,eventname);
+
+	// must be unique
+	if(len < 2 || st_is_empty(&root) == 0)
+		return 1;
+
+	c = st_scan(app_instance,&expr);
+	while(c >= 0)
+	{
+		switch(c)
+		{
+		case '=':	// expr
+			st_insert(app_instance,&root,HEAD_EXPR,HEAD_SIZE);
+			// call compiler
+			return cmp_expr(app_instance,&root,&expr,response,data);
+		case '(':	// method
+			st_insert(app_instance,&root,HEAD_METHOD,HEAD_SIZE);
+			// call compiler
+			return cmp_method(app_instance,&root,&expr,response,data);
+		case ' ':
+		case '\t':
+		case '\r':
+		case '\n':
+			break;
+		default:
+			return 1;
+		}
+
+		c = st_scan(app_instance,&expr);
+	}
+
 	return 0;
 }
 
