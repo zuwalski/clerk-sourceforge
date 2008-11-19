@@ -43,14 +43,23 @@
 #define HEAD_STR "\0S"
 #define HEAD_REF "\0R"
 
+#define PROPERTY_SIZE 4
+
+typedef struct objectheader
+{
+	ushort state;
+	ushort next_state_id;
+	ushort level;
+	ushort next_property_id;
+	// ... followed by OID
+}
+objectheader;
+
 /* create blank instance (destroys any content) */
 void cle_format_instance(task* app_instance);
 
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
-
-/* setup module-level handler */
-void cle_add_mod_handler(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, struct mod_target* target);
 
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
@@ -62,7 +71,7 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 
 /* object-store */
 void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj);
-int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj);
+int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level);
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
@@ -75,8 +84,10 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 
 int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data);
 
-int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
+int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
 
-int cle_get_val(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, cle_pipe* response, void* data);
+int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop);
+
+int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr defaultvalue);
 
 #endif

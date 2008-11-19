@@ -79,6 +79,8 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length);
 //not same: copy from one task to the other
 uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from);
 
+uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length);
+
 uint st_offset(task* t, st_ptr* pt, uint offset);
 /*
 uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);

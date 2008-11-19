@@ -429,6 +429,55 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 	return 0;
 }
 
+uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
+{
+	struct _st_lkup_res rt;
+	rt.pg   = pt->pg;
+	rt.diff = pt->offset;
+	rt.sub  = GOKEY(pt->pg,pt->key);
+	rt.prev = 0;
+	rt.t    = t;
+
+	if(rt.pg->pg->id && length > 0)
+		_st_make_writable(&rt);
+
+	while(length > 0)
+	{
+		uint wlen;
+
+		if(rt.sub->length == 0)
+		{
+			rt.sub = _tk_get_ptr(t,&rt.pg,rt.sub);
+			if(rt.pg->pg->id)
+				_st_make_writable(&rt);
+		}
+
+		wlen = (rt.sub->length - rt.diff) >> 3;
+		if(wlen != 0)
+		{
+			wlen = length > wlen? wlen : length;
+			memcpy(KDATA(rt.sub)+(rt.diff >> 3),path,wlen);
+			length -= wlen;
+			rt.diff = 0;
+		}
+
+		if(rt.sub->sub == 0)
+			break;
+
+		wlen = rt.sub->length;
+		rt.sub = GOOFF(rt.pg,rt.sub->sub);
+		while(rt.sub->offset != wlen)
+		{
+			if(rt.sub->next == 0)
+				return (length > 0);
+
+			rt.sub = GOOFF(rt.pg,rt.sub->next);
+		}
+	}
+
+	return (length > 0);
+}
+
 uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
 {
 	struct _st_lkup_res rt;

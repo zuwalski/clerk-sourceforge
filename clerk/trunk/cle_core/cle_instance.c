@@ -128,10 +128,6 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
 }
 
-/* setup module-level handler */
-void cle_add_mod_handler(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, struct mod_target* target)
-{}
-
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {
@@ -160,6 +156,7 @@ void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj)
 {
 	it_ptr it;
 	st_ptr pt;
+	objectheader header;
 
 	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
 
@@ -173,16 +170,24 @@ void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj)
 	pt = *obj;
 	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
 
+	header.level = 0;
+	header.state = 0;
+	header.next_property_id = 0;
+	header.next_state_id = 1;
+	// write header
+	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
+
 	st_insert(app_instance,&pt,it.kdata,it.kused);
 
 	it_dispose(app_instance,&it);
 }
 
-int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj)
+int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level)
 {
 	it_ptr it;
 	st_ptr newobj,pt = app_root;
 	int len;
+	objectheader header;
 
 	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
 
@@ -210,6 +215,13 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 	pt = newobj;
 	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
 
+	header.level = level;
+	header.state = 0;
+	header.next_property_id = 0;
+	header.next_state_id = 1;
+	// write header
+	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
+
 	st_insert(app_instance,&pt,it.kdata,it.kused);
 
 	it_dispose(app_instance,&it);
@@ -222,6 +234,7 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj)
 {
 	st_ptr newobj,pt = app_root;
+	objectheader header;
 
 	if(st_move(app_instance,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
 		return 1;
@@ -229,7 +242,17 @@ int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_
 	if(st_move(app_instance,&pt,extends_name,exname_length) != 0)
 		return 1;
 
-	if(cle_new_object(app_instance,app_root,name,&newobj))
+	// move to extend-object
+	if(_copy_move(app_instance,&app_root,pt) != 0)
+		return 1;
+	// get header from extend-object
+	if(st_move(app_instance,&app_root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	if(st_get(app_instance,&app_root,(char*)&header,sizeof(header)) != -1)
+		return 1;
+
+	if(cle_new_object(app_instance,app_root,name,&newobj,header.level + 1))
 		return 1;
 
 	st_insert(app_instance,&newobj,HEAD_EXTENDS,HEAD_SIZE);
@@ -257,96 +280,11 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 	return _copy_move(t,root,pt);
 }
 
-int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr value)
-{
-	if(cle_goto_object(app_instance,&root,object_name,object_length))
-		return 1;
-
-	_copy_insert(app_instance,&root,path);
-
-	if(st_is_empty(&value) == 0)
-		st_link(app_instance,&root,app_instance,&value);
-
-	return 0;
-}
-
-static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr)
-{
-	st_ptr pt = dest;
-	// insert path
-	if(pt.pg != 0)
-	{
-		st_insert(app_instance,&dest,"p",2);
-		_copy_insert(app_instance,&dest,path);
-	}
-
-	dest = pt;
-	// insert source
-	st_insert(app_instance,&dest,"s",2);
-	_copy_insert(app_instance,&dest,expr);
-}
-
-int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data)
-{
-	st_ptr pt0,pt = app_root;
-	int c;
-	if(cle_goto_object(app_instance,&pt,object_name,object_length))
-		return 1;
-
-	_copy_insert(app_instance,&pt,path);
-
-	// clear old
-	st_delete(app_instance,&pt,0,0);
-
-	c = st_scan(app_instance,&expr);
-	while(c >= 0)
-	{
-		switch(c)
-		{
-		case ':':	// ref to named object
-			st_insert(app_instance,&pt,HEAD_REF,HEAD_SIZE);
-
-			pt0 = app_root;
-			if(st_move(app_instance,&pt0,HEAD_NAMES,HEAD_SIZE) != 0)
-				return 1;
-			if(_copy_move(app_instance,&pt0,expr))
-				return 1;
-
-			// copy oid
-			_copy_insert(app_instance,&pt,pt0);
-			return 0;
-		case '=':	// expr
-			st_insert(app_instance,&pt,HEAD_EXPR,HEAD_SIZE);
-
-			_record_source_and_path(app_instance,pt,path,expr);
-			// call compiler
-			return cmp_expr(app_instance,&pt,&expr,response,data);
-		case '(':	// method
-			st_insert(app_instance,&pt,HEAD_METHOD,HEAD_SIZE);
-
-			_record_source_and_path(app_instance,pt,path,expr);
-			// call compiler
-			return cmp_method(app_instance,&pt,&expr,response,data);
-		case ' ':
-		case '\t':
-		case '\r':
-		case '\n':
-			break;
-		default:
-			return 1;
-		}
-
-		c = st_scan(app_instance,&expr);
-	}
-
-	return 1;
-}
-
 int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	it_ptr it;
-	st_ptr pt;
+	st_ptr pt,pt0;
 	int len;
+	objectheader header;
 	char buffer[sizeof(start_state)];
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
@@ -367,26 +305,43 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(len < 2 || st_is_empty(&pt) == 0)
 		return 1;
 
-	// go to state-store
-	st_insert(app_instance,&root,HEAD_STATES,HEAD_SIZE);
-
-	it_create(app_instance,&it,&root);
-
-	it_new(app_instance,&it,0);
+	pt0 = root;
+	if(st_get(app_instance,&root,(char*)&header,sizeof(header)) != -1)
+		return 1;
 
 	// link name to new id
-	st_insert(app_instance,&pt,it.kdata,it.kused);
+	st_insert(app_instance,&pt,(cdat)header.next_state_id,sizeof(ushort));
 
-	it_dispose(app_instance,&it);
+	header.next_state_id++;
+	// save new id
+	st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
 	return 0;
 }
 
 static st_ptr _blank = {0,0,0};
 
+static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr, char source_prefix)
+{
+	st_ptr pt = dest;
+	char buffer[] = "s\0";
+	// insert path
+	if(pt.pg != 0)
+	{
+		st_insert(app_instance,&dest,"p",2);
+		_copy_insert(app_instance,&dest,path);
+	}
+
+	dest = pt;
+	// insert source
+	buffer[2] = source_prefix;
+	st_insert(app_instance,&dest,buffer,3);
+	_copy_insert(app_instance,&dest,expr);
+}
+
 int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr expr, cle_pipe* response, void* data)
 {
 	st_ptr pt;
-	int len,c;
+	int len;
 	char buffer[sizeof(start_state)];
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
@@ -407,12 +362,15 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		if(st_move(app_instance,&root,HEAD_STATES,HEAD_SIZE) != 0)
 			return 1;
 
-		// to id
-		if(_copy_move(app_instance,&root,pt) != 0)
+		// get state id
+		if(st_get(app_instance,&pt,buffer,2) != -1)
 			return 1;
+
+		// to the id...
+		st_insert(app_instance,&root,buffer,2);
 	}
 	else	// start-state
-		st_insert(app_instance,&root,"\1",2);
+		st_insert(app_instance,&root,"\0\0",2);
 
 	// insert event-name
 	len = _copy_insert(app_instance,&root,eventname);
@@ -420,23 +378,15 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 	if(len < 2)
 		return 1;
 
-	c = st_scan(app_instance,&expr);
-	while(c >= 0)
+	while(1)
 	{
-		switch(c)
+		switch(st_scan(app_instance,&expr))
 		{
-		case '=':	// expr
-			st_insert(app_instance,&root,HEAD_EXPR,HEAD_SIZE);
-			st_delete(app_instance,&root,0,0);
-			// insert source
-			_record_source_and_path(app_instance,pt,_blank,expr);
-			// call compiler
-			return cmp_expr(app_instance,&root,&expr,response,data);
 		case '(':	// method
 			st_insert(app_instance,&root,HEAD_METHOD,HEAD_SIZE);
 			st_delete(app_instance,&root,0,0);
 			// insert source
-			_record_source_and_path(app_instance,pt,_blank,expr);
+			_record_source_and_path(app_instance,pt,_blank,expr,'(');
 			// call compiler
 			return cmp_method(app_instance,&root,&expr,response,data);
 		case ' ':
@@ -447,14 +397,10 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		default:
 			return 1;
 		}
-
-		c = st_scan(app_instance,&expr);
 	}
-
-	return 0;
 }
 
-int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)
+int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)
 {
 	int super_prop = 0;
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
@@ -481,7 +427,7 @@ int cle_get_property(task* app_instance, st_ptr root, st_ptr* object, cdat propn
 	}
 }
 
-int cle_goto_prop(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop, int create)
+int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop)
 {
 	st_ptr obj,app = root;
 	int c,i;
@@ -504,8 +450,9 @@ int cle_goto_prop(task* app_instance, st_ptr root, cdat object_name, uint object
 
 	buffer[i - 1] = 0;
 
+	// find hosting object
 	obj = root;
-	c = cle_get_property(app_instance,app,&root,buffer,i);
+	c = cle_get_property_host(app_instance,app,&root,buffer,i);
 	if(c < 0)
 		return 1;
 
@@ -513,31 +460,137 @@ int cle_goto_prop(task* app_instance, st_ptr root, cdat object_name, uint object
 	if(_copy_move(app_instance,&root,path) != 0)
 		return 1;
 
-	if(c != 0)	// go to prop by index
+	// not defined in this object? go to prop by index
+	if(c != 0)
 	{
-		if(create)
-			;
-		else
+		if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) != -1)
+			return 1;
+
+		if(buffer[0] != 0 || buffer[1] != 'y')
+			return 1;
+
+		// if object have no value for that property - use default value
+		if(st_move(app_instance,&obj,buffer,HEAD_SIZE + PROPERTY_SIZE) == 0)
+			root = obj;	// found value in object
+	}
+	else
+	{
+		obj = root;
+		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) == -1 && buffer[0] == 0)
 		{
-			st_move(app_instance,&root,HEAD_PROPERTY,HEAD_SIZE);
+			switch(buffer[1])
+			{
+			case 'y':
+				// property-def? show default-value
+				root = obj;
+				break;
+			case 'M':
+			case 'E':
+				// method or expr? show source
+				root = obj;
+				st_move(app_instance,&root,"s",2);
+			}
 		}
 	}
 
-	*prop = &root;
+	*prop = root;
 	return 0;
 }
 
-int cle_get_val(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, cle_pipe* response, void* data)
+int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr defaultvalue)
 {
-	st_ptr pt = root;
+	st_ptr pt,pt0;
+	objectheader header;
+
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	pt = root;
-	if(_copy_move(app_instance,&root,path) != 0)
+	pt0 = pt = root;
+	if(_copy_insert(app_instance,&root,path) < 2)
 		return 1;
 
-	response->submit(data,app_instance,&root);
+	// read header
+	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
+		return 1;
+
+	// creat property-header
+	st_insert(app_instance,&root,HEAD_PROPERTY,HEAD_SIZE);
+	// clear
+	st_delete(app_instance,&root,0,0);
+
+	st_insert(app_instance,&root,(cdat)&header.level,4);
+
+	header.next_property_id++;
+
+	st_dataupdate(app_instance,&pt0,(cdat)&header,sizeof(header));
+
+	if(st_is_empty(&defaultvalue) == 0)
+		st_link(app_instance,&root,app_instance,&defaultvalue);
 
 	return 0;
+}
+
+/* values and exprs shadow names defined at a lower level */
+int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr value)
+{
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
+		return 1;
+
+	_copy_insert(app_instance,&root,path);
+
+	if(st_is_empty(&value) == 0)
+		st_link(app_instance,&root,app_instance,&value);
+
+	return 0;
+}
+
+int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data)
+{
+	st_ptr pt0,pt = app_root;
+
+	if(cle_goto_object(app_instance,&pt,object_name,object_length))
+		return 1;
+
+	_copy_insert(app_instance,&pt,path);
+
+	// clear old
+	st_delete(app_instance,&pt,0,0);
+
+	while(1)
+	{
+		switch(st_scan(app_instance,&expr))
+		{
+		case ':':	// ref to named object
+			st_insert(app_instance,&pt,HEAD_REF,HEAD_SIZE);
+
+			pt0 = app_root;
+			if(st_move(app_instance,&pt0,HEAD_NAMES,HEAD_SIZE) != 0)
+				return 1;
+			if(_copy_move(app_instance,&pt0,expr))
+				return 1;
+
+			// copy oid
+			_copy_insert(app_instance,&pt,pt0);
+			return 0;
+		case '=':	// expr
+			st_insert(app_instance,&pt,HEAD_EXPR,HEAD_SIZE);
+
+			_record_source_and_path(app_instance,pt,path,expr,'=');
+			// call compiler
+			return cmp_expr(app_instance,&pt,&expr,response,data);
+		case '(':	// method
+			st_insert(app_instance,&pt,HEAD_METHOD,HEAD_SIZE);
+
+			_record_source_and_path(app_instance,pt,path,expr,'(');
+			// call compiler
+			return cmp_method(app_instance,&pt,&expr,response,data);
+		case ' ':
+		case '\t':
+		case '\r':
+		case '\n':
+			break;
+		default:
+			return 1;
+		}
+	}
 }

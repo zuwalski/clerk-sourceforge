@@ -23,7 +23,10 @@
 	dev.set.val.<objectname> , path.path , value
 	dev.set.expr.<objectname> , path.path , expr/method/ref
 	dev.set.state.<objectname> , state
-	dev.set.handler.<objectname> , state, event, method/expr (handler)
+	dev.set.handler.sync.<objectname> , state, event, method/expr (handler)
+	dev.set.handler.asyn.<objectname> , state, event, method/expr (handler)
+	dev.set.handler.resp.<objectname> , state, event, method/expr (handler)
+	dev.set.handler.reqs.<objectname> , state, event, method/expr (handler)
 	dev.get.<objectname> , path.path
 
 */
@@ -34,7 +37,10 @@ static const char _new_extends_name[] = "dev.new";
 static const char _set_val_name[] = "dev.set.val";
 static const char _set_expr_name[] = "dev.set.expr";
 static const char _create_state_name[] = "dev.create.state";
-static const char _set_handler_name[] = "dev.set.handler";
+static const char _set_handler_name_sync[] = "dev.set.handler.sync";
+static const char _set_handler_name_asyn[] = "dev.set.handler.asyn";
+static const char _set_handler_name_resp[] = "dev.set.handler.resp";
+static const char _set_handler_name_reqs[] = "dev.set.handler.reqs";
 static const char _get_name[] = "dev.get";
 static const char _list_object_name[] = "dev.list.object";
 static const char _list_state_name[] = "dev.list.state";
@@ -45,14 +51,17 @@ static cle_syshandler _new_extends;
 static cle_syshandler _set_val;
 static cle_syshandler _set_expr;
 static cle_syshandler _create_state;
-static cle_syshandler _set_handler;
+static cle_syshandler _set_handler_sync;
+static cle_syshandler _set_handler_asyn;
+static cle_syshandler _set_handler_resp;
+static cle_syshandler _set_handler_reqs;
 static cle_syshandler _get;
 
 static const char _illegal_argument[] = "dev:illegal argument";
 
 static void new_object_next(event_handler* hdl)
 {
-	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0))
+	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -115,12 +124,13 @@ static void _set_expr_next(event_handler* hdl)
 		cdat obname = hdl->eventdata->eventid + sizeof(_set_expr_name);
 		uint obname_length = hdl->eventdata->event_len - sizeof(_set_expr_name);
 
+		hdl->response->start(hdl->respdata);
 		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->top->pt,hdl->response,hdl->respdata);
 		cle_stream_end(hdl);
 	}
 }
 
-static void _set_handler_next(event_handler* hdl)
+static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_type tp)
 {
 	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
 
@@ -142,12 +152,30 @@ static void _set_handler_next(event_handler* hdl)
 	// 3. hit
 	else
 	{
-		cdat obname = hdl->eventdata->eventid + sizeof(_set_handler_name);
-		uint obname_length = hdl->eventdata->event_len - sizeof(_set_handler_name);
+		cdat obname = hdl->eventdata->eventid + namesize;
+		uint obname_length = hdl->eventdata->event_len - namesize;
 
+		hdl->response->start(hdl->respdata);
 		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->top->pt,hdl->response,hdl->respdata);
 		cle_stream_end(hdl);
 	}
+}
+
+static void _set_handler_sync_next(event_handler* hdl)
+{
+	_set_handler_shared(hdl,sizeof(_set_handler_name_sync),SYNC_REQUEST_HANDLER);
+}
+static void _set_handler_asyn_next(event_handler* hdl)
+{
+	_set_handler_shared(hdl,sizeof(_set_handler_name_asyn),ASYNC_REQUEST_HANDLER);
+}
+static void _set_handler_resp_next(event_handler* hdl)
+{
+	_set_handler_shared(hdl,sizeof(_set_handler_name_resp),PIPELINE_RESPONSE);
+}
+static void _set_handler_reqs_next(event_handler* hdl)
+{
+	_set_handler_shared(hdl,sizeof(_set_handler_name_reqs),PIPELINE_REQUEST);
 }
 
 static void _create_state_next(event_handler* hdl)
@@ -163,14 +191,18 @@ static void _create_state_next(event_handler* hdl)
 
 static void _get_next(event_handler* hdl)
 {
-	st_ptr obj = hdl->instance;
+	st_ptr prop;
 	cdat obname = hdl->eventdata->eventid + sizeof(_get_name);
 	uint obname_length = hdl->eventdata->event_len - sizeof(_get_name);
 
-	if(cle_get_val(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt,hdl->response,hdl->respdata))
+	if(cle_get_property(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt,&prop))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
+	{
+		hdl->response->start(hdl->respdata);
+		hdl->response->submit(hdl->respdata,hdl->instance_tk,&prop);
 		cle_stream_end(hdl);
+	}
 }
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
@@ -190,8 +222,17 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 	_create_state = cle_create_simple_handler(0,_create_state_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_create_state_name,sizeof(_create_state_name),&_create_state);
 
-	_set_handler = cle_create_simple_handler(0,_set_handler_next,0,SYNC_REQUEST_HANDLER);
-	cle_add_sys_handler(config_t,*config_root,_set_handler_name,sizeof(_set_handler_name),&_set_handler);
+	_set_handler_sync = cle_create_simple_handler(0,_set_handler_sync_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_handler_name_sync,sizeof(_set_handler_name_sync),&_set_handler_sync);
+
+	_set_handler_asyn = cle_create_simple_handler(0,_set_handler_asyn_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_handler_name_asyn,sizeof(_set_handler_name_asyn),&_set_handler_asyn);
+
+	_set_handler_resp = cle_create_simple_handler(0,_set_handler_resp_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_handler_name_resp,sizeof(_set_handler_name_resp),&_set_handler_resp);
+
+	_set_handler_reqs = cle_create_simple_handler(0,_set_handler_reqs_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_handler_name_reqs,sizeof(_set_handler_name_reqs),&_set_handler_reqs);
 
 	_get = cle_create_simple_handler(0,_get_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_get_name,sizeof(_get_name),&_get);
