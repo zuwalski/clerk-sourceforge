@@ -441,33 +441,54 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
 
+	// lookup handler-object
 	*handler = root;
 	if(_copy_move(app_instance,handler,oid) != 0)
 		return 1;
 
+	// if no target -> handler and object are the same
 	if(target_oid_length == 0)
 		*object = *handler;
 	else
 	{
+		// lookup target object
 		*object = root;
 		if(st_move(app_instance,object,target_oid,target_oid_length) != 0)
 			return 1;
+
+		// verify that target-object extends handler-object
+		pt = *object;
+		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)
+		{
+			// go to super-object (if any)
+			st_ptr pt0;
+			if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
+				return 1;
+
+			pt0 = root;
+			if(_copy_move(app_instance,&pt0,pt) != 0)
+				return 1;
+			
+			pt = pt0;
+		}
 	}
 
+	// get object-header
 	pt = *object;
 	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
 	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
 		return 1;
 
+	// target-object must be in a state that allows this event
 	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
 		return 1;
 	if(st_move(app_instance,handler,(cdat)&header.state,sizeof(header.state)) != 0)
 		return 1;
-
 	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
 		return 1;
 
+	// set handler to the implementing handler-method
 	return st_move(app_instance,handler,HEAD_METHOD,HEAD_SIZE);
 }
 
