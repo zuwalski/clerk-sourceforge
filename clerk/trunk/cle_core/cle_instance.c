@@ -306,6 +306,8 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	pt0 = root;
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
 	if(st_get(app_instance,&root,(char*)&header,sizeof(header)) != -1)
 		return 1;
 
@@ -338,16 +340,17 @@ static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path
 	_copy_insert(app_instance,&dest,expr);
 }
 
-int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr expr, cle_pipe* response, void* data)
+int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr expr, cle_pipe* response, void* data, enum handler_type type)
 {
-	st_ptr pt;
+	st_ptr pt,obj_root,app_root = root;
 	int len;
 	char buffer[sizeof(start_state)];
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	pt = root;
+	obj_root = root;
+	pt = state;
 	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) != -1 || memcmp(start_state,buffer,sizeof(buffer)) != 0)
 	{
 		// find state
@@ -369,8 +372,9 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		// to the id...
 		st_insert(app_instance,&root,buffer,2);
 	}
-	else	// start-state
-		st_insert(app_instance,&root,"\0\0",2);
+	// start-state
+	else
+		st_insert(app_instance,&root,"\0s\0\0",4);
 
 	// insert event-name
 	len = _copy_insert(app_instance,&root,eventname);
@@ -383,12 +387,41 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		switch(st_scan(app_instance,&expr))
 		{
 		case '(':	// method
-			st_insert(app_instance,&root,HEAD_METHOD,HEAD_SIZE);
-			st_delete(app_instance,&root,0,0);
-			// insert source
-			_record_source_and_path(app_instance,pt,_blank,expr,'(');
-			// call compiler
-			return cmp_method(app_instance,&root,&expr,response,data);
+			{
+				it_ptr it;
+				char handlertype = (char)type;
+
+				st_insert(app_instance,&root,HEAD_METHOD,HEAD_SIZE);
+				st_delete(app_instance,&root,0,0);
+				// insert source
+				_record_source_and_path(app_instance,pt,_blank,expr,'(');
+				// call compiler
+				if(cmp_method(app_instance,&root,&expr,response,data))
+					return 1;
+				// register handler
+				st_insert(app_instance,&app_root,HEAD_EVENT,HEAD_SIZE);
+
+				// event-name
+				_copy_insert(app_instance,&app_root,eventname);
+
+				st_insert(app_instance,&app_root,HEAD_HANDLER,HEAD_SIZE);
+
+				it_create(app_instance,&it,&app_root);
+
+				// new index
+				it_new(app_instance,&it,&app_root);
+
+				it_dispose(app_instance,&it);
+
+				// the handler-type
+				st_insert(app_instance,&app_root,(cdat)&handlertype,1);
+
+				// object-id of hosting object
+				st_move(app_instance,&obj_root,HEAD_OID,HEAD_SIZE);
+
+				_copy_insert(app_instance,&app_root,obj_root);
+			}
+			return 0;
 		case ' ':
 		case '\t':
 		case '\r':
@@ -398,6 +431,44 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 			return 1;
 		}
 	}
+}
+
+int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, cdat target_oid, uint target_oid_length, enum handler_type type)
+{
+	st_ptr pt;
+	objectheader header;
+
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	*handler = root;
+	if(_copy_move(app_instance,handler,oid) != 0)
+		return 1;
+
+	if(target_oid_length == 0)
+		*object = *handler;
+	else
+	{
+		*object = root;
+		if(st_move(app_instance,object,target_oid,target_oid_length) != 0)
+			return 1;
+	}
+
+	pt = *object;
+	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
+		return 1;
+
+	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
+		return 1;
+	if(st_move(app_instance,handler,(cdat)&header.state,sizeof(header.state)) != 0)
+		return 1;
+
+	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
+		return 1;
+
+	return st_move(app_instance,handler,HEAD_METHOD,HEAD_SIZE);
 }
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)

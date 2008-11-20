@@ -156,7 +156,7 @@ static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_
 		uint obname_length = hdl->eventdata->event_len - namesize;
 
 		hdl->response->start(hdl->respdata);
-		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->top->pt,hdl->response,hdl->respdata);
+		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->top->pt,hdl->response,hdl->respdata,tp);
 		cle_stream_end(hdl);
 	}
 }

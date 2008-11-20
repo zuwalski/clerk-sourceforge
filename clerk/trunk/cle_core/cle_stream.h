@@ -63,12 +63,6 @@ enum handler_type
 	PIPELINE_RESPONSE
 };
 
-struct mod_target
-{
-	char handlertype;
-	char objid[7];
-};
-
 typedef struct sys_handler_data
 {
 	st_ptr config;
@@ -103,7 +97,8 @@ struct event_handler
 	ptr_list* free;
 	task* instance_tk;
 	st_ptr instance;
-	struct mod_target target;
+	st_ptr handler;
+	st_ptr object;
 };
 
 /* event-handler exit-functions */

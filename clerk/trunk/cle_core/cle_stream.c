@@ -392,21 +392,26 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// iterate instance-refs / event-handler-id
 			while(it_next(app_instance,&pt,&it))
 			{
-				event_handler* hdl;
-				struct mod_target target;
+				char handlertype;
 
-				if(st_get(app_instance,&pt,(char*)&target,sizeof(struct mod_target)) < 0)
+				if(st_get(app_instance,&pt,(char*)&handlertype,1) != -2)
 				{
-					// test if this handler is "live"
-					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+					st_ptr handler,object;
 
-					hdl->next = hdlists[target.handlertype];
-					hdlists[target.handlertype] = hdl;
+					if(cle_get_handler(app_instance,instance,pt,&handler,&object,eventid,i,target_oid,target_oid_length,handlertype) == 0)
+					{
+						hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
-					hdl->thehandler = &_runtime_handler;
-					hdl->target = target;
-					hdl->eventdata = &ipt->sys;
-					hdl->handler_data = 0;
+						hdl->next = hdlists[handlertype];
+						hdlists[handlertype] = hdl;
+
+						hdl->thehandler = &_runtime_handler;
+						hdl->eventdata = &ipt->sys;
+						hdl->handler_data = 0;
+
+						hdl->handler = handler;
+						hdl->object = object;
+					}
 				}
 			}
 
@@ -422,7 +427,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			{
 				do
 				{
-					event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
 					hdl->next = hdlists[syshdl->systype];
 					hdlists[syshdl->systype] = hdl;
