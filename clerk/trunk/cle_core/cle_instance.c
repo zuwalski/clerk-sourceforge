@@ -433,7 +433,17 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 	}
 }
 
-int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, cdat target_oid, uint target_oid_length, enum handler_type type)
+int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length)
+{
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	// lookup target object
+	*object = root;
+	return st_move(app_instance,object,target_oid,target_oid_length);
+}
+
+int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
 {
 	st_ptr pt;
 	objectheader header;
@@ -447,15 +457,10 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 		return 1;
 
 	// if no target -> handler and object are the same
-	if(target_oid_length == 0)
+	if(object->pg == 0)
 		*object = *handler;
 	else
 	{
-		// lookup target object
-		*object = root;
-		if(st_move(app_instance,object,target_oid,target_oid_length) != 0)
-			return 1;
-
 		// verify that target-object extends handler-object
 		pt = *object;
 		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)

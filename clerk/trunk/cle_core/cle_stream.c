@@ -274,7 +274,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	_ipt* ipt;
 	event_handler* hdlists[4];
 	event_handler* hdl;
-	st_ptr pt,eventpt,syspt,instance;
+	st_ptr pt,eventpt,syspt,instance,object;
 	int from,i,allowed;
 
 	// ipt setup - internal task
@@ -309,6 +309,26 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			_error(event_not_allowed);
 			return 0;
 		}
+	}
+
+	// validate event-id and get target-oid (if any)
+	if(0)
+	{
+		cdat target_oid = "";
+		uint target_length = 0;
+
+		if(cle_get_target(app_instance,instance,&object,target_oid,target_length))
+		{
+			// target not found
+			_error(event_not_allowed);
+			return 0;
+		}
+	}
+	else
+	{
+		object.pg = 0;
+		object.key = 0;
+		object.offset = 0;
 	}
 
 	syspt = config;
@@ -396,9 +416,14 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 				if(st_get(app_instance,&pt,(char*)&handlertype,1) != -2)
 				{
-					st_ptr handler,object;
+					st_ptr handler,obj;
 
-					if(cle_get_handler(app_instance,instance,pt,&handler,&object,eventid,i,target_oid,target_oid_length,handlertype) == 0)
+					if(handlertype < PIPELINE_REQUEST)
+						obj = object;
+					else
+						obj.pg = 0;
+
+					if(cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i,handlertype) == 0)
 					{
 						hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
@@ -410,7 +435,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 						hdl->handler_data = 0;
 
 						hdl->handler = handler;
-						hdl->object = object;
+						hdl->object = obj;
 					}
 				}
 			}
@@ -434,6 +459,9 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					hdl->thehandler = syshdl;
 					hdl->eventdata = &ipt->sys;
 					hdl->handler_data = 0;
+
+					hdl->object = object;
+					hdl->handler.pg = 0;
 
 					// next in list...
 					syshdl = syshdl->next_handler;
