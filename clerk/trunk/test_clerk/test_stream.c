@@ -134,9 +134,9 @@ char* user_roles[] = {
 // must all be 10 chars (or 0)
 char* test_events[] = {
 	"abcdefghi",		// no handler
-	"ab.defghi",		// sync, async
-	"ab.de.ghi",		// sync, request pipe
-	"ab.de.g.i",		// sync, request, response
+	"ab\0defghi",		// sync, async
+	"ab\0de\0ghi",		// sync, request pipe
+	"ab\0de\0g\0i",		// sync, request, response
 	0
 };
 
@@ -192,13 +192,13 @@ void test_stream_c()
 	cle_add_sys_handler(t,config_root,"ab",3,&handler1);
 
 	// async handler for "ab\0defghi*"
-	cle_add_sys_handler(t,config_root,"ab.defghi",10,&handler2);
+	cle_add_sys_handler(t,config_root,"ab\0defghi",10,&handler2);
 
 	// request-pipe-handler for "ab\0de*"
-	cle_add_sys_handler(t,config_root,"ab.de",6,&handler3);
+	cle_add_sys_handler(t,config_root,"ab\0de",6,&handler3);
 
 	// response-pipe-handler for "ab\0de\0g\0i*"
-	cle_add_sys_handler(t,config_root,"ab.de.g.i",10,&handler4);
+	cle_add_sys_handler(t,config_root,"ab\0de\0g\0i",10,&handler4);
 
 	printf("handler1 sync: %p\n",&handler1);
 	printf("handler2 async: %p\n",&handler2);

@@ -267,6 +267,41 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 // input-functions
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
+static int _validate_eventid(cdat eventid, uint event_len)
+{
+	uint i,state = 0,from = 0;
+	for(i = 0; i < event_len; i++)
+	{
+		switch(eventid[i])
+		{
+		case 0:
+			if(state != 0 || i == 0)
+				return -1;
+			state = 1;
+			break;
+		case '#':
+			if(state != 1)
+				return -1;
+			from = i + 1;
+			state = 2;
+			break;
+		default:
+			// illegal character?
+			if(state & 2)
+			{
+				if(eventid[i] > 'a' && eventid[i] < 'q')
+					return -1;
+			}
+			else if(eventid[i] < '0' || eventid[i] > 'z' || (eventid[i] > 'Z' && eventid[i] < 'a') || (eventid[i] > '9' && eventid[i] < 'A'))
+				return -1;
+			else
+				state = 0;
+		}
+	}
+
+	return from;
+}
+
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				cdat userid, uint userid_len, char* user_roles[],
 					cle_pipe* response, void* responsedata, task* app_instance)
@@ -296,6 +331,20 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	/* get a root ptr to instance-db */
 	tk_root_ptr(app_instance,&instance);
 
+	// validate event-id and get target-oid (if any)
+	i = _validate_eventid(eventid,event_len);
+	if(i != 0)
+	{
+		if(i < 0 || cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
+		{
+			// target not found
+			_error(event_not_allowed);
+			return 0;
+		}
+	}
+	else
+		object.pg = 0;
+
 	// no username? -> root/sa
 	allowed = (userid_len == 0);
 
@@ -311,33 +360,13 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		}
 	}
 
-	// validate event-id and get target-oid (if any)
-	if(0)
-	{
-		cdat target_oid = "";
-		uint target_length = 0;
-
-		if(cle_get_target(app_instance,instance,&object,target_oid,target_length))
-		{
-			// target not found
-			_error(event_not_allowed);
-			return 0;
-		}
-	}
-	else
-	{
-		object.pg = 0;
-		object.key = 0;
-		object.offset = 0;
-	}
-
 	syspt = config;
 	from = 0;
 
 	for(i = 0; i < event_len; i++)
 	{
 		// event-part-boundary
-		if(eventid[i] != 0 && eventid[i] != '.')
+		if(eventid[i] != 0)
 			continue;
 
 		// lookup event-part (module-level)

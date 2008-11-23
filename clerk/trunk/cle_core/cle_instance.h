@@ -94,4 +94,6 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 
 int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length);
 
+int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize);
+
 #endif
