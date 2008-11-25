@@ -389,15 +389,20 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		case '(':	// method
 			{
 				it_ptr it;
-				char handlertype = (char)type;
+				char handlertype[2];
+				handlertype[0] = 0;
+				handlertype[1] = (char)type;
+				st_insert(app_instance,&root,(cdat)&handlertype,2);
 
-				st_insert(app_instance,&root,HEAD_METHOD,HEAD_SIZE);
+				// clear all
 				st_delete(app_instance,&root,0,0);
+
 				// insert source
 				_record_source_and_path(app_instance,pt,_blank,expr,'(');
 				// call compiler
 				if(cmp_method(app_instance,&root,&expr,response,data))
 					return 1;
+
 				// register handler
 				st_insert(app_instance,&app_root,HEAD_EVENT,HEAD_SIZE);
 
@@ -414,7 +419,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				it_dispose(app_instance,&it);
 
 				// the handler-type
-				st_insert(app_instance,&app_root,(cdat)&handlertype,1);
+				st_insert(app_instance,&app_root,(cdat)&handlertype[1],1);
 
 				// object-id of hosting object
 				st_move(app_instance,&obj_root,HEAD_OID,HEAD_SIZE);
@@ -431,6 +436,73 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 			return 1;
 		}
 	}
+}
+
+int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
+{
+	st_ptr pt;
+	objectheader header;
+	char handlertype[2];
+	handlertype[0] = 0;
+	handlertype[1] = (char)type;
+
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return -1;
+
+	// lookup handler-object
+	*handler = root;
+	if(_copy_move(app_instance,handler,oid) != 0)
+		return -1;
+
+	// if no target -> handler and object are the same
+	if(object->pg == 0)
+		*object = *handler;
+	else
+	{
+		// verify that target-object extends handler-object
+		pt = *object;
+		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)
+		{
+			// go to super-object (if any)
+			st_ptr pt0;
+			if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
+				return -1;
+
+			pt0 = root;
+			if(_copy_move(app_instance,&pt0,pt) != 0)
+				return -1;
+			
+			pt = pt0;
+		}
+	}
+
+	// get object-header
+	pt = *object;
+	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
+		return -1;
+	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
+		return -1;
+
+	pt = *handler;
+	// target-object must be in a state that allows this event
+	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
+		return -1;
+	if(st_move(app_instance,handler,(cdat)&header.state,sizeof(header.state)) != 0)
+		return -1;
+	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
+		return -1;
+
+	// set handler to the implementing handler-method
+	if(st_move(app_instance,handler,(cdat)&handlertype,2) != 0)
+		return -1;
+
+	// get object-header - for handler-level
+	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
+		return -1;
+	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
+		return -1;
+
+	return header.level;
 }
 
 int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
@@ -487,60 +559,6 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 	// lookup target object
 	*object = root;
 	return st_move(app_instance,object,buffer,target_oid_length/2);
-}
-
-int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
-{
-	st_ptr pt;
-	objectheader header;
-
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-
-	// lookup handler-object
-	*handler = root;
-	if(_copy_move(app_instance,handler,oid) != 0)
-		return 1;
-
-	// if no target -> handler and object are the same
-	if(object->pg == 0)
-		*object = *handler;
-	else
-	{
-		// verify that target-object extends handler-object
-		pt = *object;
-		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)
-		{
-			// go to super-object (if any)
-			st_ptr pt0;
-			if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
-				return 1;
-
-			pt0 = root;
-			if(_copy_move(app_instance,&pt0,pt) != 0)
-				return 1;
-			
-			pt = pt0;
-		}
-	}
-
-	// get object-header
-	pt = *object;
-	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -1)
-		return 1;
-
-	// target-object must be in a state that allows this event
-	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
-		return 1;
-	if(st_move(app_instance,handler,(cdat)&header.state,sizeof(header.state)) != 0)
-		return 1;
-	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
-		return 1;
-
-	// set handler to the implementing handler-method
-	return st_move(app_instance,handler,HEAD_METHOD,HEAD_SIZE);
 }
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)

@@ -436,6 +436,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		if(pt.pg != 0 && st_move(app_instance,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 		{
 			it_ptr it;
+			int best = (object.pg != 0)? 0 : 0xffff;
 			it_create(app_instance,&it,&pt);
 
 			// iterate instance-refs / event-handler-id
@@ -446,26 +447,41 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				if(st_get(app_instance,&pt,(char*)&handlertype,1) != -2)
 				{
 					st_ptr handler,obj;
+					int level;
 
 					if(handlertype < PIPELINE_REQUEST)
 						obj = object;
 					else
 						obj.pg = 0;
 
-					if(cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i,handlertype) == 0)
+					level = cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i,handlertype);
+					if(level < 0)
+						continue;
+
+					if(handlertype < PIPELINE_REQUEST)
 					{
-						hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+						if(object.pg != 0)
+						{
+							if(level < best)
+								continue;
+						}
+						else if(level > best)
+							continue;
 
-						hdl->next = hdlists[handlertype];
-						hdlists[handlertype] = hdl;
-
-						hdl->thehandler = &_runtime_handler;
-						hdl->eventdata = &ipt->sys;
-						hdl->handler_data = 0;
-
-						hdl->handler = handler;
-						hdl->object = obj;
+						best = level;
 					}
+
+					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+
+					hdl->next = hdlists[handlertype];
+					hdlists[handlertype] = hdl;
+
+					hdl->thehandler = &_runtime_handler;
+					hdl->eventdata = &ipt->sys;
+					hdl->handler_data = 0;
+
+					hdl->handler = handler;
+					hdl->object = obj;
 				}
 			}
 
