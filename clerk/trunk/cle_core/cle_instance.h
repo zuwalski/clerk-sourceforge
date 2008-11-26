@@ -47,7 +47,7 @@
 
 typedef struct objectheader
 {
-	ushort state;
+	ulong  state;
 	ushort next_state_id;
 	ushort level;
 	ushort next_property_id;

@@ -41,4 +41,6 @@ void test_stream_c();
 
 void test_compile_c();
 
+void test_instance_c();
+
 #endif

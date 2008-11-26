@@ -185,7 +185,7 @@ static void _st_make_writable(struct _st_lkup_res* rt)
 		rt->sub = GOKEY(rt->pg,(char*)rt->sub - (char*)old);
 }
 
-#define IS_LAST_KEY(k,pag) ((char*)(k) + ((k)->length >> 3) - (char*)(pag) + sizeof(page) + sizeof(key) + 3 > (pag)->used)
+#define IS_LAST_KEY(k,pag) ((char*)(k) + ((k)->length >> 3) + sizeof(key) + 3 - (char*)(pag) > (pag)->used)
 
 static void _st_write(struct _st_lkup_res* rt)
 {
@@ -201,8 +201,8 @@ static void _st_write(struct _st_lkup_res* rt)
 		uint length = (rt->pg->pg->used + size > rt->pg->pg->size)? rt->pg->pg->size - rt->pg->pg->used : size;
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
-		rt->sub->length = (rt->sub->length & 0xFFF8) + (length << 3);
-		rt->pg->pg->used = (char*)rt->sub + (rt->sub->length >> 3) - (char*)(rt->pg->pg) + sizeof(key);
+		rt->sub->length = ((rt->diff >> 3) + length) << 3;
+		rt->pg->pg->used = (KDATA(rt->sub) + ((uint)rt->sub->length >> 3)) - (char*)(rt->pg->pg);
 
 		rt->diff = rt->sub->length;		
 		size -= length;
@@ -238,9 +238,10 @@ static void _st_write(struct _st_lkup_res* rt)
 			rt->length -= length;
 		}
 
-		nkoff  = rt->pg->pg->used;
+		nkoff = rt->pg->pg->used;
+		nkoff += nkoff & 1; /* short aligned */
+		rt->pg->pg->used = nkoff + pgsize;
 		newkey = GOKEY(rt->pg,nkoff);
-		rt->pg->pg->used += pgsize + (pgsize & 1);	/* short aligned */
 		
 		newkey->offset = rt->diff;
 		newkey->length = length;
@@ -652,7 +653,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt;
+	key* nxt      = 0;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint klen;
 
@@ -718,6 +719,44 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 	}
 }
 
+uint st_offset2(task* t, st_ptr* pt, uint offset)
+{
+	key* k = GOOFF(pt->pg,pt->key);
+
+	while(1)
+	{
+		uint tmp;
+
+		if((k->length - pt->offset) & 0xfff8)
+		{
+
+			tmp = pt->offset >> 3;
+			pt->offset += 8;
+			return *(KDATA(k) + tmp);
+		}
+
+		if(k->sub == 0)
+			return -1;
+
+		tmp = k->length;
+		k = GOOFF(pt->pg,k->sub);
+
+		while(k->offset != tmp)
+		{
+			if(k->next == 0)
+				return -1;
+
+			k = GOOFF(pt->pg,k->next);
+		}
+		
+		if(k->length == 0)
+			k = _tk_get_ptr(t,&pt->pg,k);
+
+		pt->offset = 0;
+		pt->key = (char*)k - (char*)pt->pg->pg;
+	}
+}
+
 int st_scan(task* t, st_ptr* pt)
 {
 	key* k = GOOFF(pt->pg,pt->key);
@@ -754,6 +793,16 @@ int st_scan(task* t, st_ptr* pt)
 		pt->key = (char*)k - (char*)pt->pg->pg;
 	}
 }
+
+/*
+
+	uint copy_move(mv,str)
+
+	uint copy_string(to,from)
+
+	int compare_string(to,from)
+
+*/
 
 /*
 // should use repeated calls to st_get(...) with own buffer
