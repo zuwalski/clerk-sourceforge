@@ -76,8 +76,6 @@ int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
 
-int cle_set_value(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr value);
-
 int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);

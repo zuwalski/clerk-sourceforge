@@ -103,8 +103,6 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 					return -1;
 				state = 1;
 			}
-			else if(c < '0' || c > 'z' || (c > 'Z' && c < 'a') || (c > '9' && c < 'A'))
-				return -1;
 			else
 				state = 0;
 
@@ -321,17 +319,43 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 
 int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	st_ptr pt,pt0;
+	st_ptr pt,pt0,app_root;
 	objectheader header;
 	char buffer[sizeof(start_state)];
+
+	app_root = root;
+	if(st_move(app_instance,&app_root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	// reserved state-name
+	pt = state;
+	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) == -1 && memcmp(start_state,buffer,sizeof(buffer)) == 0)
+		return 1;
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	// reserved state-name
-	pt = root;
-	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) == -1 && memcmp(start_state,buffer,sizeof(buffer)) == 0)
-		return 1;
+	// name must not be used at lower level
+	pt0 = root;
+	while(1)
+	{
+		st_ptr pt1;
+		// go to super-object (if any)
+		if(st_move(app_instance,&pt0,HEAD_EXTENDS,HEAD_SIZE) != 0)
+			break;
+
+		pt1 = app_root;
+		if(_copy_move(app_instance,&pt1,pt0) != 0)
+			break;
+		
+		pt0 = pt1;
+		if(st_move(app_instance,&pt1,HEAD_STATE_NAMES,HEAD_SIZE) == 0)
+		{
+			// state-name used at lower level!
+			if(_copy_move(app_instance,&pt1,state) == 0)
+				return 1;
+		}
+	}
 
 	pt = root;
 	st_insert(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE);
@@ -340,15 +364,15 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(_copy_validate(app_instance,&pt,state,1))
 		return 1;
 
-	pt0 = root;
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
+	pt0 = root;
 	if(st_get(app_instance,&root,(char*)&header,sizeof(header)) != -2)
 		return 1;
 
 	// link name to new id
-	st_insert(app_instance,&pt,(cdat)header.next_state_id,sizeof(ushort));
-	st_insert(app_instance,&pt,(cdat)header.level,sizeof(ushort));
+	st_insert(app_instance,&pt,(cdat)&header.next_state_id,sizeof(ushort));
+	st_insert(app_instance,&pt,(cdat)&header.level,sizeof(ushort));
 
 	header.next_state_id++;
 	// save new id
@@ -747,20 +771,6 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 }
 
 /* values and exprs shadow names defined at a lower level */
-int cle_set_value(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr value)
-{
-	if(cle_goto_object(app_instance,&root,object_name,object_length))
-		return 1;
-
-	if(_copy_validate(app_instance,&root,path,1))
-		return 1;
-
-	if(st_is_empty(&value) == 0)
-		st_link(app_instance,&root,app_instance,&value);
-
-	return 0;
-}
-
 int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data)
 {
 	st_ptr pt0,pt = app_root;
@@ -807,9 +817,10 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 		case '\r':
 		case '\n':
 			break;
+		case -1:	// empty branch (ok)
+			return 0;
 		default:
 			return 1;
 		}
 	}
 }
-

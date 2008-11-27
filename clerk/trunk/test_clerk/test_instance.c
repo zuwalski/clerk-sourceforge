@@ -22,9 +22,15 @@
 #include <memory.h>
 #include <time.h>
 
+// objects
 const char objone[] = "object\0one";
 const char objtwo[] = "object\0two";
 const char objthree[] = "object\0three";
+
+// states
+const char state1[] = "state1";
+const char state2[] = "state2";
+const char state_start[] = "start";
 
 void test_instance_c()
 {
@@ -82,6 +88,24 @@ void test_instance_c()
 	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 0);
 
 	// states
+	pt = name;
+	st_update(t,&pt,state1,sizeof(state1));
+
+	ASSERT(cle_create_state(t,root,objone,sizeof(objone),name) == 0);
+
+	ASSERT(cle_create_state(t,root,objtwo,sizeof(objtwo),name) != 0);
+
+	ASSERT(cle_create_state(t,root,objthree,sizeof(objthree),name) != 0);
+
+	pt = name;
+	st_update(t,&pt,state2,sizeof(state2));
+
+	ASSERT(cle_create_state(t,root,objtwo,sizeof(objtwo),name) == 0);
+
+	pt = name;
+	st_update(t,&pt,state_start,sizeof(state_start));
+
+	ASSERT(cle_create_state(t,root,objthree,sizeof(objthree),name) != 0);
 
 	tk_drop_task(t);
 }
