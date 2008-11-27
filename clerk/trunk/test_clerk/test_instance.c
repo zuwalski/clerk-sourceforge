@@ -19,6 +19,7 @@
 #include "../cle_core/cle_stream.h"
 #include "../cle_core/cle_instance.h"
 #include <stdio.h>
+#include <memory.h>
 #include <time.h>
 
 const char objone[] = "object\0one";
@@ -40,6 +41,7 @@ void test_instance_c()
 	st_empty(t,&root);
 	st_empty(t,&name);
 
+	// create object-family One <- Two <- Three
 	pt = name;
 	st_insert(t,&pt,objone,sizeof(objone));
 
@@ -50,17 +52,36 @@ void test_instance_c()
 
 	ASSERT(cle_new(t,root,objone,sizeof(objone),name,0) == 0);
 
+	pt = name;
+	st_update(t,&pt,objthree,sizeof(objthree));
+
+	ASSERT(cle_new(t,root,objtwo,sizeof(objtwo),name,0) == 0);
+
 	pt = root;
 	ASSERT(cle_goto_object(t,&pt,objone,sizeof(objone)) == 0);
 
 	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
-	puts(buffer);
+	ASSERT(memcmp(buffer,"#abab",6) == 0);
+
+	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 0);
 
 	pt = root;
 	ASSERT(cle_goto_object(t,&pt,objtwo,sizeof(objtwo)) == 0);
 
 	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
-	puts(buffer);
+	ASSERT(memcmp(buffer,"#abac",6) == 0);
+
+	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 0);
+
+	pt = root;
+	ASSERT(cle_goto_object(t,&pt,objthree,sizeof(objthree)) == 0);
+
+	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
+	ASSERT(memcmp(buffer,"#abad",6) == 0);
+
+	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 0);
+
+	// states
 
 	tk_drop_task(t);
 }

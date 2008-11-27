@@ -390,7 +390,7 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 	}
 
 	pu.waste = rt->sub->length - rt->diff;
-	rt->sub->length = (rt->diff > 0)? rt->diff : 1;
+	rt->diff = rt->sub->length = (rt->diff > 0)? rt->diff : 1;
 
 	return pu;
 }
@@ -671,9 +671,9 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 		}
 	}
 
-	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
+	klen = (nxt)? nxt->offset : me->length;
 
-	offset <<= 3;
+	offset = (offset << 3) + pt->offset;
 
 	while(1)
 	{
@@ -699,8 +699,6 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 		// is there any more data?
 		else
 		{
-			max <<= 3;
-
 			if(max <= klen)
 				pt->offset = max;
 			else if(nxt)
@@ -716,44 +714,6 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 			pt->key = (char*)me - (char*)pg->pg;
 			return (offset >> 3);
 		}
-	}
-}
-
-uint st_offset2(task* t, st_ptr* pt, uint offset)
-{
-	key* k = GOOFF(pt->pg,pt->key);
-
-	while(1)
-	{
-		uint tmp;
-
-		if((k->length - pt->offset) & 0xfff8)
-		{
-
-			tmp = pt->offset >> 3;
-			pt->offset += 8;
-			return *(KDATA(k) + tmp);
-		}
-
-		if(k->sub == 0)
-			return -1;
-
-		tmp = k->length;
-		k = GOOFF(pt->pg,k->sub);
-
-		while(k->offset != tmp)
-		{
-			if(k->next == 0)
-				return -1;
-
-			k = GOOFF(pt->pg,k->next);
-		}
-		
-		if(k->length == 0)
-			k = _tk_get_ptr(t,&pt->pg,k);
-
-		pt->offset = 0;
-		pt->key = (char*)k - (char*)pt->pg->pg;
 	}
 }
 

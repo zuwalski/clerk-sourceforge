@@ -551,7 +551,7 @@ int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
 	while(i < buffersize - 1)
 	{
 		int c = st_scan(app_instance,&object);
-		if(c < 0)
+		if(c <= 0)
 		{
 			buffer[i] = 0;
 			return 0;
@@ -569,7 +569,7 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 	int i;
 	char buffer[50];
 
-	if(target_oid_length >= sizeof(buffer))
+	if(target_oid_length*2 >= sizeof(buffer))
 		return 1;
 
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
@@ -579,11 +579,11 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 	for(i = 0; i < target_oid_length; i++)
 	{
 		char val;
-		if(i == sizeof(buffer))
-			return 1;
 
 		if(target_oid[i] >= 'a' && target_oid[i] <= 'q')
 			val = target_oid[i] - 'a';
+		else if(target_oid[i] == 0)
+			break;
 		else
 			return 1;
 
@@ -592,10 +592,13 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 		else
 			buffer[i >> 1] = val << 4;
 	}
+	
+	i /= 2;
+	buffer[i++] = 0;
 
 	// lookup target object
 	*object = root;
-	return st_move(app_instance,object,buffer,target_oid_length/2);
+	return st_move(app_instance,object,buffer,i);
 }
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)
@@ -642,9 +645,6 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		buffer[i++] = c;
 	}
 	while(c > 0 && c != '.' && i < sizeof(buffer));
-
-	if(i < 2 || i == sizeof(buffer))
-		return 1;
 
 	buffer[i - 1] = 0;
 
