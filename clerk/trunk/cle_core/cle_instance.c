@@ -364,6 +364,8 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(_copy_validate(app_instance,&pt,state,1))
 		return 1;
 
+	st_insert(app_instance,&pt,"\0",1);
+
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
 	pt0 = root;
@@ -380,23 +382,81 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 	return 0;
 }
 
+int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
+{
+	st_ptr pt,pt0,app_root;
+	objectheader header;
+	char buffer[sizeof(start_state)];
+
+	app_root = root;
+	if(st_move(app_instance,&app_root,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	if(cle_goto_object(app_instance,&root,object_name,object_length))
+		return 1;
+
+	// get header
+	pt0 = root;
+	if(st_move(app_instance,&pt0,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+	if(st_get(app_instance,&pt0,(char*)&header,sizeof(header)) != -2)
+		return 1;
+
+	pt = state;
+	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) == -1 && memcmp(start_state,buffer,sizeof(buffer)) == 0)
+		header.state = 0;
+	else
+	{
+		// find state id
+		pt = root;
+		while(1)
+		{
+			pt0 = pt;
+			if(st_move(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE) == 0)
+			{
+				// state-name found
+				if(_copy_validate(app_instance,&pt,state,0) == 0)
+				{
+					if(st_move(app_instance,&pt,"\0",1) == 0)
+						break;
+				}
+			}
+
+			// go to super-object (if any)
+			pt = pt0;
+			if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
+				return 1;
+
+			pt0 = app_root;
+			if(_copy_move(app_instance,&pt0,pt) != 0)
+				return 1;
+		}
+
+		// pt points to state-id -> load into object-header
+		if(st_get(app_instance,&pt,(char*)&header.state,sizeof(header.state)) != -1)
+			return 1;
+	}
+
+	st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
+	return 0;
+}
+
 static st_ptr _blank = {0,0,0};
 
 static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr, char source_prefix)
 {
-	st_ptr pt = dest;
-	char buffer[] = "s\0";
+	char buffer[] = "s";
 	// insert path
-	if(pt.pg != 0)
+	if(path.pg != 0)
 	{
-		st_insert(app_instance,&dest,"p",2);
-		_copy_insert(app_instance,&dest,path);
+		st_ptr pt = dest;
+		st_insert(app_instance,&pt,"p",1);
+		_copy_insert(app_instance,&pt,path);
 	}
 
-	dest = pt;
 	// insert source
-	buffer[2] = source_prefix;
-	st_insert(app_instance,&dest,buffer,3);
+	buffer[1] = source_prefix;
+	st_insert(app_instance,&dest,buffer,2);
 	_copy_insert(app_instance,&dest,expr);
 }
 
@@ -421,15 +481,12 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		if(_copy_validate(app_instance,&pt,state,0))
 			return 1;
 
-		if(st_move(app_instance,&root,HEAD_STATES,HEAD_SIZE) != 0)
+		if(st_move(app_instance,&pt,"\0",1) != 0)
 			return 1;
 
-		// get state id
-		if(st_get(app_instance,&pt,buffer,4) != -1)
-			return 1;
+		st_insert(app_instance,&root,HEAD_STATES,HEAD_SIZE);
 
-		// to the id...
-		st_insert(app_instance,&root,buffer,4);
+		_copy_insert(app_instance,&root,pt);
 	}
 	// start-state
 	else

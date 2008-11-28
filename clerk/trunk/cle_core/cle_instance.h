@@ -86,6 +86,8 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 int cle_create_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
 
+int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state);
+
 int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data, enum handler_type type);
 
 int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type);

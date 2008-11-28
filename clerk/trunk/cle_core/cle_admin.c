@@ -22,6 +22,7 @@
 	admin.role.revoke.<event-path> , role
 	admin.role.give.<event-path> , role
 	admin.get.<objectname> , path.path
+	admin.set.state.<objectname> , state
 */
 
 #include "cle_instance.h"
@@ -30,6 +31,7 @@ static const char _allow_role_name[] = "admin.role.allow";
 static const char _revoke_role_name[] = "admin.role.revoke";
 static const char _give_role_name[] = "admin.role.give";
 static const char _get_name[] = "admin.get";
+static const char _set_state_name[] = "admin.set.state";
 static const char _list_object_name[] = "admin.list.object";
 static const char _list_state_name[] = "admin.list.state";
 static const char _list_prop_name[] = "admin.list.prop";
