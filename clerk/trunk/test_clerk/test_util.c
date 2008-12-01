@@ -62,6 +62,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 			fprintf(f,"(%s%d/%d) %s (%d - s:%d n:%d) [",
 				(o < l && *path & (0x80 >> (o & 7)))?"+":"-",o,l,"" /*path*/,meoff,me->sub,me->next);
 
+			//printf("%s",path);
 			for(i = 0; i < (l + 7) >> 3; i++)
 			{
 				printf(" %x",path[i]);

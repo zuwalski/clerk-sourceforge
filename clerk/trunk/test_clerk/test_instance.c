@@ -36,6 +36,9 @@ const char testevent[] = "some\0event";
 
 const char testmeth[] = "() 'hallo world'";
 
+const char prop1[] = "prop1";
+const char prop2[] = "prop2";
+
 // testhandler w any argument
 static void _start2(event_handler* v)
 {
@@ -197,6 +200,53 @@ void test_instance_c()
 
 	// objtwo now handles the event...
 	ASSERT(cle_get_handler(t,root,oid,&handler,&object,testevent,sizeof(testevent),SYNC_REQUEST_HANDLER) == 1);
+
+	// property-testing
+	pt = name;
+	st_update(t,&pt,prop1,sizeof(prop1));
+
+	// property-1 to objone
+	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name,name) == 0);
+
+	pt = name;
+	st_update(t,&pt,prop2,sizeof(prop2));
+
+	// property-2 to objtwo
+	ASSERT(cle_set_property(t,root,objtwo,sizeof(objtwo),name,name) == 0);
+
+	// property-2 not found in objone
+	ASSERT(cle_get_property(t,root,objone,sizeof(objone),name,&object) != 0);
+
+	// property-2 found in objtwo
+	ASSERT(cle_get_property(t,root,objtwo,sizeof(objtwo),name,&object) == 0);
+
+	// value "prop2"
+	ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop2));
+	ASSERT(memcmp(prop2,buffer,sizeof(prop2)) == 0);
+
+	// property-2 found in objthree
+	ASSERT(cle_get_property(t,root,objthree,sizeof(objthree),name,&object) == 0);
+
+	// value "prop2"
+	ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop2));
+	ASSERT(memcmp(prop2,buffer,sizeof(prop2)) == 0);
+
+	pt = name;
+	st_update(t,&pt,prop1,sizeof(prop1));
+
+	// property-1 also found in objthree
+	ASSERT(cle_get_property(t,root,objthree,sizeof(objthree),name,&object) == 0);
+
+	// value "prop1"
+	ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop1));
+	ASSERT(memcmp(prop1,buffer,sizeof(prop1)) == 0);
+
+	// property-1 found in objone
+	ASSERT(cle_get_property(t,root,objone,sizeof(objone),name,&object) == 0);
+
+	// value "prop1"
+	ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop1));
+	ASSERT(memcmp(prop1,buffer,sizeof(prop1)) == 0);
 
 	tk_drop_task(t);
 }

@@ -378,8 +378,7 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 	header.next_state_id++;
 	// save new id
-	st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
-	return 0;
+	return st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
 }
 
 int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
@@ -397,9 +396,10 @@ int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object
 
 	// get header
 	pt0 = root;
-	if(st_move(app_instance,&pt0,HEAD_OID,HEAD_SIZE) != 0)
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
-	if(st_get(app_instance,&pt0,(char*)&header,sizeof(header)) != -2)
+	pt = root;
+	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
 		return 1;
 
 	pt = state;
@@ -408,7 +408,7 @@ int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object
 	else
 	{
 		// find state id
-		pt = root;
+		pt = pt0;
 		while(1)
 		{
 			pt0 = pt;
@@ -437,8 +437,7 @@ int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object
 			return 1;
 	}
 
-	st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
-	return 0;
+	return st_dataupdate(app_instance,&root,(char*)&header,sizeof(header));
 }
 
 static st_ptr _blank = {0,0,0};
@@ -512,7 +511,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				st_delete(app_instance,&root,0,0);
 
 				// insert source
-				_record_source_and_path(app_instance,pt,_blank,expr,'(');
+				_record_source_and_path(app_instance,root,_blank,expr,'(');
 				// call compiler
 				if(cmp_method(app_instance,&root,&expr,response,data))
 					return 1;
@@ -802,11 +801,14 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	pt0 = pt = root;
+	pt = root;
 	if(_copy_validate(app_instance,&root,path,1))
 		return 1;
 
 	// read header
+	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+	pt0 = pt;
 	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
 		return 1;
 
@@ -819,7 +821,8 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 	header.next_property_id++;
 
-	st_dataupdate(app_instance,&pt0,(cdat)&header,sizeof(header));
+	if(st_dataupdate(app_instance,&pt0,(cdat)&header,sizeof(header)))
+		return 1;
 
 	if(st_is_empty(&defaultvalue) == 0)
 		st_link(app_instance,&root,app_instance,&defaultvalue);
