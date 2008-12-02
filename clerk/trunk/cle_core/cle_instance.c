@@ -89,6 +89,8 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 			int c = st_scan(t,&from);
 			if(c < 0)
 			{
+				if(state == 2)
+					return -2;
 				if(state != 1)
 					return -1;
 				state = -1;
@@ -735,13 +737,14 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	// remaining path
-	if(_copy_validate(app_instance,&root,path,0))
+	i = _copy_validate(app_instance,&root,path,0);
+	if(i != 0 && i != -2)
 		return 1;
 
 	// not defined in this object? go to prop by index
 	if(c != 0)
 	{
-		if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) < 0)
+		if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) >= 0)
 			return 1;
 
 		if(buffer[0] != 0 || buffer[1] != 'y')
@@ -754,8 +757,8 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 			if(st_move(app_instance,&obj,buffer,HEAD_SIZE + PROPERTY_SIZE) == 0)
 			{
-				root = obj;	// found value in object
-				break;
+				*prop = obj;	// found value in object
+				return 0;
 			}
 
 			// search for value at lower levels...
@@ -767,26 +770,32 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 				break;
 			if(_copy_move(app_instance,&pt,obj))
 				break;
+
+			obj = pt;
 		}
 	}
-	else
+
+	// is there a header here?
+	obj = root;
+	if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
+		return 1;
+
+	switch(buffer[1])
 	{
-		obj = root;
-		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) < 0 && buffer[0] == 0)
-		{
-			switch(buffer[1])
-			{
-			case 'y':
-				// property-def? show default-value
-				root = obj;
-				break;
-			case 'M':
-			case 'E':
-				// method or expr? show source
-				root = obj;
-				st_move(app_instance,&root,"s",2);
-			}
-		}
+	case 'y':
+		// property-def? show default-value
+		root = obj;
+		st_offset(app_instance,&root,PROPERTY_SIZE);
+		break;
+	case 'M':
+	case 'E':
+		// method or expr? show source
+		root = obj;
+		st_move(app_instance,&root,"s",1);
+		break;
+	default:
+		// some other headertype ..
+		return 1;
 	}
 
 	*prop = root;

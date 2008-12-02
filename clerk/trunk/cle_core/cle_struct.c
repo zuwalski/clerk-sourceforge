@@ -288,7 +288,7 @@ uint st_empty(task* t, st_ptr* pt)
 uint st_is_empty(st_ptr* pt)
 {
 	key* k = GOKEY(pt->pg,pt->key);
-	if(k->length == 1) return 1;
+	if(k->length == 1 && k->sub == 0) return 1;
 	if(pt->offset != k->length) return 0;
 	if(k->sub == 0) return 1;
 	k = GOOFF(pt->pg,k->sub);
