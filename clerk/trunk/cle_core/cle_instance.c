@@ -774,28 +774,30 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 			obj = pt;
 		}
 	}
-
-	// is there a header here?
-	obj = root;
-	if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
-		return 1;
-
-	switch(buffer[1])
+	else
 	{
-	case 'y':
-		// property-def? show default-value
-		root = obj;
-		st_offset(app_instance,&root,PROPERTY_SIZE);
-		break;
-	case 'M':
-	case 'E':
-		// method or expr? show source
-		root = obj;
-		st_move(app_instance,&root,"s",1);
-		break;
-	default:
-		// some other headertype ..
-		return 1;
+		// is there a header here?
+		obj = root;
+		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
+			return 1;
+
+		switch(buffer[1])
+		{
+		case 'y':
+			// property-def? show default-value
+			root = obj;
+			st_offset(app_instance,&root,PROPERTY_SIZE);
+			break;
+		case 'M':
+		case 'E':
+			// method or expr? show source
+			root = obj;
+			st_move(app_instance,&root,"s",1);
+			break;
+		default:
+			// some other headertype ..
+			return 1;
+		}
 	}
 
 	*prop = root;

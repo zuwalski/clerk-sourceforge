@@ -81,6 +81,8 @@ enum cle_opcode
 	OP_DEBUG,
 	OP_NEW,
 
+	OP_RECV,
+
 	OP_OP_MAX
 };
 

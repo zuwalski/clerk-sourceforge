@@ -131,6 +131,9 @@ void tk_dup_ptr(st_ptr* to, st_ptr* from);
 
 void tk_root_ptr(task* t, st_ptr* pt);
 
+void* tk_pop_frame(task* t);
+void* tk_push_frame(task* t, void* f);
+
 /* test */
 
 void unimplm();

@@ -117,8 +117,6 @@ static void _submit2(event_handler* v,task* t,st_ptr* st)
 static cle_pipe _test_pipe = {_start,_next,_end,_pop,_push,_data,_submit};
 static cle_pipe _test_pipe2 = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};
 
-cle_syshandler _runtime_handler = {0,{0,0,0,0,0,0,0},0};
-
 // the user
 char userid[] = "test";
 
@@ -173,9 +171,6 @@ void test_stream_c()
 	handler4.input = _test_pipe;
 	handler4.systype = PIPELINE_RESPONSE;
 
-	// fix pipe
-	_runtime_handler.input = _test_pipe;
-
 	//  new task
 	t = tk_create_task(psource,pdata);
 
@@ -204,7 +199,6 @@ void test_stream_c()
 	printf("handler2 async: %p\n",&handler2);
 	printf("handler3 req: %p\n",&handler3);
 	printf("handler4 resp: %p\n",&handler4);
-	printf("_runtime_handler: %p\n",&_runtime_handler);
 
 	tk_root_ptr(t,&root);
 

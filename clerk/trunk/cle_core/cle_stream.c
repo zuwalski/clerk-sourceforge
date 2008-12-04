@@ -34,9 +34,7 @@ void cle_notify_start(event_handler* handler)
 {
 	while(handler != 0 && handler->eventdata->error == 0)
 	{
-		if(handler->thehandler->input.start != 0)
-			handler->thehandler->input.start(handler);
-
+		handler->thehandler->input.start(handler);
 		handler = handler->next;
 	}
 }
@@ -49,8 +47,7 @@ void cle_notify_next(event_handler* handler)
 			cle_stream_fail(handler,input_underflow,sizeof(input_underflow));
 		else
 		{
-			if(handler->thehandler->input.next != 0)
-				handler->thehandler->input.next(handler);
+			handler->thehandler->input.next(handler);
 
 			// done processing .. clear and ready for next input-stream
 			st_empty(handler->instance_tk,&handler->top->pt);
@@ -65,9 +62,7 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
 {
 	while(handler != 0)
 	{
-		if(handler->thehandler->input.end != 0)
-			handler->thehandler->input.end(handler,msg,msglength);
-
+		handler->thehandler->input.end(handler,msg,msglength);
 		handler = handler->next;
 	}
 }
@@ -253,9 +248,9 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 {
 	cle_syshandler hdl;
 	hdl.next_handler = 0;
-	hdl.input.start = start;
-	hdl.input.next = next;
-	hdl.input.end = end;
+	hdl.input.start = start == 0 ? _cpy_start : start;
+	hdl.input.next = next == 0 ? _cpy_next : next;
+	hdl.input.end = end == 0 ? _cpy_end : end;
 	hdl.input.pop = cle_standard_pop;
 	hdl.input.push = cle_standard_push;
 	hdl.input.data = cle_standard_data;

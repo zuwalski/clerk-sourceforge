@@ -233,7 +233,29 @@ void* tk_alloc(task* t, uint size)
 	if(pg->used + size + 7 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
-			return 0;
+		{
+			// big chunk - alloc specific
+			page_wrap* tmp = (page_wrap*)tk_malloc(t,size + sizeof(page_wrap) + sizeof(page));
+
+			pg = (page*)(tmp + 1);
+			pg->id = 0;
+			pg->size = size;
+			pg->used = sizeof(page) + size;
+			pg->waste = 0;
+
+			tmp->ext_pageid = 0;
+			tmp->refcount = 1;
+			tmp->ovf = 0;
+			tmp->pg = pg;
+
+			// push behind (its full)
+			tmp->next = t->stack->next;
+			t->stack->next = tmp;
+
+			page_size++;	// TEST
+
+			return (void*)((char*)pg + sizeof(page));
+		}
 
 		_tk_stack_new(t);
 	}

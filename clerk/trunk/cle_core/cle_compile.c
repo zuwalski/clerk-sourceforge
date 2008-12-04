@@ -1293,13 +1293,8 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			state = ST_ALPHA;
 			break;
 		case '[':
-			chk_state(ST_0|ST_ALPHA|ST_VAR)
+			chk_state(ST_ALPHA|ST_VAR)
 			chk_call()
-			if(state == ST_0)
-			{
-				_cmp_emit0(cst,OP_NULL);	// OP_LFUN
-				_cmp_stack(cst,1);
-			}
 			_cmp_op_push(cst,0,0xFF);
 			_cmp_nextc(cst);
 			if(_cmp_expr(cst,0,NEST_EXPR) != ']') err(__LINE__);
@@ -1649,15 +1644,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					return 'f';
 				default:
 					chk_out()
-					if(cst->c == ':')	// load from config
-					{
-						if(state & ST_DOT) err(__LINE__)
-						_cmp_emitS(cst,OP_CMV,cst->opbuf + cst->top,len);
-						_cmp_stack(cst,1);
-						state = ST_DOT;
-						break;
-					}
-					else
 					{
 						// compile buildin-functions
 						const struct _cmp_buildin* cmd = _cmp_buildins(cst->opbuf + cst->top);

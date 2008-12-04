@@ -39,6 +39,8 @@ const char testmeth[] = "() 'hallo world'";
 const char prop1[] = "prop1";
 const char prop2[] = "prop2";
 
+const char exprpath[] = "expr\0expr";
+
 // testhandler w any argument
 static void _start2(event_handler* v)
 {
@@ -247,6 +249,12 @@ void test_instance_c()
 	// value "prop1"
 	ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop1));
 	ASSERT(memcmp(prop1,buffer,sizeof(prop1)) == 0);
+
+	// testing Expr's
+	pt = name;
+	st_update(t,&pt,exprpath,sizeof(exprpath));
+
+	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe,0) == 0);
 
 	tk_drop_task(t);
 }
