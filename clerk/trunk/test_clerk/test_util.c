@@ -598,7 +598,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 			{
 				char buffer[200];
 				uint slen = st_get(t,&tmpptr,buffer,sizeof(buffer));
-				printf("%-10s %.*s\n",_rt_opc_name(opc),slen - 2,buffer + 2);
+				printf("%-10s %.*s\n",_rt_opc_name(opc),slen,buffer);
 			}
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);

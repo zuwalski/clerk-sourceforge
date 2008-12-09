@@ -610,13 +610,10 @@ static struct _cmp_var* _cmp_var(struct _cmp_state* cst)
 }
 
 /* "test ""test"" 'test'" | 'test ''test'' "test"' */
-static void _cmp_string(struct _cmp_state* cst, st_ptr* out, int c, uchar append)
+static void _cmp_string(struct _cmp_state* cst, st_ptr* out, int c)
 {
 	char buffer[BUFFER_GROW];
 	int ic = 0,i = 0;
-
-	if(!append)
-		st_update(cst->t,out,"S",2);
 
 	while(1)
 	{
@@ -656,7 +653,7 @@ static void _cmp_str(struct _cmp_state* cst, uint app)
 		cst->stringidx++;
 	}
 	
-	_cmp_string(cst,&cst->cur_string,cst->c,app);
+	_cmp_string(cst,&cst->cur_string,cst->c);
 }
 
 // output all operators
