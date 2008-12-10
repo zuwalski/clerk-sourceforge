@@ -515,7 +515,8 @@ void test_task_c_filepager()
 
 void heap_check()
 {
-/*   int heapstatus = _heapchk();
+///*
+int heapstatus = _heapchk();
    switch( heapstatus )
    {
    case _HEAPOK:
@@ -533,7 +534,7 @@ void heap_check()
    default:
       printf( "ERROR - other\n" );
    }
-*/
+//*/
 }
 
 int main(int argc, char* argv[])

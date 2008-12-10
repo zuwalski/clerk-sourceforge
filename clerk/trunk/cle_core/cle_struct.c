@@ -137,7 +137,8 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 
-	if(size + rt->t->stack->pg->used > rt->t->stack->pg->size)
+	// +1 make sure it can be aligned as well
+	if(size + rt->t->stack->pg->used + (rt->t->stack->pg->used & 1) > rt->t->stack->pg->size)
 		_tk_stack_new(rt->t);
 
 	/* make pointer */
@@ -157,7 +158,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	}
 
 	pt->pg = rt->t->stack;
-	pt->koffset = rt->t->stack->pg->used;
+	pt->koffset = rt->t->stack->pg->used + (rt->t->stack->pg->used & 1);
 	pt->offset = rt->diff;
 	pt->zero = 0;
 
@@ -215,7 +216,8 @@ static void _st_write(struct _st_lkup_res* rt)
 
 	do
 	{
-		uint   room   = rt->pg->pg->size - rt->pg->pg->used;
+		// -1 make sure it can be aligned
+		uint   room   = rt->pg->pg->size - rt->pg->pg->used - (rt->pg->pg->used & 1);
 		uint   length = rt->length;
 		uint   pgsize = size;
 		ushort nkoff;
@@ -224,7 +226,7 @@ static void _st_write(struct _st_lkup_res* rt)
 
 		if(pgsize > room)	/* page-overflow */
 		{
-			if(room > sizeof(key))	/* room for any data at all? */
+			if(room > sizeof(key) + 2)	/* room for any data at all? */
 				pgsize = room;		/* as much as we can */
 			else
 			{
@@ -268,6 +270,13 @@ static void _st_write(struct _st_lkup_res* rt)
 	
 	rt->sub  = newkey;
 	rt->diff = newkey->length;
+
+//#ifdef DEBUG
+	if(rt->pg->pg->used > rt->pg->pg->size)
+	{
+		newkey = newkey;
+	}
+//#endif
 }
 
 /* Interface-functions */
