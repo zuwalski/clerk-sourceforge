@@ -39,8 +39,7 @@
 
 #define HEAD_METHOD "\0M"
 #define HEAD_EXPR "\0E"
-#define HEAD_INT "\0I"
-#define HEAD_STR "\0S"
+#define HEAD_NUM "\0N"
 #define HEAD_REF "\0R"
 
 #define PROPERTY_SIZE 4

@@ -34,7 +34,7 @@ struct _rt_stack
 {
 	union 
 	{
-		double dbl;
+		double num;
 		struct _rt_callframe* cfp;
 		struct _rt_stack* var;
 		st_ptr single_ptr;
@@ -65,7 +65,7 @@ struct _rt_stack
 
 // stack-element types
 #define STACK_NULL 0
-#define STACK_DOUBLE 1
+#define STACK_NUM 1
 #define STACK_CALL 2
 #define STACK_OBJ 3
 #define STACK_OUTPUT 4
@@ -252,7 +252,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
-	ushort tmpushort;
+	int tmp;
 	while(1)
 	{
 		switch(*inv->top->pc++)
@@ -267,104 +267,104 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp++;
 			break;
 		case OP_ADD:
-			if(sp[0].type == STACK_DOUBLE && sp[1].type == STACK_DOUBLE)
-				sp[1].dbl += sp[0].dbl;
+			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
+				sp[1].num += sp[0].num;
 			else
 				sp[1].type = STACK_NULL;
 			sp++;
 			break;
 		case OP_SUB:
-			if(sp[0].type == STACK_DOUBLE && sp[1].type == STACK_DOUBLE)
-				sp[1].dbl -= sp[0].dbl;
+			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
+				sp[1].num -= sp[0].num;
 			else
 				sp[1].type = STACK_NULL;
 			sp++;
 			break;
 		case OP_MUL:
-			if(sp[0].type == STACK_DOUBLE && sp[1].type == STACK_DOUBLE)
-				sp[1].dbl *= sp[0].dbl;
+			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
+				sp[1].num *= sp[0].num;
 			else
 				sp[1].type = STACK_NULL;
 			sp++;
 			break;
 		case OP_DIV:
-			if(sp[0].type == STACK_DOUBLE && sp[1].type == STACK_DOUBLE && sp[0].dbl != 0)
-				sp[1].dbl /= sp[0].dbl;
+			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM && sp[0].num != 0)
+				sp[1].num /= sp[0].num;
 			else
 				sp[1].type = STACK_NULL;
 			sp++;
 			break;
 
 		case OP_EQ:
-			sp[1].dbl = _rt_equal(sp,sp + 1);
-			sp[1].type = STACK_DOUBLE;
+			sp[1].num = _rt_equal(sp,sp + 1);
+			sp[1].type = STACK_NUM;
 			sp++;
 			break;
 		case OP_NE:
-			sp[1].dbl = _rt_equal(sp,sp + 1) == 0;
-			sp[1].type = STACK_DOUBLE;
+			sp[1].num = _rt_equal(sp,sp + 1) == 0;
+			sp[1].type = STACK_NUM;
 			sp++;
 			break;
 		case OP_GE:
-			sp[1].dbl = _rt_compare(sp,sp + 1) >= 0;
+			sp[1].num = _rt_compare(sp,sp + 1) >= 0;
 			sp++;
 			break;
 		case OP_GT:
-			sp[1].dbl = _rt_compare(sp,sp + 1) > 0;
+			sp[1].num = _rt_compare(sp,sp + 1) > 0;
 			sp++;
 			break;
 		case OP_LE:
-			sp[1].dbl = _rt_compare(sp,sp + 1) <= 0;
+			sp[1].num = _rt_compare(sp,sp + 1) <= 0;
 			sp++;
 			break;
 		case OP_LT:
-			sp[1].dbl = _rt_compare(sp,sp + 1) < 0;
+			sp[1].num = _rt_compare(sp,sp + 1) < 0;
 			sp++;
 			break;
 
 		case OP_NOT:
-			if(sp[0].type == STACK_DOUBLE)
-				sp[0].dbl = (sp[0].dbl == 0);
+			if(sp[0].type == STACK_NUM)
+				sp[0].num = (sp[0].num == 0);
 			else
 				sp[0].type = STACK_NULL;
 			break;
 		case OP_BNZ:
 			// emit Is (branch forward conditional)
-			tmpushort = *((ushort*)inv->top->pc);
+			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			if((sp[0].type != STACK_NULL) && (
-				(sp[0].type == STACK_DOUBLE && sp[0].dbl != 0) ||
+				(sp[0].type == STACK_NUM && sp[0].num != 0) ||
 				(sp[0].type == STACK_PTR && st_is_empty(&sp[0].single_ptr) == 0)))
-				inv->top->pc += tmpushort;
+				inv->top->pc += tmp;
 			sp++;
 		case OP_BZ:
 			// emit Is (branch forward conditional)
-			tmpushort = *((ushort*)inv->top->pc);
+			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			if((sp[0].type == STACK_NULL) ||
-				(sp[0].type == STACK_DOUBLE && sp[0].dbl == 0) ||
+				(sp[0].type == STACK_NUM && sp[0].num == 0) ||
 				(sp[0].type == STACK_PTR && st_is_empty(&sp[0].single_ptr)))
-				inv->top->pc += tmpushort;
+				inv->top->pc += tmp;
 			sp++;
 			break;
 		case OP_BR:
 			// emit Is (branch forward)
-			tmpushort = *((ushort*)inv->top->pc);
-			inv->top->pc += tmpushort - sizeof(ushort);
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc += tmp - sizeof(ushort);
 			break;
 
 		case OP_LOOP:	// JIT-HOOK 
 			// emit Is (branch back)
-			tmpushort = *((ushort*)inv->top->pc);
-			inv->top->pc -= tmpushort - sizeof(ushort);
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc -= tmp - sizeof(ushort);
 			break;
 
 		case OP_FREE:
 			// emit Ic2 (byte,byte)
-			tmpushort = *inv->top->pc++;
-			while(tmpushort-- > 0)
+			tmp = *inv->top->pc++;
+			while(tmp-- > 0)
 			{
-				inv->top->vars[tmpushort + *inv->top->pc].type = STACK_NULL;
+				inv->top->vars[tmp + *inv->top->pc].type = STACK_NULL;
 			}
 			inv->top->pc++;
 			break;
@@ -372,8 +372,8 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_IMM:
 			// emit II (imm short)
 			sp--;
-			sp->type = STACK_DOUBLE;
-			sp->dbl = *((short*)inv->top->pc);
+			sp->type = STACK_NUM;
+			sp->num = *((short*)inv->top->pc);
 			inv->top->pc += sizeof(short);
 			break;
 		case OP_STR:
@@ -391,49 +391,108 @@ static void _rt_run(struct _rt_invocation* inv)
 			break;
 
 		case OP_FMV:
-			tmpushort = *((ushort*)inv->top->pc);
+			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			sp--;
 			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
-			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmpushort) < 0)
+			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
 			{
 				_rt_error(inv,__LINE__);
 				return;
 			}
-			inv->top->pc += tmpushort;
+			inv->top->pc += tmp;
 			_rt_get(inv,&sp);
 			break;
 		case OP_MV:
-			if(sp->type != STACK_OBJ)
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
-			tmpushort = *((ushort*)inv->top->pc);
+			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
-			// object-root?
-			if(sp->obj.pg == sp->ptr.pg && sp->obj.key == sp->ptr.key)
+			if(sp->type == STACK_OBJ)
 			{
-				if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmpushort) < 0)
+				// object-root?
+				if(sp->obj.pg == sp->ptr.pg && sp->obj.key == sp->ptr.key)
+				{
+					if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
+					{
+						_rt_error(inv,__LINE__);
+						return;
+					}
+				}
+				else if(st_move(inv->t,&sp->ptr,inv->top->pc,tmp) != 0)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+				inv->top->pc += tmp;
+				_rt_get(inv,&sp);
+			}
+			else if(sp->type == STACK_PTR)
+			{
+				if(st_move(inv->t,&sp->single_ptr,inv->top->pc,tmp) != 0)
 				{
 					_rt_error(inv,__LINE__);
 					return;
 				}
 			}
-			else if(st_move(inv->t,&sp->ptr,inv->top->pc,tmpushort) != 0)
+			else
 			{
 				_rt_error(inv,__LINE__);
 				return;
 			}
-			inv->top->pc += tmpushort;
-			_rt_get(inv,&sp);
 			break;
 
 		case OP_RECV:
 			sp--;
 			sp->type = STACK_PTR;
 			return;
+
+		case OP_CLEAR:
+			if(sp->type != STACK_PROP || inv->top->is_expr != 0)
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
+			st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE);
+			st_delete(inv->t,&sp->prop_obj,0,0);
+			sp->single_ptr = sp->prop_obj;
+			sp->type = STACK_PTR;
+			break;
+		case OP_LVAR:
+			*(--sp) = inv->top->vars[*inv->top->pc++];
+			break;
+		case OP_AVAR:
+			sp--;
+			sp->var = &inv->top->vars[*inv->top->pc++];
+			sp->type = STACK_REF;
+			break;
+		case OP_DEFP:
+			// emit Is2 (branch forward)
+			tmp = *inv->top->pc++;	// var
+			if(inv->top->vars[tmp].type == STACK_NULL)
+			{
+				sp--;
+				inv->top->vars[tmp].var = sp;
+				inv->top->vars[tmp].type = STACK_REF;
+				inv->top->pc += sizeof(ushort);
+			}
+			else
+			{
+				tmp = *((ushort*)inv->top->pc);
+				inv->top->pc += tmp + sizeof(ushort);
+			}
+			break;
+		case OP_SETP:
+			tmp = *inv->top->pc++;	// var
+			if(tmp < sp[1].cfp->code->body.maxparams)
+				sp[1].cfp->vars[tmp] = *sp;
+			else
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			sp++;
+			break;
 		case OP_END:
 			if(inv->top->parent == 0)
 			{

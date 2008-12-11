@@ -768,7 +768,7 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
 		return 1;
 
-	// creat property-header
+	// create property-header
 	st_insert(app_instance,&root,HEAD_PROPERTY,HEAD_SIZE);
 	// clear
 	st_delete(app_instance,&root,0,0);
