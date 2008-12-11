@@ -151,6 +151,33 @@ void test_struct_c()
 	// .. and the old one
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
+	// Test copy-move, insert compare
+	ASSERT(st_empty(t,&root) == 0);
+
+	tmp = root;
+	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
+
+	ASSERT(st_empty(t,&tmp) == 0);
+
+	tmp2 = tmp;
+	ASSERT(st_insert(t,&tmp2,test1,sizeof(test1)));
+
+	tmp2 = root;
+	ASSERT(st_move_st(t,&tmp2,&tmp) == 0);
+
+	ASSERT(st_insert(t,&tmp2,test1,sizeof(test1)));
+
+	tmp2 = tmp;
+	st_update(t,&tmp2,test1x2,sizeof(test1x2));
+
+	tmp2 = root;
+	ASSERT(st_move_st(t,&tmp2,&tmp) == 0);
+
+	root = tmp2;
+	ASSERT(st_insert_st(t,&root,&tmp));
+
+	ASSERT(st_move(t,&tmp2,test1x2,sizeof(test1x2)) == 0);
+
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);

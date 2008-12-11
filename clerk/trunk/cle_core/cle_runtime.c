@@ -225,6 +225,8 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
 			return;
 		// copy_move sp-obj , top.ptr
+		if(st_move_st(inv->t,&(*sp)->obj,&top.ptr) != 0)
+			return;
 		(*sp)->ptr = (*sp)->obj;
 		(*sp)->type = STACK_OBJ;
 		break;
@@ -441,7 +443,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top = inv->top->parent;
 			sp = inv->top->sp;
 			break;
-		case OP_CALL:	// sp -> method-pointer, sp1 -> object
+		case OP_CALL:
 			if(sp->type != STACK_CODE)
 			{
 				_rt_error(inv,__LINE__);
