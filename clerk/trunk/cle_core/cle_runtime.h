@@ -83,6 +83,7 @@ enum cle_opcode
 
 	OP_RECV,
 	OP_OBJ,
+	OP_NUM,
 
 	OP_OP_MAX
 };

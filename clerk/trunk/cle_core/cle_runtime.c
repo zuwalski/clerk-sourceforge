@@ -19,6 +19,8 @@
 #include "cle_stream.h"
 #include "cle_instance.h"
 
+typedef double rt_number;
+
 struct _rt_code
 {
 	struct _rt_code* next;
@@ -34,7 +36,7 @@ struct _rt_stack
 {
 	union 
 	{
-		double num;
+		rt_number num;
 		struct _rt_callframe* cfp;
 		struct _rt_stack* var;
 		st_ptr single_ptr;
@@ -72,7 +74,9 @@ struct _rt_stack
 #define STACK_REF 5
 #define STACK_CODE 6
 #define STACK_PTR 7
-#define STACK_PROP 8
+// readonly ptr
+#define STACK_RO_PTR 8
+#define STACK_PROP 9
 
 struct _rt_callframe
 {
@@ -194,10 +198,14 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 {
 	struct _rt_stack top = **sp;
 	char buffer[HEAD_SIZE];
+	char extcall;
 
 	// look for header
 	if(st_get(inv->t,&top.ptr,buffer,HEAD_SIZE) != -2 || buffer[0] != 0)
 		return;
+
+	// geting from within objectcontext or external?
+	extcall = (top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key);
 
 	switch(buffer[1])
 	{
@@ -207,7 +215,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		(*sp)->type = STACK_CODE;
 		break;
 	case 'E':	// expr
-		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+		if(extcall)
 			return;
 		// eval expr
 		inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
@@ -219,7 +227,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		*sp = inv->top->sp;
 		break;
 	case 'R':	// ref (oid)
-		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+		if(extcall)
 			return;
 		(*sp)->obj = inv->hdl->instance;
 		if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
@@ -231,7 +239,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		(*sp)->type = STACK_OBJ;
 		break;
 	case 'y':	// property
-		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+		if(extcall)
 			return;
 		if(st_get(inv->t,&top.ptr,(char*)&(*sp)->prop_id,PROPERTY_SIZE) != -1)
 			return;
@@ -267,32 +275,23 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp++;
 			break;
 		case OP_ADD:
-			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
-				sp[1].num += sp[0].num;
-			else
-				sp[1].type = STACK_NULL;
+			sp[1].num += sp[0].num;
 			sp++;
 			break;
 		case OP_SUB:
-			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
-				sp[1].num -= sp[0].num;
-			else
-				sp[1].type = STACK_NULL;
+			sp[1].num -= sp[0].num;
 			sp++;
 			break;
 		case OP_MUL:
-			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM)
-				sp[1].num *= sp[0].num;
-			else
-				sp[1].type = STACK_NULL;
+			sp[1].num *= sp[0].num;
 			sp++;
 			break;
 		case OP_DIV:
-			if(sp[0].type == STACK_NUM && sp[1].type == STACK_NUM && sp[0].num != 0)
-				sp[1].num /= sp[0].num;
-			else
-				sp[1].type = STACK_NULL;
+			sp[1].num /= sp[0].num;
 			sp++;
+			break;
+		case OP_NOT:
+			sp[0].num = (sp[0].num == 0);
 			break;
 
 		case OP_EQ:
@@ -321,20 +320,55 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp[1].num = _rt_compare(sp,sp + 1) < 0;
 			sp++;
 			break;
+		case OP_NUM:	// make sure its a number (load it)
+			if(sp->type != STACK_NUM)
+			{
+				st_ptr* loadfrom;
 
-		case OP_NOT:
-			if(sp[0].type == STACK_NUM)
-				sp[0].num = (sp[0].num == 0);
-			else
-				sp[0].type = STACK_NULL;
+				if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
+					loadfrom = &sp->single_ptr;
+				else if(sp->type == STACK_PROP)
+				{
+					if(st_move(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE) != 0 ||
+						st_move(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE) != 0)
+					{
+						_rt_error(inv,__LINE__);
+						return;
+					}
+
+					loadfrom = &sp->prop_obj;
+				}
+				else
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+
+				// is there a number here?
+				if(st_move(inv->t,loadfrom,HEAD_NUM,HEAD_SIZE) != 0)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+
+				// .. load it
+				if(st_get(inv->t,loadfrom,(char*)&sp->num,sizeof(rt_number)) != -1)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+
+				sp->type = STACK_NUM;
+			}
 			break;
+
 		case OP_BNZ:
 			// emit Is (branch forward conditional)
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			if((sp[0].type != STACK_NULL) && (
 				(sp[0].type == STACK_NUM && sp[0].num != 0) ||
-				(sp[0].type == STACK_PTR && st_is_empty(&sp[0].single_ptr) == 0)))
+				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr) == 0)))
 				inv->top->pc += tmp;
 			sp++;
 		case OP_BZ:
@@ -343,7 +377,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc += sizeof(ushort);
 			if((sp[0].type == STACK_NULL) ||
 				(sp[0].type == STACK_NUM && sp[0].num == 0) ||
-				(sp[0].type == STACK_PTR && st_is_empty(&sp[0].single_ptr)))
+				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr)))
 				inv->top->pc += tmp;
 			sp++;
 			break;
@@ -379,7 +413,7 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_STR:
 			// emit Is
 			sp--;
-			sp->type = STACK_PTR;
+			sp->type = STACK_RO_PTR;
 			sp->single_ptr = inv->top->code->strings;
 			st_move(inv->t,&sp->single_ptr,inv->top->pc,sizeof(ushort));
 			inv->top->pc += sizeof(ushort);
@@ -426,7 +460,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				inv->top->pc += tmp;
 				_rt_get(inv,&sp);
 			}
-			else if(sp->type == STACK_PTR)
+			else if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
 			{
 				if(st_move(inv->t,&sp->single_ptr,inv->top->pc,tmp) != 0)
 				{
@@ -440,10 +474,13 @@ static void _rt_run(struct _rt_invocation* inv)
 				return;
 			}
 			break;
+		case OP_LVAR:
+			*(--sp) = inv->top->vars[*inv->top->pc++];
+			break;
 
 		case OP_RECV:
 			sp--;
-			sp->type = STACK_PTR;
+			sp->type = STACK_RO_PTR;
 			return;
 
 		case OP_CLEAR:
@@ -457,9 +494,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			st_delete(inv->t,&sp->prop_obj,0,0);
 			sp->single_ptr = sp->prop_obj;
 			sp->type = STACK_PTR;
-			break;
-		case OP_LVAR:
-			*(--sp) = inv->top->vars[*inv->top->pc++];
 			break;
 		case OP_AVAR:
 			sp--;
@@ -570,7 +604,7 @@ static void _rt_next(event_handler* hdl)
 	{
 		inv->top->sp--;
 		inv->top->sp->single_ptr = hdl->top->pt;
-		inv->top->sp->type = STACK_PTR;
+		inv->top->sp->type = STACK_RO_PTR;
 	}
 	else
 	{
