@@ -553,7 +553,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_MVW:
 		case OP_MV:
 		case OP_CMV:
-		case OP_FMV:
+		case OP_OMV:
 		case OP_NEW:
 			// emit s
 			tmpushort = *((ushort*)bptr);
@@ -643,9 +643,9 @@ void _rt_dump_function(task* t, st_ptr* root)
 
 		case OP_IMM:
 			// emit II (imm int)
-			tmpint = *((int*)bptr);
-			bptr += sizeof(int);
-			len -= sizeof(int);
+			tmpint = *((short*)bptr);
+			bptr += sizeof(short);
+			len -= sizeof(short);
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpint);
 			break;
 

@@ -83,7 +83,10 @@ enum cle_opcode
 
 	OP_RECV,
 	OP_OBJ,
+	OP_OMV,
 	OP_NUM,
+	OP_MERGE,
+	OP_DOCALL_T,
 
 	OP_OP_MAX
 };

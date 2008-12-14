@@ -69,7 +69,6 @@ void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint m
 void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
 /* object-store */
-void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj);
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level);
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
 
@@ -78,6 +77,8 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
 int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
+
+int cle_get_property_host_st(task* app_instance, st_ptr root, st_ptr* object, st_ptr propname);
 
 int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop);
 

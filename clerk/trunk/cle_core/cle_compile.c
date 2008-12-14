@@ -451,13 +451,13 @@ static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort i
 	cst->code_next += sizeof(ushort);
 }
 
-static void _cmp_emitII(struct _cmp_state* cst, uchar opc, int imm)
+static void _cmp_emitII(struct _cmp_state* cst, uchar opc, short imm)
 {
 	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
 	cst->lastop = cst->code + cst->code_next;
 	cst->code[cst->code_next++] = opc;
-	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(int));
-	cst->code_next += sizeof(int);
+	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(short));
+	cst->code_next += sizeof(short);
 }
 
 static void _cmp_update_imm(struct _cmp_state* cst, uint offset, ushort imm)
@@ -1005,7 +1005,7 @@ static void _cmp_new(struct _cmp_state* cst)
 	uint state = ST_0;
 	uint level = 1;
 
-	_cmp_emit0(cst,OP_NULL);	// OP_?? validate write
+	_cmp_emit0(cst,OP_MERGE);
 
 	_cmp_nextc(cst);
 	while(1)
@@ -1119,6 +1119,7 @@ static void _cmp_new(struct _cmp_state* cst)
 #define num_op(opc,prec) \
 			chk_state(ST_ALPHA|ST_VAR|ST_NUM)\
 			chk_call()\
+			if(state & ST_ALPHA|ST_VAR) _cmp_emit0(cst,OP_NUM);\
 			_cmp_op_push(cst,opc,prec);\
 			state = ST_NUM_OP;\
 
@@ -1194,9 +1195,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			break;
 		case '/':
 			num_op(OP_DIV,5)
-			break;
-		case '%':
-			num_op(OP_REM,5)
 			break;
 		case '<':
 			chk_state(ST_ALPHA|ST_VAR|ST_NUM)
@@ -1345,7 +1343,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		default:
 			if(num(cst->c))
 			{
-				int val = 0;
+				short val = 0;
 				chk_state(ST_0|ST_NUM_OP)
 				do
 				{
@@ -1681,7 +1679,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 							_cmp_emitS(cst,OP_MV,cst->opbuf + cst->top,len);
 						else
 						{
-							_cmp_emitS(cst,OP_FMV,cst->opbuf + cst->top,len);
+							_cmp_emitS(cst,OP_OMV,cst->opbuf + cst->top,len);
 							_cmp_stack(cst,1);
 						}
 						state = ST_ALPHA;

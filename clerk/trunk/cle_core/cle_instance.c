@@ -134,37 +134,6 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 {}
 
 /* object store */
-
-void cle_new_noname(task* app_instance, st_ptr app_root, st_ptr* obj)
-{
-	it_ptr it;
-	st_ptr pt;
-	objectheader header;
-
-	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
-
-	it_create(app_instance,&it,&app_root);
-
-	it_new(app_instance,&it,obj);
-
-	st_insert(app_instance,&pt,it.kdata,it.kused);
-
-	// reflect oid in object
-	pt = *obj;
-	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
-
-	header.level = 0;
-	header.state = 0;
-	header.next_property_id = 0;
-	header.next_state_id = 1;
-	// write header
-	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
-
-	st_insert(app_instance,&pt,it.kdata,it.kused);
-
-	it_dispose(app_instance,&it);
-}
-
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level)
 {
 	it_ptr it;
@@ -189,8 +158,7 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 	pt = newobj;
 	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
 
-	if(_copy_validate(app_instance,&pt,name,1))
-		return 1;
+	st_insert_st(app_instance,&pt,&name);
 
 	// reflect oid in object
 	pt = newobj;
@@ -655,6 +623,33 @@ int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat 
 	}
 }
 
+int cle_get_property_host_st(task* app_instance, st_ptr root, st_ptr* object, st_ptr propname)
+{
+	int super_prop = 0;
+	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
+		return -1;
+
+	// seach inheritance-chain
+	while(1)
+	{
+		st_ptr pt;
+		// in this object?
+		if(st_move_st(app_instance,object,&propname) == 0)
+			return super_prop;
+
+		// no more extends -> property not found
+		if(st_move(app_instance,object,HEAD_EXTENDS,HEAD_SIZE) != 0)
+			return -1;
+
+		pt = root;
+		if(st_move_st(app_instance,&pt,object))
+			return -1;
+
+		*object = pt;
+		super_prop++;
+	}
+}
+
 int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop)
 {
 	st_ptr obj,app = root;
@@ -677,8 +672,7 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 	// find hosting object
 	obj = root;
-	c = cle_get_property_host(app_instance,app,&root,buffer,i);
-	if(c < 0)
+	if(cle_get_property_host(app_instance,app,&root,buffer,i) < 0)
 		return 1;
 
 	// remaining path
@@ -686,16 +680,30 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 	if(i != 0 && i != -2)
 		return 1;
 
-	// not defined in this object? go to prop by index
-	if(c != 0)
+	// get prop-index
+	if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) >= 0 ||
+		buffer[0] != 0 || buffer[1] != 'y')
 	{
-		if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) >= 0)
+		// is there a header here?
+		obj = root;
+		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
 			return 1;
 
-		if(buffer[0] != 0 || buffer[1] != 'y')
+		switch(buffer[1])
+		{
+		case 'M':
+		case 'E':
+			// method or expr? show source
+			root = obj;
+			st_move(app_instance,&root,"s",1);
+			break;
+		default:
+			// some other headertype ..
 			return 1;
-
-		// if object have no value for that property - use default value
+		}
+	}
+	else
+	{
 		while(1)
 		{
 			st_ptr pt;
@@ -719,31 +727,6 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 			obj = pt;
 		}
 	}
-	else
-	{
-		// is there a header here?
-		obj = root;
-		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
-			return 1;
-
-		switch(buffer[1])
-		{
-		case 'y':
-			// property-def? show default-value
-			root = obj;
-			st_offset(app_instance,&root,PROPERTY_SIZE);
-			break;
-		case 'M':
-		case 'E':
-			// method or expr? show source
-			root = obj;
-			st_move(app_instance,&root,"s",1);
-			break;
-		default:
-			// some other headertype ..
-			return 1;
-		}
-	}
 
 	*prop = root;
 	return 0;
@@ -751,17 +734,18 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr defaultvalue)
 {
-	st_ptr pt,pt0;
+	st_ptr pt,pt0,obj;
 	objectheader header;
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	pt = root;
+	obj = root;
 	if(_copy_validate(app_instance,&root,path,1))
 		return 1;
 
 	// read header
+	pt = obj;
 	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
 	pt0 = pt;
@@ -769,21 +753,23 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	// create property-header
-	st_insert(app_instance,&root,HEAD_PROPERTY,HEAD_SIZE);
-	// clear
-	st_delete(app_instance,&root,0,0);
+	if(st_insert(app_instance,&root,HEAD_PROPERTY,HEAD_SIZE) == 0)
+		// clear
+		st_delete(app_instance,&root,0,0);
 
 	st_insert(app_instance,&root,(cdat)&header.level,4);
 
+	if(st_is_empty(&defaultvalue) == 0)
+	{
+		pt = obj;
+		st_insert(app_instance,&pt,HEAD_PROPERTY,HEAD_SIZE);
+		st_insert(app_instance,&pt,(cdat)&header.level,4);
+		st_link(app_instance,&pt,app_instance,&defaultvalue);
+	}
+
 	header.next_property_id++;
 
-	if(st_dataupdate(app_instance,&pt0,(cdat)&header,sizeof(header)))
-		return 1;
-
-	if(st_is_empty(&defaultvalue) == 0)
-		st_link(app_instance,&root,app_instance,&defaultvalue);
-
-	return 0;
+	return st_dataupdate(app_instance,&pt0,(cdat)&header,sizeof(header));
 }
 
 /* values and exprs shadow names defined at a lower level */
