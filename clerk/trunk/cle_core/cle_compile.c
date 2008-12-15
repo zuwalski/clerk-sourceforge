@@ -1022,8 +1022,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			break;
 		case '{':
 			chk_state(ST_0|ST_ALPHA)
-			//state = ST_0;
-			state = ST_DOT;
+			state = ST_0;
 			level++;
 			break;
 		case '}':

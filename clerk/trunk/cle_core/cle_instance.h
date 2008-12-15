@@ -41,6 +41,7 @@
 #define HEAD_EXPR "\0E"
 #define HEAD_NUM "\0N"
 #define HEAD_REF "\0R"
+#define HEAD_CONST "\0C"
 
 #define PROPERTY_SIZE 4
 

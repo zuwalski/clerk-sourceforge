@@ -202,7 +202,12 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 	// look for header
 	if(st_get(inv->t,&top.ptr,buffer,HEAD_SIZE) != -2 || buffer[0] != 0)
+	{
+		(*sp)->type = STACK_OBJ;
 		return;
+	}
+
+	(*sp)->type = STACK_NULL;
 
 	// geting from within objectcontext or external?
 	extcall = (top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key);
@@ -217,14 +222,29 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 	case 'E':	// expr
 		if(extcall)
 			return;
-		// eval expr
-		inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
+		// check for constants
+		if(st_move(inv->t,&top.ptr,HEAD_NUM,HEAD_SIZE) == 0)
+		{
+			if(st_get(inv->t,&top.ptr,(char*)&(*sp)->num,sizeof(rt_number)) != -1)
+				return;
+			(*sp)->type = STACK_NUM;
+		}
+		else if(st_move(inv->t,&top.ptr,HEAD_CONST,HEAD_SIZE) == 0)
+		{
+			(*sp)->single_ptr = top.ptr;
+			(*sp)->type = STACK_RO_PTR;
+		}
+		else
+		{
+			// eval expr
+			inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
 
-		(*sp)->type = STACK_NULL;
-		inv->top->sp--;
-		inv->top->sp->type = STACK_REF;
-		inv->top->sp->var = *sp;
-		*sp = inv->top->sp;
+			(*sp)->type = STACK_NULL;
+			inv->top->sp--;
+			inv->top->sp->type = STACK_REF;
+			inv->top->sp->var = *sp;
+			*sp = inv->top->sp;
+		}
 		break;
 	case 'R':	// ref (oid)
 		if(extcall)
@@ -250,21 +270,24 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 static uint _rt_find_prop_value(struct _rt_invocation* inv, struct _rt_stack* sp)
 {
-	st_ptr obj = sp->prop_obj;
-	while(st_move(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE) != 0 ||
-		st_move(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE) != 0)
+	st_ptr obj = sp->single_ptr = sp->prop_obj;
+	sp->type = inv->top->is_expr? STACK_RO_PTR : STACK_PTR;
+
+	while(st_move(inv->t,&sp->single_ptr,HEAD_PROPERTY,HEAD_SIZE) != 0 ||
+		st_move(inv->t,&sp->single_ptr,(cdat)&sp->prop_id,PROPERTY_SIZE) != 0)
 	{
 		// no value in object - look in parent object (if any)
 		if(st_move(inv->t,&obj,HEAD_EXTENDS,HEAD_SIZE) != 0)
 			return 1;
 
-		sp->prop_obj = inv->hdl->instance;
-		if(st_move(inv->t,&sp->prop_obj,HEAD_OID,HEAD_SIZE) != 0)
+		sp->single_ptr = inv->hdl->instance;
+		if(st_move(inv->t,&sp->single_ptr,HEAD_OID,HEAD_SIZE) != 0)
 			return 1;
-		if(st_move_st(inv->t,&sp->prop_obj,&obj))
+		if(st_move_st(inv->t,&sp->single_ptr,&obj))
 			return 1;
 
-		obj = sp->prop_obj;
+		obj = sp->single_ptr;
+		sp->type = STACK_RO_PTR;
 	}
 
 	return 0;
@@ -289,15 +312,10 @@ static uint _rt_move(struct _rt_invocation* inv, struct _rt_stack** sp, cdat mv,
 		if(_rt_find_prop_value(inv,(*sp)))
 			return 1;
 
-		if(st_move(inv->t,&(*sp)->prop_obj,mv,length) == 0)
-		{
-			(*sp)->single_ptr = (*sp)->prop_obj;
-			(*sp)->type = STACK_PTR;
-		}
-		else
+		if(st_move(inv->t,&(*sp)->single_ptr,mv,length) != 0)
 		{
 			// last chance: maybe field contains a ref .. try move in ref'ed obj.
-			st_ptr ref = (*sp)->prop_obj;
+			st_ptr ref = (*sp)->single_ptr;
 			if(st_move(inv->t,&ref,HEAD_REF,HEAD_SIZE) != 0)
 				return 1;
 
@@ -309,7 +327,7 @@ static uint _rt_move(struct _rt_invocation* inv, struct _rt_stack** sp, cdat mv,
 			(*sp)->ptr = (*sp)->obj;
 			if(cle_get_property_host(inv->t,inv->hdl->instance,&(*sp)->ptr,mv,length) < 0)
 				return 1;
-			(*sp)->type = STACK_OBJ;
+			_rt_get(inv,sp);
 		}
 		break;
 	case STACK_PTR:
@@ -341,15 +359,10 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 		if(_rt_find_prop_value(inv,(*sp)))
 			return 1;
 
-		if(st_move_st(inv->t,&(*sp)->prop_obj,mv) == 0)
-		{
-			(*sp)->single_ptr = (*sp)->prop_obj;
-			(*sp)->type = STACK_PTR;
-		}
-		else
+		if(st_move_st(inv->t,&(*sp)->single_ptr,mv) != 0)
 		{
 			// last chance: maybe field contains a ref .. try move in ref'ed obj.
-			st_ptr ref = (*sp)->prop_obj;
+			st_ptr ref = (*sp)->single_ptr;
 			if(st_move(inv->t,&ref,HEAD_REF,HEAD_SIZE) != 0)
 				return 1;
 
@@ -361,7 +374,7 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 			(*sp)->ptr = (*sp)->obj;
 			if(cle_get_property_host_st(inv->t,inv->hdl->instance,&(*sp)->ptr,*mv) < 0)
 				return 1;
-			(*sp)->type = STACK_OBJ;
+			_rt_get(inv,sp);
 		}
 		break;
 	case STACK_PTR:
@@ -562,7 +575,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			sp--;
-			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
 			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
 			{
@@ -582,7 +594,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			inv->top->pc += tmp;
 			break;
-
 		case OP_RIDX:
 			if(sp->type == STACK_NUM)
 			{
@@ -613,6 +624,51 @@ static void _rt_run(struct _rt_invocation* inv)
 			*(--sp) = inv->top->vars[*inv->top->pc++];
 			break;
 
+		// writer
+		case OP_POPW:
+			if(sp->type == STACK_OUTPUT)
+				sp->out->pop(sp->outdata);
+			else
+				sp++;
+			break;
+		case OP_DMVW:
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc += sizeof(ushort);
+			switch(sp->type)
+			{
+			case STACK_PTR:
+				sp--;
+				sp[0] = sp[1];
+				st_insert(inv->t,&sp->single_ptr,inv->top->pc,tmp);
+				break;
+			case STACK_OUTPUT:
+				sp->out->push(sp->outdata);
+				sp->out->data(sp->outdata,inv->top->pc,tmp);
+				break;
+			case STACK_REF:
+				sp--;
+				sp[0] = *sp[1].var;
+				st_insert(inv->t,&sp->single_ptr,inv->top->pc,tmp);
+			}
+			inv->top->pc += tmp;
+			break;
+		case OP_MVW:
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc += sizeof(ushort);
+			switch(sp->type)
+			{
+			case STACK_PTR:
+				st_insert(inv->t,&sp->single_ptr,inv->top->pc,tmp);
+				break;
+			case STACK_OUTPUT:
+				sp->out->data(sp->outdata,inv->top->pc,tmp);
+			}
+			inv->top->pc += tmp;
+			break;
+		case OP_WIDX:
+			break;
+
+		// receive input
 		case OP_RECV:
 			sp--;
 			sp->type = STACK_RO_PTR;
@@ -634,6 +690,19 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			else if(sp->type == STACK_PTR)
 				st_delete(inv->t,&sp->single_ptr,0,0);
+			else if(sp->type == STACK_REF)
+			{
+				if(sp->var->type == STACK_NULL)
+				{
+					st_empty(inv->t,&sp->var->single_ptr);
+					sp->var->type = STACK_PTR;
+				}
+				else if(sp->var->type != STACK_PTR)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+			}
 			else
 			{
 				_rt_error(inv,__LINE__);
@@ -653,7 +722,20 @@ static void _rt_run(struct _rt_invocation* inv)
 				sp->single_ptr = sp->prop_obj;
 				sp->type = STACK_PTR;
 			}
-			else if(sp->type != STACK_PTR)
+			else if(sp->type == STACK_REF)
+			{
+				if(sp->var->type == STACK_NULL)
+				{
+					st_empty(inv->t,&sp->var->single_ptr);
+					sp->var->type = STACK_PTR;
+				}
+				else if(sp->var->type != STACK_PTR)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+			}
+			else if(sp->type != STACK_PTR && sp->type != STACK_OUTPUT)
 			{
 				_rt_error(inv,__LINE__);
 				return;
@@ -706,7 +788,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				_rt_error(inv,__LINE__);
 				return;
 			}
-			sp->cfp = _rt_newcall(inv,sp->code,&sp->code_obj,0);
+			sp->cfp = _rt_newcall(inv,sp->code,&sp->code_obj,inv->top->is_expr);
 			sp->type = STACK_CALL;
 			break;
 		case OP_DOCALL:
