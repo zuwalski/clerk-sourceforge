@@ -763,6 +763,64 @@ int st_scan(task* t, st_ptr* pt)
 	}
 }
 
+int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx)
+{
+	page_wrap* pg = str->pg;
+	key* me      = GOKEY(str->pg,str->key);
+	key* nxt     = 0;
+	cdat ckey    = KDATA(me) + (str->offset >> 3);
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < str->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+	}
+
+	klen = ((nxt)? nxt->offset : me->length) - str->offset;
+
+	while(1)
+	{
+		klen <<= 3;
+		if(klen > 0)
+		{
+			uint ret = fun(ctx,ckey,klen);
+			if(ret != 0)
+				return ret;
+		}
+
+		// move to next key for more data?
+		if(nxt == 0)
+			break;
+
+		// no next key! or trying to read past split?
+		if(nxt->offset < me->length && me->length != 1)
+			return -1;
+
+		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+		ckey = KDATA(me);
+		if(me->sub)
+		{
+			nxt = GOOFF(pg,me->sub);
+			klen = nxt->offset;
+		}
+		else
+		{
+			klen = me->length;
+			nxt = 0;
+		}
+	}
+	return 0;
+}
+
 uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 {
 	struct _st_lkup_res rt;

@@ -34,7 +34,7 @@ typedef struct cle_pipe
 	void (*end)(void*,cdat,uint);
 	void (*pop)(void*);
 	void (*push)(void*);
-	void (*data)(void*,cdat,uint);
+	uint (*data)(void*,cdat,uint);
 	void (*submit)(void*,task*,st_ptr*);
 } cle_pipe;
 
@@ -109,7 +109,7 @@ void cle_stream_leave(event_handler* hdl);
 // convenience-functions for implementing the cle_pipe-interface
 void cle_standard_pop(event_handler* hdl);
 void cle_standard_push(event_handler* hdl);
-void cle_standard_data(event_handler* hdl, cdat data, uint length);
+uint cle_standard_data(event_handler* hdl, cdat data, uint length);
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
 void cle_stream_submit_beta(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt);

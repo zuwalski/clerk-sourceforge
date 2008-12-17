@@ -83,8 +83,9 @@ struct _ipt_internal
 
 static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
+static uint _nil2x(void* v,cdat c,uint u){return 0;}
 static void _nil3(void* v,task* t,st_ptr* st){}
-static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2,_nil3};
+static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3};
 
 // async output-handler
 static int _async_end(event_handler* hdl, cdat c, uint clen)
@@ -97,7 +98,7 @@ static int _async_end(event_handler* hdl, cdat c, uint clen)
 	return 0;
 }
 
-static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1,_nil1,_nil2,_nil3};
+static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1,_nil1,_nil2x,_nil3};
 
 // convenience functions for implementing the cle_pipe-interface
 void cle_standard_pop(event_handler* hdl)
@@ -129,9 +130,9 @@ void cle_standard_push(event_handler* hdl)
 	hdl->top = elm;
 }
 
-void cle_standard_data(event_handler* hdl, cdat data, uint length)
+uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 {
-	st_append(hdl->instance_tk,&hdl->top->pt,data,length);
+	return st_append(hdl->instance_tk,&hdl->top->pt,data,length);
 }
 
 void cle_standard_submit(event_handler* hdl, task* t_from, st_ptr* from)
@@ -188,7 +189,7 @@ static void _pa_push(event_handler* hdl)
 	while(hdl != 0);
 }
 
-static void _pa_data(event_handler* hdl, cdat data, uint length)
+static uint _pa_data(event_handler* hdl, cdat data, uint length)
 {
 	do
 	{
@@ -196,6 +197,7 @@ static void _pa_data(event_handler* hdl, cdat data, uint length)
 		hdl = hdl->next;
 	}
 	while(hdl != 0);
+	return 0;
 }
 
 static void _pa_submit(event_handler* hdl, task* t, st_ptr* st)
@@ -218,7 +220,7 @@ static void _cpy_next(event_handler* hdl) {hdl->response->next(hdl->respdata);}
 static void _cpy_end(event_handler* hdl,cdat c,uint u) {hdl->response->end(hdl->respdata,c,u);}
 static void _cpy_pop(event_handler* hdl) {hdl->response->pop(hdl->respdata);}
 static void _cpy_push(event_handler* hdl) {hdl->response->push(hdl->respdata);}
-static void _cpy_data(event_handler* hdl,cdat c,uint u) {hdl->response->data(hdl->respdata,c,u);}
+static uint _cpy_data(event_handler* hdl,cdat c,uint u) {return hdl->response->data(hdl->respdata,c,u);}
 static void _cpy_submit(event_handler* hdl,task* t,st_ptr* s) {hdl->response->submit(hdl->respdata,t,s);}
 
 static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop,_cpy_push,_cpy_data,_cpy_submit},0};
