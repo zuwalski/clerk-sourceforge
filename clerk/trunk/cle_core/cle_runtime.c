@@ -391,6 +391,55 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 	return 0;
 }
 
+static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
+{
+	switch(sp->type)
+	{
+	case STACK_RO_PTR:
+	case STACK_PTR:
+		switch(sp[1].type)
+		{
+		case STACK_REF:
+			st_insert_st(inv->t,&sp[1].var->single_ptr_w,&sp->single_ptr);
+			break;
+		case STACK_PTR:
+			st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
+			break;
+		case STACK_OUTPUT:
+			return st_map(inv->t,&sp->single_ptr,sp[1].out->data,sp[1].outdata);
+		}
+		break;
+	case STACK_NUM:
+		switch(sp[1].type)
+		{
+		case STACK_REF:
+			if(sp[1].var->type == STACK_PTR)
+			{
+				st_insert(inv->t,&sp[1].var->single_ptr_w,HEAD_NUM,HEAD_SIZE);
+				st_insert(inv->t,&sp[1].var->single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
+			}
+			else
+			{
+				sp[1].var->num = sp->num;
+				sp[1].var->type = STACK_NUM;
+			}
+			break;
+		case STACK_PTR:
+			st_insert(inv->t,&sp[1].single_ptr_w,HEAD_NUM,HEAD_SIZE);
+			st_insert(inv->t,&sp[1].single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
+			break;
+		case STACK_OUTPUT:
+			sp[1].out->data(sp[1].outdata,HEAD_NUM,HEAD_SIZE);
+			sp[1].out->data(sp[1].outdata,(cdat)&sp->num,sizeof(rt_number));
+		}
+	default: 
+		// default -> output nothing .. but
+		if(sp[1].type == STACK_REF)
+			*sp[1].var = *sp;
+	}
+	return 0;
+}
+
 /*
 	stacklayout:
 	0 output-target
@@ -670,36 +719,11 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			inv->top->pc += tmp;
 			break;
-		case OP_WIDX:
-			switch(sp->type)
+		case OP_WIDX:	// replace by OP_OUT ?
+			if(_rt_out(inv,sp))
 			{
-			case STACK_NUM:
-				switch(sp[1].type)
-				{
-				case STACK_PTR:
-					st_insert(inv->t,&sp[1].single_ptr_w,HEAD_NUM,HEAD_SIZE);
-					st_insert(inv->t,&sp[1].single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
-					break;
-				case STACK_OUTPUT:
-					sp[1].out->data(sp[1].outdata,HEAD_NUM,HEAD_SIZE);
-					sp[1].out->data(sp[1].outdata,(cdat)&sp->num,sizeof(rt_number));
-					break;
-				}
-				break;
-			case STACK_PTR:
-				switch(sp[1].type)
-				{
-				case STACK_PTR:
-					st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
-					break;
-				case STACK_OUTPUT:
-					if(st_map(inv->t,&sp->single_ptr,sp[1].out->data,sp[1].outdata))
-					{
-						_rt_error(inv,__LINE__);
-						return;
-					}
-					break;
-				}
+				_rt_error(inv,__LINE__);
+				return;
 			}
 			sp++;
 			break;
@@ -729,24 +753,6 @@ static void _rt_run(struct _rt_invocation* inv)
 				st_delete(inv->t,&sp->single_ptr,0,0);
 				sp->single_ptr_w = sp->single_ptr;
 				break;
-			case STACK_REF:
-				if(sp->var->type == STACK_NULL)
-				{
-					st_empty(inv->t,&sp->var->single_ptr);
-					sp->var->single_ptr_w = sp->var->single_ptr;
-					sp->var->type = STACK_PTR;
-				}
-				else if(sp->var->type != STACK_PTR)
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
-				break;
-			case STACK_NULL:
-				st_empty(inv->t,&sp->single_ptr);
-				sp->single_ptr_w = sp->single_ptr;
-				sp->type = STACK_PTR;
-				break;
 			default:
 				_rt_error(inv,__LINE__);
 				return;
@@ -764,11 +770,6 @@ static void _rt_run(struct _rt_invocation* inv)
 				st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
 				st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE);
 				sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
-				sp->type = STACK_PTR;
-				break;
-			case STACK_NULL:
-				st_empty(inv->t,&sp->single_ptr);
-				sp->single_ptr_w = sp->single_ptr;
 				sp->type = STACK_PTR;
 				break;
 			case STACK_REF:
@@ -791,33 +792,32 @@ static void _rt_run(struct _rt_invocation* inv)
 				return;
 			}
 			break;
+		case OP_CAT:
+			sp--;
+			sp[0] = sp[1];
+			st_empty(inv->t,&sp[1].single_ptr);
+			sp[1].single_ptr_w = sp[1].single_ptr;
+			sp[1].type = STACK_PTR;
+			st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
+			sp++;
+			break;
 		case OP_OUT:	// stream out string
-			switch(sp->type)
+			if(_rt_out(inv,sp))
 			{
-			case STACK_PTR:
-				switch(sp[1].type)
-				{
-				case STACK_NULL:
-					st_empty(inv->t,&sp[1].single_ptr);
-					sp[1].single_ptr_w = sp[1].single_ptr;
-					sp[1].type = STACK_PTR;
-				case STACK_PTR:
-				case STACK_RO_PTR:
-					st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
-					break;
-				case STACK_OUTPUT:
-					if(st_map(inv->t,&sp->single_ptr,sp[1].out->data,sp[1].outdata))
-					{
-						_rt_error(inv,__LINE__);
-						return;
-					}
-				}
-				break;
-			case STACK_NUM:
-				// format-num as string
-			// default -> output nothing
+				_rt_error(inv,__LINE__);
+				return;
 			}
 			sp++;
+			break;
+		case OP_OUTL:	// stream out string - Last element
+			if(_rt_out(inv,sp))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			sp++;
+			if(sp->type == STACK_OUTPUT)
+				sp->out->next(sp->outdata);
 			break;
 		case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
 			sp++;
@@ -826,6 +826,7 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_AVAR:
 			sp--;
 			sp->var = &inv->top->vars[*inv->top->pc++];
+			sp->var->type = STACK_NULL;
 			sp->type = STACK_REF;
 			break;
 		case OP_DEFP:

@@ -434,6 +434,18 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_DEBUG";
 	case OP_NEW:
 		return "OP_NEW";
+	case OP_RECV:
+		return "OP_RECV";
+	case OP_OBJ:
+		return "OP_OBJ";
+	case OP_OMV:
+		return "OP_OMV";
+	case OP_NUM:
+		return "OP_NUM";
+	case OP_MERGE:
+		return "OP_MERGE";
+	case OP_DOCALL_T:
+		return "OP_DOCALL_T";
 
 	default:
 		return "OP_ILLEGAL";
@@ -538,6 +550,11 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_NOT:
 		case OP_END:
 		case OP_CALL:
+		case OP_RECV:
+		case OP_OBJ:
+		case OP_NUM:
+		case OP_MERGE:
+		case OP_DOCALL_T:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;

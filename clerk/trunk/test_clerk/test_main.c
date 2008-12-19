@@ -566,29 +566,29 @@ int heapstatus = _heapchk();
 
 int main(int argc, char* argv[])
 {
-	test_struct_c();
+	//test_struct_c();
 
-	heap_check();
+	//heap_check();
 
-	time_struct_c();
+	//time_struct_c();
 
-	heap_check();
+	//heap_check();
 
-	test_iterate_c();
+	//test_iterate_c();
 
-	heap_check();
+	//heap_check();
 
-	test_task_c();
+	//test_task_c();
 
-	heap_check();
+	//heap_check();
 
-	test_task_c_filepager();
+	//test_task_c_filepager();
 
-	heap_check();
+	//heap_check();
 
-	test_stream_c();
+	//test_stream_c();
 
-	heap_check();
+	//heap_check();
 
 	test_compile_c();
 
