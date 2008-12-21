@@ -522,8 +522,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		switch(opc)
 		{
 		case OP_NOOP:
-		case OP_DOCALL:
-		case OP_DOCALL_N:
 		case OP_POP:
 		case OP_POPW:
 		case OP_WIDX:
@@ -554,7 +552,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_OBJ:
 		case OP_NUM:
 		case OP_MERGE:
-		case OP_DOCALL_T:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -586,6 +583,9 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_RVAR:
 		case OP_LVAR:
 		case OP_AVAR:
+		case OP_DOCALL:
+		case OP_DOCALL_N:
+		case OP_DOCALL_T:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);

@@ -97,8 +97,8 @@ static char test3[] =
 
 static char test4[] = 
 "$a,$b)"
-"	for $1,$2 = fun3($a,$b) do "
-"		fun3($1)"
+"	send fun3($a,$b) do "
+"		fun3($a)"
 "	end"
 "	"
 "	$b.each a{+*.$1,-$2.$3} do"

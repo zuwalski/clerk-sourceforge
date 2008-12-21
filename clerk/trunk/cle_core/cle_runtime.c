@@ -845,17 +845,6 @@ static void _rt_run(struct _rt_invocation* inv)
 				inv->top->pc += tmp + sizeof(ushort);
 			}
 			break;
-		case OP_SETP:
-			tmp = *inv->top->pc++;	// var
-			if(tmp < sp[1].cfp->code->body.maxparams)
-				sp[1].cfp->vars[tmp] = *sp;
-			else
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
-			sp++;
-			break;
 		case OP_END:
 			if(inv->top->parent == 0)
 			{
@@ -865,22 +854,39 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top = inv->top->parent;
 			sp = inv->top->sp;
 			break;
-		case OP_CALL:
-			if(sp->type != STACK_CODE)
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
-			sp->cfp = _rt_newcall(inv,sp->code,&sp->code_obj,inv->top->is_expr);
-			sp->type = STACK_CALL;
-			break;
+
+		//case OP_CALL:
+		//	if(sp->type != STACK_CODE)
+		//	{
+		//		_rt_error(inv,__LINE__);
+		//		return;
+		//	}
+		//	sp->cfp = _rt_newcall(inv,sp->code,&sp->code_obj,inv->top->is_expr);
+		//	sp->type = STACK_CALL;
+		//	break;
+		//case OP_SETP:
+		//	tmp = *inv->top->pc++;	// var
+		//	if(tmp < sp[1].cfp->code->body.maxparams)
+		//		sp[1].cfp->vars[tmp] = *sp;
+		//	else
+		//	{
+		//		_rt_error(inv,__LINE__);
+		//		return;
+		//	}
+		//	sp++;
+		//	break;
+
 		case OP_DOCALL:
+			tmp = *inv->top->pc++;	// params
+
 			inv->top->sp = sp + 1;
 			inv->top = sp->cfp;
 			*(--inv->top->sp) = *sp;	// copy output-target
 			sp = inv->top->sp;
 			break;
 		case OP_DOCALL_N:
+			tmp = *inv->top->pc++;	// params
+
 			inv->top = sp->cfp;
 			sp->type = STACK_NULL;
 			inv->top->sp--;
@@ -889,6 +895,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp = inv->top->sp;
 			break;
 		case OP_DOCALL_T:	// tail-call
+			tmp = *inv->top->pc++;	// params
+
 			sp->cfp->parent = inv->top->parent;
 			inv->top = sp->cfp;
 			*(--inv->top->sp) = *sp;	// copy output-target
