@@ -446,6 +446,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MERGE";
 	case OP_DOCALL_T:
 		return "OP_DOCALL_T";
+	case OP_EMPTY:
+		return "OP_EMPTY";
 
 	default:
 		return "OP_ILLEGAL";
@@ -552,6 +554,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_OBJ:
 		case OP_NUM:
 		case OP_MERGE:
+		case OP_EMPTY:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;

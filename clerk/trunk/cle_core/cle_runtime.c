@@ -30,6 +30,22 @@ struct _rt_code
 	struct _body_ body;
 };
 
+// stack-element types
+enum {
+	STACK_EMPTY = 0,
+	STACK_NULL,
+	STACK_NUM,
+	STACK_CALL,
+	STACK_OBJ,
+	STACK_OUTPUT,
+	STACK_REF,
+	STACK_CODE,
+	STACK_PTR,
+	// readonly ptr
+	STACK_RO_PTR,
+	STACK_PROP
+};
+
 struct _rt_callframe;
 
 struct _rt_stack
@@ -68,19 +84,6 @@ struct _rt_stack
 	uchar type;
 	uchar flags;	// JIT-flags
 };
-
-// stack-element types
-#define STACK_NULL 0
-#define STACK_NUM 1
-#define STACK_CALL 2
-#define STACK_OBJ 3
-#define STACK_OUTPUT 4
-#define STACK_REF 5
-#define STACK_CODE 6
-#define STACK_PTR 7
-// readonly ptr
-#define STACK_RO_PTR 8
-#define STACK_PROP 9
 
 struct _rt_callframe
 {
@@ -462,10 +465,6 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_DEBUG:
 			inv->top->pc += sizeof(ushort);
 			break;
-		case OP_NULL:
-			sp--;
-			sp->type = STACK_NULL;
-			break;
 		case OP_POP:
 			sp++;
 			break;
@@ -597,25 +596,38 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc++;
 			break;
 
+		case OP_NULL:
+			if(sp->type != STACK_EMPTY)
+				sp--;
+			sp->type = STACK_NULL;
+			break;
 		case OP_IMM:
 			// emit II (imm short)
-			sp--;
+			if(sp->type != STACK_EMPTY)
+				sp--;
 			sp->type = STACK_NUM;
 			sp->num = *((short*)inv->top->pc);
 			inv->top->pc += sizeof(short);
 			break;
 		case OP_STR:
 			// emit Is
-			sp--;
+			if(sp->type != STACK_EMPTY)
+				sp--;
 			sp->type = STACK_RO_PTR;
 			sp->single_ptr = inv->top->code->strings;
 			st_move(inv->t,&sp->single_ptr,inv->top->pc,sizeof(ushort));
 			inv->top->pc += sizeof(ushort);
 			break;
 		case OP_OBJ:
-			sp--;
+			if(sp->type != STACK_EMPTY)
+				sp--;
 			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
+			break;
+		case OP_EMPTY:
+			if(sp->type != STACK_EMPTY)
+				sp--;
+			sp->type = STACK_EMPTY;
 			break;
 
 		case OP_NEW:
@@ -628,7 +640,8 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_OMV:
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
-			sp--;
+			if(sp->type != STACK_EMPTY)
+				sp--;
 			sp->ptr = sp->obj = inv->top->object;
 			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
 			{
@@ -675,7 +688,9 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			break;
 		case OP_LVAR:
-			*(--sp) = inv->top->vars[*inv->top->pc++];
+			if(sp->type != STACK_EMPTY)
+				sp--;
+			*sp = inv->top->vars[*inv->top->pc++];
 			break;
 
 		// writer
@@ -792,15 +807,15 @@ static void _rt_run(struct _rt_invocation* inv)
 				return;
 			}
 			break;
-		case OP_CAT:
-			sp--;
-			sp[0] = sp[1];
-			st_empty(inv->t,&sp[1].single_ptr);
-			sp[1].single_ptr_w = sp[1].single_ptr;
-			sp[1].type = STACK_PTR;
-			st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
-			sp++;
-			break;
+		//case OP_CAT:
+		//	sp--;
+		//	sp[0] = sp[1];
+		//	st_empty(inv->t,&sp[1].single_ptr);
+		//	sp[1].single_ptr_w = sp[1].single_ptr;
+		//	sp[1].type = STACK_PTR;
+		//	st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
+		//	sp++;
+		//	break;
 		case OP_OUT:	// stream out string
 			if(_rt_out(inv,sp))
 			{
@@ -809,7 +824,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			sp++;
 			break;
-		case OP_OUTL:	// stream out string - Last element
+		case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
 			if(_rt_out(inv,sp))
 			{
 				_rt_error(inv,__LINE__);
@@ -819,14 +834,10 @@ static void _rt_run(struct _rt_invocation* inv)
 			if(sp->type == STACK_OUTPUT)
 				sp->out->next(sp->outdata);
 			break;
-		case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
-			sp++;
-			break;
 
 		case OP_AVAR:
 			sp--;
 			sp->var = &inv->top->vars[*inv->top->pc++];
-			sp->var->type = STACK_NULL;
 			sp->type = STACK_REF;
 			break;
 		case OP_DEFP:
@@ -953,7 +964,7 @@ static void _rt_next(event_handler* hdl)
 		struct _rt_stack* var = inv->top->vars + (inv->top->code->body.maxparams - inv->params_before_run);
 
 		var->single_ptr = hdl->top->pt;
-		var->type = STACK_PTR;
+		var->type = STACK_RO_PTR;
 
 		if(--inv->params_before_run != 0)
 			return;

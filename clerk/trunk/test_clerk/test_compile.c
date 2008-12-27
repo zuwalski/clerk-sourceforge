@@ -97,7 +97,7 @@ static char test3[] =
 
 static char test4[] = 
 "$a,$b)"
-"	send fun3($a,$b) do "
+"	pipe fun3($a,$b) do "
 "		fun3($a)"
 "	end"
 "	"
