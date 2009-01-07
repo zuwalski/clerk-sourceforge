@@ -105,6 +105,19 @@ static char test4[] =
 "		'each'"
 "	end";
 
+static char test5[] = 
+"$a,$b)"
+"   fun1()"
+"	if fun2() do "
+"		fun3()"
+"	end "
+"   b.d = c;"
+"   var $1 = fun4() d;"
+"   var $2 = a b c;"
+"   var $3,$4 = a,b;"
+"	";
+
+
 static void _null_to_space(char* src, int len)
 {
 	while(len > 0)
@@ -145,6 +158,7 @@ void test_compile_c()
 	_do_test(t,test2,sizeof(test2));
 	_do_test(t,test3,sizeof(test3));
 	_do_test(t,test4,sizeof(test4));
+	_do_test(t,test5,sizeof(test5));
 
 	tk_drop_task(t);
 }

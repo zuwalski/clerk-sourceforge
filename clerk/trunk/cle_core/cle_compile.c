@@ -450,15 +450,6 @@ static void _cmp_emitIs2(struct _cmp_state* cst, uchar opc, uchar imm1, ushort i
 	cst->code_next += sizeof(ushort);
 }
 
-static void _cmp_emitII(struct _cmp_state* cst, uchar opc, short imm)
-{
-	_cmp_check_code(cst,cst->code_next + 1 + sizeof(ushort));
-	cst->lastop = cst->code + cst->code_next;
-	cst->code[cst->code_next++] = opc;
-	memcpy(cst->code + cst->code_next,(char*)&imm,sizeof(short));
-	cst->code_next += sizeof(short);
-}
-
 static void _cmp_update_imm(struct _cmp_state* cst, uint offset, ushort imm)
 {
 	ushort* ptr = (ushort*)(cst->code + offset);
@@ -744,16 +735,19 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 	{
 		uint stack = cst->s_top;
 		term = _cmp_expr(cst,0,NEST_EXPR);	// construct parameters
-		if(stack == cst->s_top)
-			_cmp_emit0(cst,OP_NULL);
-		pcount++;
+
 		if(term != ',')
 			break;
+		if(stack == cst->s_top)
+		{
+			_cmp_emit0(cst,OP_NULL);
+			_cmp_stack(cst,1);
+		}
 
+		pcount++;
 		_cmp_nextc(cst);
 	}
 	if(term != ')') err(__LINE__)
-	else _cmp_nextc(cst);
 
 	if(nest & NEST_EXPR)
 	{
@@ -812,6 +806,7 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 			_cmp_stack(cst,count);
 			do {
 				term = _cmp_expr(cst,0,NEST_EXPR);
+				_cmp_nextc(cst);
 			} while(term == ',');
 			if(term != ';') err(__LINE__)
 			_cmp_emitIs(cst,OP_CAV,cst->code_next - coff + 1 + sizeof(ushort));			// clear-var-assign
@@ -1047,10 +1042,10 @@ static void _cmp_new(struct _cmp_state* cst)
 	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
 		_cmp_op_clear(cst);\
 		if(nest == NEST_EXPR) \
-		{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
+		{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);_cmp_stack(cst,1);} \
+		else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 
-		//{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);_cmp_stack(cst,1);} \
-		//else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
+//{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
 
 #define end_expr_nest()\
 	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
@@ -1080,12 +1075,17 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 	cst->glevel++;
 	while(1)
 	{
+		uint stack = cst->s_top;
 		exittype = _cmp_expr(cst,skips,nest);
+		if(stack != cst->s_top)
+		{
+			_cmp_emit0(cst,OP_OUT);
+			_cmp_stack(cst,-1);
+		}
 		if(exittype == ';')
 		{
 			_cmp_nextc(cst);
 			_cmp_emit0(cst,OP_OUTLT);
-			_cmp_stack(cst,-1);
 		}
 		else break;
 	}
@@ -1107,7 +1107,6 @@ static void _cmp_fwd_loop(struct _cmp_state* cst, uint loop_coff, uchar nest, uc
 	_cmp_emitIs(cst,opc,0);
 	_cmp_stack(cst,-1);
 	if(_cmp_block_expr_nofree(cst,&sl,nest) != 'e') err(__LINE__)
-	if(*cst->lastop != OP_OUTLT) {_cmp_emit0(cst,OP_OUT); _cmp_stack(cst,-1);}
 	_cmp_emitIs(cst,OP_LOOP,cst->code_next - loop_coff + 1 + sizeof(ushort));
 	_cmp_update_imm(cst,coff + 1,cst->code_next - coff - 1 - sizeof(ushort));
 	_cmp_free_skiplist(cst,&sl,cst->code_next);
@@ -1120,9 +1119,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 	uint dbg = cst->code_next + 1;
 
 	_cmp_emitIs(cst,OP_DEBUG,0);	// OP_DEBUG (file-ptr)
-
-	if(nest & NEST_EXPR)
-		_cmp_emit0(cst,OP_EMPTY);
 
 	while(1)
 	{
@@ -1193,7 +1189,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				chk_state(ST_ALPHA)
 				if(_cmp_expr(cst,0,NEST_EXPR) != ';') err(__LINE__)
 				_cmp_emit0(cst,OP_CLEAR);
-				_cmp_stack(cst,-1);
+				_cmp_stack(cst,-2);
 				state = ST_0;
 			}
 			break;
@@ -1231,6 +1227,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			{
 				chk_call()
 				_cmp_call(cst,nest);
+				state = nest? ST_ALPHA : ST_0;
 			}
 			else
 			{
@@ -1238,8 +1235,8 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				chk_out()
 				_cmp_op_push(cst,0,0xFF);
 				if(_cmp_expr(cst,0,NEST_EXPR) != ')') err(__LINE__)
+				state = ST_ALPHA;
 			}
-			state = ST_ALPHA;
 			break;
 		case '[':
 			chk_state(ST_ALPHA|ST_VAR)
@@ -1273,11 +1270,11 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		case ',':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 			_cmp_op_clear(cst);
-			//if(state != ST_0 && (nest & NEST_EXPR) == 0)
-			//{
-			//	_cmp_emit0(cst,OP_OUTLT);
-			//	_cmp_stack(cst,-1);
-			//}
+			if(nest == (PURE_EXPR|NEST_EXPR))
+			{
+				_cmp_emit0(cst,OP_OUT);
+				_cmp_stack(cst,-1);
+			}
 			_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 			return cst->c;
 		case '.':
@@ -1306,7 +1303,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				}
 				while(num(cst->c));
 
-				_cmp_emitII(cst,OP_IMM,val);
+				_cmp_emitIs(cst,OP_IMM,val);
 				_cmp_stack(cst,1);
 				state = ST_NUM;
 				continue;
@@ -1336,10 +1333,8 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'e';
 				case KW_IF:	// if expr do bexpr [elseif expr do bexpr [else bexpr]] end
-					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_NUM_OP)
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 					chk_out()
-					if(state != ST_0)
-						_cmp_emit0(cst,OP_EMPTY);
 					{
 						struct _skip_list sl;
 						_cmp_new_skiplist(cst,&sl);
@@ -1371,7 +1366,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 						}
 						_cmp_free_skiplist(cst,&sl,cst->code_next);
 					}
-					state = ST_ALPHA;
+					state = ST_0;
 					continue;
 				case KW_ELSEIF:
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM|ST_BREAK)
@@ -1383,11 +1378,9 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_op_clear(cst);
 					_cmp_update_imm(cst,dbg,cst->code_next - dbg - sizeof(ushort));
 					return 'l';
-				case KW_WHILE:	// while expr do bexpr end
+				case KW_WHILE:	// while expr do bexpr end / do bexpr while expr end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
-					if(state != ST_0)
-						_cmp_emit0(cst,OP_EMPTY);
 					{
 						uint loop_coff = cst->code_next;
 						if(_cmp_expr(cst,0,NEST_EXPR) != 'd') err(__LINE__)
@@ -1398,14 +1391,11 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				case KW_REPEAT:		// repeat bexpr until expr end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
-					if(state != ST_0)
-						_cmp_emit0(cst,OP_EMPTY);
 					{
 						struct _skip_list sl;
 						uint loop_coff = cst->code_next;
 						_cmp_new_skiplist(cst,&sl);
 						if(_cmp_block_expr_nofree(cst,&sl,nest) != 'u') err(__LINE__)
-						if(*cst->lastop != OP_OUTLT) {_cmp_emit0(cst,OP_OUT); _cmp_stack(cst,-1);}
 						_cmp_emitIs(cst,OP_LOOP,cst->code_next - loop_coff + 1 + sizeof(ushort));	// OP_NZ_LOOP
 						_cmp_stack(cst,-1);
 						_cmp_free_skiplist(cst,&sl,cst->code_next);
@@ -1454,7 +1444,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 							_cmp_call(cst,nest);
 					}
 					state = ST_ALPHA;
-					continue;
+					break;
 				case KW_EACH:	// .each it_expr do bexpr end
 					chk_state(ST_DOT)
 					{
@@ -1537,8 +1527,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				case KW_SWITCH:		// switch expr case const do bexpr | default bexpr | end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
-					if(state != ST_0)
-						_cmp_emit0(cst,OP_EMPTY);
 					{
 						struct _skip_list sl;
 						uint defh = 0;
