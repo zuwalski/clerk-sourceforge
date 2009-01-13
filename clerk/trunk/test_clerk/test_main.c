@@ -594,9 +594,9 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_instance_c();
+	//test_instance_c();
 
-	heap_check();
+	//heap_check();
 	// test
 	puts("\nTesting done...");
 	getchar();

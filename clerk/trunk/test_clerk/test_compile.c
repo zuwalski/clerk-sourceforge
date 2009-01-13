@@ -123,7 +123,9 @@ static char test6[] =
 "	if $a do"
 "		$a $a"
 "	elseif if $a do 1 else 0 end do"
+"	#elseif 0 do\n"
 "		$a;"
+"		$a $a;"
 "		$a"
 "	end";
 
@@ -168,7 +170,7 @@ void test_compile_c()
 	//_do_test(t,test2,sizeof(test2));
 	//_do_test(t,test3,sizeof(test3));
 	//_do_test(t,test4,sizeof(test4));
-	_do_test(t,test5,sizeof(test5));
+	//_do_test(t,test5,sizeof(test5));
 	_do_test(t,test6,sizeof(test6));
 
 	tk_drop_task(t);
