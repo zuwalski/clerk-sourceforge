@@ -624,11 +624,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
 			break;
-		case OP_EMPTY:
-			if(sp->type != STACK_EMPTY)
-				sp--;
-			sp->type = STACK_EMPTY;
-			break;
 
 		case OP_NEW:
 			tmp = *((ushort*)inv->top->pc);

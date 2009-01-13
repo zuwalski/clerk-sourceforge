@@ -112,10 +112,20 @@ static char test5[] =
 "		fun3()"
 "	end "
 "   b.d = c;"
+"   b.d = c d;"
 "   var $1 = fun4() d;"
 "   var $2 = a b c;"
-"   var $3,$4 = a,b;"
+"   #var $3,$4 = a,b;"
 "	";
+
+static char test6[] = 
+"$a)"
+"	if $a do"
+"		$a $a"
+"	elseif if $a do 1 else 0 end do"
+"		$a;"
+"		$a"
+"	end";
 
 
 static void _null_to_space(char* src, int len)
@@ -154,11 +164,12 @@ void test_compile_c()
 {
 	task* t = tk_create_task(0,0);
 
-	_do_test(t,test1,sizeof(test1));
-	_do_test(t,test2,sizeof(test2));
-	_do_test(t,test3,sizeof(test3));
-	_do_test(t,test4,sizeof(test4));
+	//_do_test(t,test1,sizeof(test1));
+	//_do_test(t,test2,sizeof(test2));
+	//_do_test(t,test3,sizeof(test3));
+	//_do_test(t,test4,sizeof(test4));
 	_do_test(t,test5,sizeof(test5));
+	_do_test(t,test6,sizeof(test6));
 
 	tk_drop_task(t);
 }

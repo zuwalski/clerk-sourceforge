@@ -348,8 +348,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_OUTL";
 	case OP_OUTLT:
 		return "OP_OUTLT";
-	case OP_CONF:
-		return "OP_CONF";
 	case OP_RIDX:
 		return "OP_RIDX";
 	case OP_RVAR:
@@ -372,8 +370,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_POP";
 	case OP_POPW:
 		return "OP_POPW";
-	case OP_FUN:
-		return "OP_FUN";
 	case OP_FREE:
 		return "OP_FREE";
 	case OP_AVARS:
@@ -424,10 +420,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_ERROR";
 	case OP_CAT:
 		return "OP_CAT";
-	case OP_CMV:
-		return "OP_CMV";
-	case OP_FMV:
-		return "OP_FMV";
 	case OP_NOT:
 		return "OP_NOT";
 	case OP_DEBUG:
@@ -446,8 +438,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MERGE";
 	case OP_DOCALL_T:
 		return "OP_DOCALL_T";
-	case OP_EMPTY:
-		return "OP_EMPTY";
 
 	default:
 		return "OP_ILLEGAL";
@@ -530,9 +520,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_OUT:
 		case OP_OUTL:
 		case OP_OUTLT:
-		case OP_CONF:
 		case OP_RIDX:
-		case OP_FUN:
 		case OP_ADD:
 		case OP_SUB:
 		case OP_MUL:
@@ -554,7 +542,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_OBJ:
 		case OP_NUM:
 		case OP_MERGE:
-		case OP_EMPTY:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -569,7 +556,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_DMVW:
 		case OP_MVW:
 		case OP_MV:
-		case OP_CMV:
 		case OP_OMV:
 		case OP_NEW:
 			// emit s

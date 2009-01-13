@@ -46,8 +46,6 @@ enum cle_opcode
 	OP_OUT,
 	OP_OUTL,
 	OP_OUTLT,
-	OP_CONF,
-	OP_FUN,
 	OP_RIDX,
 	OP_RVAR,
 	OP_MV,
@@ -75,8 +73,6 @@ enum cle_opcode
 	OP_CLEAR,
 	OP_ERROR,
 	OP_CAT,
-	OP_CMV,
-	OP_FMV,
 	OP_NOT,
 	OP_DEBUG,
 	OP_NEW,
@@ -87,7 +83,7 @@ enum cle_opcode
 	OP_NUM,
 	OP_MERGE,
 	OP_DOCALL_T,
-	OP_EMPTY,
+	OP_SUPER,
 
 	OP_OP_MAX
 };
