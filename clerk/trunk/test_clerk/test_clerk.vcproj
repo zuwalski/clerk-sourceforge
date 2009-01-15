@@ -190,6 +190,10 @@
 				>
 			</File>
 			<File
+				RelativePath=".\test_runtime.c"
+				>
+			</File>
+			<File
 				RelativePath=".\test_stream.c"
 				>
 			</File>

@@ -789,7 +789,7 @@ int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx)
 
 	while(1)
 	{
-		klen <<= 3;
+		klen >>= 3;
 		if(klen > 0)
 		{
 			uint ret = fun(ctx,ckey,klen);

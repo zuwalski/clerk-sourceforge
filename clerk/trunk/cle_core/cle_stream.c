@@ -441,7 +441,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			{
 				char handlertype;
 
-				if(st_get(app_instance,&pt,(char*)&handlertype,1) != -2)
+				if(st_get(app_instance,&pt,(char*)&handlertype,1) == -2)
 				{
 					st_ptr handler,obj;
 					int level;
@@ -451,7 +451,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					else
 						obj.pg = 0;
 
-					level = cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i,handlertype);
+					level = cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i + 1,handlertype);
 					if(level < 0)
 						continue;
 

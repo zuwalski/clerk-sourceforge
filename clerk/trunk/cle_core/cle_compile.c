@@ -40,7 +40,7 @@
 #define whitespace(c) (c == ' ' || c == '\t' || c == '\n' || c == '\r')
 #define num(c) (c >= '0' && c <= '9')
 #define minusnum(c) (c == '-' || num(c))
-#define alpha(c) ((c & 0x80) || (c >= 'a' && c <= 'z')  || (c >= 'A' && c <= 'Z') || (c == '_'))
+#define alpha(c) ((c != -1) && ((c & 0x80) || (c >= 'a' && c <= 'z')  || (c >= 'A' && c <= 'Z') || (c == '_')))
 #define alphanum(c) (alpha(c) || num(c))
 
 #define NUMBER_OF_SKIPS 32
@@ -735,14 +735,21 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 
 	while(1)
 	{
+		pcount++;
 		term = _cmp_expr(cst,0,NEST_EXPR);	// construct parameters
 		if(term != ',')
 			break;
 
-		pcount++;
 		_cmp_nextc(cst);
 	}
 	if(term != ')') err(__LINE__)
+
+	if(*cst->lastop == OP_NULL)
+	{
+		_cmp_stack(cst,-1);
+		cst->code_next--;
+		pcount--;
+	}
 
 	if(nest & NEST_EXPR)
 	{

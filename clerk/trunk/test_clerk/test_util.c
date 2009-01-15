@@ -712,3 +712,38 @@ int rt_do_read(task* t, st_ptr root)
 
 	return 0;
 }
+
+
+// testhandler w any argument
+static void _start2(event_handler* v)
+{
+	printf(" + start2: ");
+}
+static void _next2(event_handler* v)
+{
+	printf(" + next2: ");
+}
+static void _end2(event_handler* v,cdat c,uint u)
+{
+	printf(" + end2: %s %d \n",c,u);
+}
+static void _pop2(event_handler* v)
+{
+	printf(" + pop2: ");
+}
+static void _push2(event_handler* v)
+{
+	printf(" + push2: ");
+}
+static uint _data2(event_handler* v,cdat c,uint u)
+{
+	printf("%.*s",u,c);
+	return 0;
+}
+static void _submit2(event_handler* v,task* t,st_ptr* st)
+{
+	printf(" + submit2: ");
+}
+
+// defs
+cle_pipe _test_pipe_stdout = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};

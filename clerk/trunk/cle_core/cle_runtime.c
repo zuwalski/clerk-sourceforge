@@ -32,8 +32,7 @@ struct _rt_code
 
 // stack-element types
 enum {
-	STACK_EMPTY = 0,
-	STACK_NULL,
+	STACK_NULL = 0,
 	STACK_NUM,
 	STACK_CALL,
 	STACK_OBJ,
@@ -398,6 +397,9 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
 {
 	switch(sp->type)
 	{
+	case STACK_PROP:
+		if(_rt_find_prop_value(inv,sp))
+			return 1;
 	case STACK_RO_PTR:
 	case STACK_PTR:
 		switch(sp[1].type)
@@ -435,7 +437,8 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
 			sp[1].out->data(sp[1].outdata,HEAD_NUM,HEAD_SIZE);
 			sp[1].out->data(sp[1].outdata,(cdat)&sp->num,sizeof(rt_number));
 		}
-	default: 
+		break;
+	default:
 		// default -> output nothing .. but
 		if(sp[1].type == STACK_REF)
 			*sp[1].var = *sp;
@@ -597,30 +600,26 @@ static void _rt_run(struct _rt_invocation* inv)
 			break;
 
 		case OP_NULL:
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			sp->type = STACK_NULL;
 			break;
 		case OP_IMM:
 			// emit II (imm short)
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			sp->type = STACK_NUM;
 			sp->num = *((short*)inv->top->pc);
 			inv->top->pc += sizeof(short);
 			break;
 		case OP_STR:
 			// emit Is
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			sp->type = STACK_RO_PTR;
 			sp->single_ptr = inv->top->code->strings;
 			st_move(inv->t,&sp->single_ptr,inv->top->pc,sizeof(ushort));
 			inv->top->pc += sizeof(ushort);
 			break;
 		case OP_OBJ:
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
 			break;
@@ -635,8 +634,7 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_OMV:
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			sp->ptr = sp->obj = inv->top->object;
 			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
 			{
@@ -683,8 +681,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			break;
 		case OP_LVAR:
-			if(sp->type != STACK_EMPTY)
-				sp--;
+			sp--;
 			*sp = inv->top->vars[*inv->top->pc++];
 			break;
 
@@ -802,15 +799,25 @@ static void _rt_run(struct _rt_invocation* inv)
 				return;
 			}
 			break;
-		//case OP_CAT:
-		//	sp--;
-		//	sp[0] = sp[1];
-		//	st_empty(inv->t,&sp[1].single_ptr);
-		//	sp[1].single_ptr_w = sp[1].single_ptr;
-		//	sp[1].type = STACK_PTR;
-		//	st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
-		//	sp++;
-		//	break;
+		case OP_CAT:
+			if(sp->type == STACK_PROP)
+				_rt_find_prop_value(inv,sp);
+
+			if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
+			{
+				st_ptr pt = sp->single_ptr;
+				st_empty(inv->t,&sp->single_ptr);
+				sp->single_ptr_w = sp->single_ptr;
+				sp->type = STACK_PTR;
+				st_insert_st(inv->t,&sp->single_ptr_w,&pt);
+			}
+			else
+			{
+				st_empty(inv->t,&sp->single_ptr);
+				sp->single_ptr_w = sp->single_ptr;
+				sp->type = STACK_PTR;
+			}
+			break;
 		case OP_OUT:	// stream out string
 			if(_rt_out(inv,sp))
 			{
@@ -831,9 +838,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			break;
 
 		case OP_AVAR:
-			sp--;
-			sp->var = &inv->top->vars[*inv->top->pc++];
-			sp->type = STACK_REF;
+			inv->top->vars[*inv->top->pc++] = *sp;
+			sp++;
 			break;
 		case OP_DEFP:
 			// emit Is2 (branch forward)
@@ -925,6 +931,7 @@ static void _rt_start(event_handler* hdl)
 	hdl->handler_data = inv;
 
 	inv->t = hdl->instance_tk;
+	inv->code_cache = 0;
 	inv->hdl = hdl;
 	inv->top = 0;
 

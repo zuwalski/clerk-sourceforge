@@ -590,13 +590,17 @@ int main(int argc, char* argv[])
 
 	//heap_check();
 
-	test_compile_c();
+	//test_compile_c();
 
-	heap_check();
+	//heap_check();
 
 	//test_instance_c();
 
 	//heap_check();
+
+	test_runtime_c();
+
+	heap_check();
 	// test
 	puts("\nTesting done...");
 	getchar();

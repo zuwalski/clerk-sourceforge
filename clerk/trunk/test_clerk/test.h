@@ -22,6 +22,7 @@
 #include "../cle_core/cle_clerk.h"
 #include "../cle_core/cle_struct.h"
 #include "../cle_core/backends/cle_backends.h"
+#include "../cle_core/cle_stream.h"
 
 #define HIGH_ITERATION_COUNT 1000000
 
@@ -42,5 +43,9 @@ void test_stream_c();
 void test_compile_c();
 
 void test_instance_c();
+
+void test_runtime_c();
+
+extern cle_pipe _test_pipe_stdout;
 
 #endif

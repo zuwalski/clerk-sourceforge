@@ -41,39 +41,6 @@ const char prop2[] = "prop2";
 
 const char exprpath[] = "expr\0expr";
 
-// testhandler w any argument
-static void _start2(event_handler* v)
-{
-	printf(" + start2: ");
-}
-static void _next2(event_handler* v)
-{
-	printf(" + next2: ");
-}
-static void _end2(event_handler* v,cdat c,uint u)
-{
-	printf(" + end2: %s %d \n",c,u);
-}
-static void _pop2(event_handler* v)
-{
-	printf(" + pop2: ");
-}
-static void _push2(event_handler* v)
-{
-	printf(" + push2: ");
-}
-static void _data2(event_handler* v,cdat c,uint u)
-{
-	printf("%.*s",u,c);
-}
-static void _submit2(event_handler* v,task* t,st_ptr* st)
-{
-	printf(" + submit2: ");
-}
-
-// defs
-static cle_pipe _test_pipe = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};
-
 void test_instance_c()
 {
 	st_ptr root,name,pt,eventname,meth,oid,handler,object;
@@ -160,7 +127,7 @@ void test_instance_c()
 	st_insert(t,&pt,testmeth,sizeof(testmeth) - 1);
 
 	// sync-handler for start-state
-	ASSERT(cle_set_handler(t,root,objone,sizeof(objone),name,eventname,meth,&_test_pipe,0,SYNC_REQUEST_HANDLER) == 0);
+	ASSERT(cle_set_handler(t,root,objone,sizeof(objone),name,eventname,meth,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
 	// oid of objtwo
 	object.pg = 0;
@@ -188,7 +155,7 @@ void test_instance_c()
 	pt = name;
 	st_update(t,&pt,state2,sizeof(state2));
 
-	ASSERT(cle_set_handler(t,root,objtwo,sizeof(objtwo),name,eventname,meth,&_test_pipe,0,SYNC_REQUEST_HANDLER) == 0);
+	ASSERT(cle_set_handler(t,root,objtwo,sizeof(objtwo),name,eventname,meth,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
 	pt = oid;
 	st_update(t,&pt,"\1\2\0",3);
@@ -254,7 +221,7 @@ void test_instance_c()
 	pt = name;
 	st_update(t,&pt,exprpath,sizeof(exprpath));
 
-	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe,0) == 0);
+	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
 
 	tk_drop_task(t);
 }

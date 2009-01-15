@@ -20,45 +20,9 @@
 	TEST Compiler
 */
 #include "test.h"
-#include "../cle_core/cle_stream.h"
 #include "../cle_core/cle_compile.h"
 #include <stdio.h>
 #include <time.h>
-
-
-// testhandler w any argument
-static void _start2(event_handler* v)
-{
-	printf(" + start2: ");
-}
-static void _next2(event_handler* v)
-{
-	printf(" + next2: ");
-}
-static void _end2(event_handler* v,cdat c,uint u)
-{
-	printf(" + end2: %s %d \n",c,u);
-}
-static void _pop2(event_handler* v)
-{
-	printf(" + pop2: ");
-}
-static void _push2(event_handler* v)
-{
-	printf(" + push2: ");
-}
-static uint _data2(event_handler* v,cdat c,uint u)
-{
-	printf("%.*s",u,c);
-	return 0;
-}
-static void _submit2(event_handler* v,task* t,st_ptr* st)
-{
-	printf(" + submit2: ");
-}
-
-// defs
-static cle_pipe _test_pipe = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};
 
 ///////////////////////////////////////////////////////
 // TEST Scripts
@@ -107,15 +71,16 @@ static char test4[] =
 
 static char test5[] = 
 "$a,$b)"
-"   fun1()"
-"	if fun2() do "
+"   fun1(1)"
+"	if fun2(,) do "
 "		fun3()"
 "	end "
 "   b.d = c;"
 "   b.d = c d;"
 "   var $1 = fun4() d;"
 "   var $2 = a b c;"
-"   #var $3,$4 = a,b;"
+"   #var $3,$4 = a,b;\n"
+"   $a"
 "	";
 
 static char test6[] = 
@@ -129,6 +94,24 @@ static char test6[] =
 "		$a"
 "	end";
 
+static char test7[] = 
+"$a)"
+"   while 1 do"
+"      $a $a;"
+"      $a $a"
+"   end"
+"      "
+"   var $b ="
+"      while 0 do"
+"       $a"
+"      end;"
+"      ";
+
+static char test8[] = 
+")"
+" nr = nr + 1;"
+" 'hallo world nr ' nr  \n"
+;
 
 static void _null_to_space(char* src, int len)
 {
@@ -158,7 +141,7 @@ static void _do_test(task* t, char* test, int length)
 
 	st_empty(t,&dest);
 	tmp = dest;
-	if(cmp_method(t,&dest,&src,&_test_pipe,0) == 0)
+	if(cmp_method(t,&dest,&src,&_test_pipe_stdout,0) == 0)
 		_rt_dump_function(t,&tmp);
 }
 
@@ -172,6 +155,8 @@ void test_compile_c()
 	//_do_test(t,test4,sizeof(test4));
 	//_do_test(t,test5,sizeof(test5));
 	_do_test(t,test6,sizeof(test6));
+	_do_test(t,test7,sizeof(test7));
+	_do_test(t,test8,sizeof(test8));
 
 	tk_drop_task(t);
 }

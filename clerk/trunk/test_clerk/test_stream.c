@@ -118,11 +118,11 @@ static cle_pipe _test_pipe = {_start,_next,_end,_pop,_push,_data,_submit};
 static cle_pipe _test_pipe2 = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};
 
 // the user
-char userid[] = "test";
+static char userid[] = "test";
 
 // roles on the user
 // !! ROLES are prefixed with length
-char* user_roles[] = {
+static char* user_roles[] = {
 	"\6role1",
 	"\6role2",
 	0
@@ -130,7 +130,7 @@ char* user_roles[] = {
 
 // events to test
 // must all be 10 chars (or 0)
-char* test_events[] = {
+static char* test_events[] = {
 	"abcdefghi",		// no handler
 	"ab\0defghi",		// sync, async
 	"ab\0de\0ghi",		// sync, request pipe

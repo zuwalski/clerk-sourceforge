@@ -453,6 +453,8 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				// object-id of hosting object
 				st_move(app_instance,&obj_root,HEAD_OID,HEAD_SIZE);
 
+				st_offset(app_instance,&obj_root,sizeof(objectheader));
+
 				st_insert_st(app_instance,&app_root,&obj_root);
 			}
 			return 0;
