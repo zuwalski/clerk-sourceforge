@@ -243,7 +243,6 @@ void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 void cle_stream_end(event_handler* hdl)
 {
 	cle_stream_fail(hdl,"",0);
-	cle_stream_leave(hdl);
 }
 
 cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)

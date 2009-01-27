@@ -51,7 +51,11 @@ static const char testmeth[] =
 "()"
 " var $h = 'hello';"
 " var $w = 'world';"
-" $h ' ' $w";
+" $h ' ' $w start($h,$w)";
+
+static const char testmeth2[] = 
+"($1,$2)"
+" $1 ' ' $2";
 
 void test_runtime_c()
 {
@@ -111,6 +115,11 @@ void test_runtime_c()
 
 	// sync-handler for start-state
 	ASSERT(cle_set_handler(t,root,objone,sizeof(objone),name,eventname,meth,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
+
+	pt = meth;
+	st_insert(t,&pt,testmeth2,sizeof(testmeth2) - 1);
+
+	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
 
 	st_empty(t,&oid);
 	pt = oid;

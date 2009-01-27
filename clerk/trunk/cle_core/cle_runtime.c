@@ -446,15 +446,22 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
 	return 0;
 }
 
-/*
-	stacklayout:
-	0 output-target
+static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp)
+{
+	uint params = *inv->top->pc++;	// params
 
-	1 object
-	2 ptr
+	if(sp[params].type != STACK_CODE)
+		return __LINE__;
 
-	1 number
-*/
+	inv->top = _rt_newcall(inv,sp[params].code,&sp[params].code_obj,inv->top->is_expr);
+
+	if(inv->top->code->body.maxparams < params)
+		return __LINE__;
+
+	memcpy(inv->top->vars,sp,params * sizeof(struct _rt_stack));	// copy params
+	return 0;
+}
+
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
@@ -866,53 +873,27 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top = inv->top->parent;
 			sp = inv->top->sp;
 			break;
-
-		//case OP_CALL:
-		//	if(sp->type != STACK_CODE)
-		//	{
-		//		_rt_error(inv,__LINE__);
-		//		return;
-		//	}
-		//	sp->cfp = _rt_newcall(inv,sp->code,&sp->code_obj,inv->top->is_expr);
-		//	sp->type = STACK_CALL;
-		//	break;
-		//case OP_SETP:
-		//	tmp = *inv->top->pc++;	// var
-		//	if(tmp < sp[1].cfp->code->body.maxparams)
-		//		sp[1].cfp->vars[tmp] = *sp;
-		//	else
-		//	{
-		//		_rt_error(inv,__LINE__);
-		//		return;
-		//	}
-		//	sp++;
-		//	break;
-
 		case OP_DOCALL:
-			tmp = *inv->top->pc++;	// params
-
-			inv->top->sp = sp + 1;
-			inv->top = sp->cfp;
-			*(--inv->top->sp) = *sp;	// copy output-target
-			sp = inv->top->sp;
+			if(_rt_call(inv,sp))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			inv->top->parent->sp = sp + 1 + tmp;	// return-stack
+			*(--inv->top->sp) = *(sp + 1 + tmp);	// copy output-target
+			sp = inv->top->sp;		// set new stack
 			break;
 		case OP_DOCALL_N:
-			tmp = *inv->top->pc++;	// params
-
-			inv->top = sp->cfp;
-			sp->type = STACK_NULL;
+			if(_rt_call(inv,sp))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			inv->top->parent->sp = sp + tmp;	// return-stack
 			inv->top->sp--;
 			inv->top->sp->type = STACK_REF;	// ref to sp-top
-			inv->top->sp->var = sp;
-			sp = inv->top->sp;
-			break;
-		case OP_DOCALL_T:	// tail-call
-			tmp = *inv->top->pc++;	// params
-
-			sp->cfp->parent = inv->top->parent;
-			inv->top = sp->cfp;
-			*(--inv->top->sp) = *sp;	// copy output-target
-			sp = inv->top->sp;
+			inv->top->sp->var = sp + tmp;
+			sp = inv->top->sp;		// set new stack
 			break;
 		default:
 			_rt_error(inv,__LINE__);
@@ -948,7 +929,11 @@ static void _rt_start(event_handler* hdl)
 	inv->params_before_run = inv->code_cache->body.maxparams;
 
 	if(inv->params_before_run == 0)
+	{
+		hdl->response->start(hdl->respdata);
+
 		_rt_run(inv);
+	}
 }
 
 static void _rt_next(event_handler* hdl)
@@ -970,6 +955,8 @@ static void _rt_next(event_handler* hdl)
 
 		if(--inv->params_before_run != 0)
 			return;
+
+		hdl->response->start(hdl->respdata);
 	}
 
 	_rt_run(inv);
@@ -980,7 +967,11 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 	struct _rt_invocation* inv = (struct _rt_invocation*)hdl->handler_data;
 
 	if(length == 0 && inv->params_before_run != 0)
+	{
+		hdl->response->start(hdl->respdata);
+
 		_rt_run(inv);
+	}
 
 	hdl->response->end(hdl->respdata,code,length);
 }
