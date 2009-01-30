@@ -180,6 +180,7 @@ static const struct _cmp_buildin buildins[] = {
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
+	{"str",OP_DOCALL,0,OP_DOCALL,OP_DOCALL},
 	{0,0,0,0,0}	// STOP
 };
 
@@ -679,7 +680,7 @@ static void _cmp_op_push(struct _cmp_state* cst, uchar opc, uchar prec)
 	while(prev)
 	{
 		oper = PEEK_OP(prev);
-		if(oper->prec >= prec)
+		if(oper->prec >= prec && oper->opc != 0)
 		{
 			_cmp_emit0(cst,oper->opc);
 			_cmp_stack(cst,-1);
@@ -711,18 +712,26 @@ static uint _cmp_buildin_parameters(struct _cmp_state* cst)
 
 	_cmp_nextc(cst);
 
-	do {
-		uint stack = cst->s_top;
+	_cmp_op_push(cst,0,0xFF);
+
+	while(1)
+	{
+		pcount++;
 		term = _cmp_expr(cst,0,NEST_EXPR);	// construct parameters
-		if(pcount != 0 || term != ')')
-		{
-			if(stack == cst->s_top)
-				_cmp_emit0(cst,OP_NULL);
-			pcount++;
-		}
-	} while(term == ',');
+		if(term != ',')
+			break;
+
+		_cmp_nextc(cst);
+	}
 	if(term != ')') err(__LINE__)
 	else _cmp_nextc(cst);
+
+	if(*cst->lastop == OP_NULL)
+	{
+		_cmp_stack(cst,-1);
+		cst->code_next--;
+		pcount--;
+	}
 
 	_cmp_stack(cst,-pcount);
 	return pcount;
@@ -1063,14 +1072,15 @@ static void _cmp_new(struct _cmp_state* cst)
 // direct call doesnt leave anything on the stack - force it
 // if the next instr. needs the return-value
 #define chk_call() if(*cst->lastop == OP_DOCALL)\
-	{*(cst->code + cst->code_next - 1) = OP_DOCALL_N;_cmp_stack(cst,1);}
+	{*cst->lastop = OP_DOCALL_N;_cmp_stack(cst,1);}
+//	{*(cst->code + cst->code_next - 1) = OP_DOCALL_N;_cmp_stack(cst,1);}
 
 #define num_op(opc,prec) \
 			chk_state(ST_ALPHA|ST_VAR|ST_NUM)\
 			chk_call()\
-			if((state & (ST_ALPHA|ST_VAR)) && (*cst->lastop != OP_NUM)) _cmp_emit0(cst,OP_NUM);\
 			_cmp_op_push(cst,opc,prec);\
 			state = ST_NUM_OP;\
+			nest |= NEST_EXPR;\
 
 static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* skips, uchar nest)
 {
@@ -1210,8 +1220,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 				{
 					_cmp_emitIc(cst,OP_LVAR,var->id);
 					_cmp_stack(cst,1);
-					if(state == ST_NUM_OP)
-						_cmp_emit0(cst,OP_NUM);
 				}
 				state = ST_VAR;
 			}
@@ -1650,8 +1658,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 						{
 							_cmp_emitS(cst,OP_OMV,cst->opbuf + cst->top,len);
 							_cmp_stack(cst,1);
-							if(state == ST_NUM_OP)
-								_cmp_emit0(cst,OP_NUM);
 						}
 						state = ST_ALPHA;
 					}

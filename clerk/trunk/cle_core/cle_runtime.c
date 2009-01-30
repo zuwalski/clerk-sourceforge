@@ -185,21 +185,6 @@ static struct _rt_callframe* _rt_newcall(struct _rt_invocation* inv, struct _rt_
 	return cf;
 }
 
-static int _rt_equal(struct _rt_stack* op1, struct _rt_stack* op2)
-{
-	if(op1->type != op2->type)
-		return 0;
-
-	return 0;
-}
-
-static int _rt_compare(struct _rt_stack* op1, struct _rt_stack* op2)
-{
-	// illegal compare
-	op2->type = STACK_NULL;
-	return 0;
-}
-
 static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 {
 	struct _rt_stack top = **sp;
@@ -446,10 +431,9 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
 	return 0;
 }
 
-static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp)
+static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
 {
-	uint params = *inv->top->pc++;	// params
-
+	int i;
 	if(sp[params].type != STACK_CODE)
 		return __LINE__;
 
@@ -458,7 +442,58 @@ static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp)
 	if(inv->top->code->body.maxparams < params)
 		return __LINE__;
 
-	memcpy(inv->top->vars,sp,params * sizeof(struct _rt_stack));	// copy params
+	for(i = params - 1; i >= 0; i--)
+		inv->top->vars[params - 1 - i] = sp[i];
+
+	return 0;
+}
+
+// make sure its a number (load it)
+static uint _rt_num(struct _rt_invocation* inv, struct _rt_stack* sp)
+{
+	st_ptr* loadfrom;
+
+	if(sp->type == STACK_NUM)
+		return 0;
+
+	if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
+		loadfrom = &sp->single_ptr;
+	else if(sp->type == STACK_PROP)
+	{
+		if(_rt_find_prop_value(inv,sp))
+			return 1;
+
+		loadfrom = &sp->prop_obj;
+	}
+	else
+		return 1;
+
+	// is there a number here?
+	if(st_move(inv->t,loadfrom,HEAD_NUM,HEAD_SIZE) != 0)
+		return 1;
+
+	// .. load it
+	if(st_get(inv->t,loadfrom,(char*)&sp->num,sizeof(rt_number)) != -1)
+		return 1;
+
+	sp->type = STACK_NUM;
+	return 0;
+}
+
+static int _rt_equal(struct _rt_stack* op1, struct _rt_stack* op2)
+{
+	if(op1->type != op2->type)
+		return 0;
+
+	// illegal compare
+	op2->type = STACK_NULL;
+	return 0;
+}
+
+static int _rt_compare(struct _rt_stack* op1, struct _rt_stack* op2)
+{
+	// illegal compare
+	op2->type = STACK_NULL;
 	return 0;
 }
 
@@ -479,23 +514,46 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp++;
 			break;
 		case OP_ADD:
+			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
 			sp[1].num += sp[0].num;
 			sp++;
 			break;
 		case OP_SUB:
+			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
 			sp[1].num -= sp[0].num;
 			sp++;
 			break;
 		case OP_MUL:
+			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
 			sp[1].num *= sp[0].num;
 			sp++;
 			break;
 		case OP_DIV:
+			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1) || sp->num == 0)
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
 			sp[1].num /= sp[0].num;
 			sp++;
 			break;
 		case OP_NOT:
-			sp[0].num = (sp[0].num == 0);
+			sp->num = ((sp[0].type == STACK_NULL) ||
+				(sp[0].type == STACK_NUM && sp[0].num == 0) ||
+				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr)));
+			sp->type = STACK_NUM;
 			break;
 
 		case OP_EQ:
@@ -523,46 +581,6 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_LT:
 			sp[1].num = _rt_compare(sp,sp + 1) < 0;
 			sp++;
-			break;
-		case OP_NUM:	// make sure its a number (load it)
-			if(sp->type != STACK_NUM)
-			{
-				st_ptr* loadfrom;
-
-				if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
-					loadfrom = &sp->single_ptr;
-				else if(sp->type == STACK_PROP)
-				{
-					if(_rt_find_prop_value(inv,sp))
-					{
-						_rt_error(inv,__LINE__);
-						return;
-					}
-
-					loadfrom = &sp->prop_obj;
-				}
-				else
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
-
-				// is there a number here?
-				if(st_move(inv->t,loadfrom,HEAD_NUM,HEAD_SIZE) != 0)
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
-
-				// .. load it
-				if(st_get(inv->t,loadfrom,(char*)&sp->num,sizeof(rt_number)) != -1)
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
-
-				sp->type = STACK_NUM;
-			}
 			break;
 
 		case OP_BNZ:
@@ -874,7 +892,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp = inv->top->sp;
 			break;
 		case OP_DOCALL:
-			if(_rt_call(inv,sp))
+			tmp = *inv->top->pc++;	// params
+			if(_rt_call(inv,sp,tmp))
 			{
 				_rt_error(inv,__LINE__);
 				return;
@@ -884,7 +903,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp = inv->top->sp;		// set new stack
 			break;
 		case OP_DOCALL_N:
-			if(_rt_call(inv,sp))
+			tmp = *inv->top->pc++;	// params
+			if(_rt_call(inv,sp,tmp))
 			{
 				_rt_error(inv,__LINE__);
 				return;

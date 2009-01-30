@@ -51,11 +51,11 @@ static const char testmeth[] =
 "()"
 " var $h = 'hello';"
 " var $w = 'world';"
-" $h ' ' $w start($h,$w)";
+" $h ' ' $w str(start(5))";
 
 static const char testmeth2[] = 
-"($1,$2)"
-" $1 ' ' $2";
+"($1)"
+" if $1 > 1 do start($1 - 1) + start($1 - 2) else $1 end";
 
 void test_runtime_c()
 {
@@ -117,7 +117,7 @@ void test_runtime_c()
 	ASSERT(cle_set_handler(t,root,objone,sizeof(objone),name,eventname,meth,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
 	pt = meth;
-	st_insert(t,&pt,testmeth2,sizeof(testmeth2) - 1);
+	st_update(t,&pt,testmeth2,sizeof(testmeth2) - 1);
 
 	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
 

@@ -113,6 +113,10 @@ static char test8[] =
 " 'hallo world nr ' nr  \n"
 ;
 
+static char test9[] = 
+"$1)"
+" if $1 > 1 do start($1 - 1) + start($1 - 2) else $1 end";
+
 static void _null_to_space(char* src, int len)
 {
 	while(len > 0)
@@ -154,9 +158,10 @@ void test_compile_c()
 	//_do_test(t,test3,sizeof(test3));
 	//_do_test(t,test4,sizeof(test4));
 	//_do_test(t,test5,sizeof(test5));
-	_do_test(t,test6,sizeof(test6));
-	_do_test(t,test7,sizeof(test7));
-	_do_test(t,test8,sizeof(test8));
+	//_do_test(t,test6,sizeof(test6));
+	//_do_test(t,test7,sizeof(test7));
+	//_do_test(t,test8,sizeof(test8));
+	_do_test(t,test9,sizeof(test9));
 
 	tk_drop_task(t);
 }

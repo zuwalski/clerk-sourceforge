@@ -590,7 +590,7 @@ int main(int argc, char* argv[])
 
 	//heap_check();
 
-	//test_compile_c();
+	test_compile_c();
 
 	//heap_check();
 
