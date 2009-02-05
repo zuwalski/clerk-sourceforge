@@ -436,6 +436,10 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MERGE";
 	case OP_DOCALL_T:
 		return "OP_DOCALL_T";
+	case OP_2STR:
+		return "OP_2STR";
+	case OP_NEG:
+		return "OP_NEG";
 
 	default:
 		return "OP_ILLEGAL";
@@ -539,6 +543,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_RECV:
 		case OP_OBJ:
 		case OP_MERGE:
+		case OP_NEG:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -572,6 +577,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_DOCALL:
 		case OP_DOCALL_N:
 		case OP_DOCALL_T:
+		case OP_2STR:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d\n",_rt_opc_name(opc),tmpuchar);

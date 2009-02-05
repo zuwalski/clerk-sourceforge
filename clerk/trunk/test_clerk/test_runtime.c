@@ -36,10 +36,7 @@ static char* user_roles[] = {
 // events to test
 // must all be 10 chars (or 0)
 static char* test_events[] = {
-	"abcdefghi",		// no handler
 	"ab\0defghi",		// sync, async
-	"ab\0de\0ghi",		// sync, request pipe
-	"ab\0de\0g\0i",		// sync, request, response
 	0
 };
 
@@ -47,15 +44,35 @@ static  const char objone[] = "object\0one";
 static  const char prop[] = "prop";
 static const char start_state[] = "start";
 static const char testevent[] = "ab";
+
+static const char fibn[] = "fib";
+static const char takn[] = "tak";
+static const char ackn[] = "ack";
+
 static const char testmeth[] = 
 "()"
-" var $h = 'hello';"
-" var $w = 'world';"
-" $h ' ' $w str(start(5))";
+" var :n = 11;"
+" 'Ack(3,' str(:n) ') : ' str(ack(ack,3,:n)) ' / ' "
+" 'Fib(' str(:n + 27) ') : ' str(fib(fib,:n + 27)) ' / ' "
+" 'Tak(' str((:n - 1) * 3) ',' str((:n - 1) * 2) ',' str(:n - 1) ') : ' str(tak(tak,3 * (:n - 1), 2 * (:n - 1), :n - 1)) ' / ' "
+" 'Fib(3) : ' str(fib(fib,3)) ' / ' "
+" 'Tak(3,2,1) : ' str(tak(tak,3,2,1)) ' / ' ";
 
-static const char testmeth2[] = 
-"($1)"
-" if $1 > 1 do start($1 - 1) + start($1 - 2) else $1 end";
+static const char fib[] = 
+"(:fib,:n)"
+" if :n > 1 do (:fib(:fib,:n - 1)) + (:fib(:fib,:n - 2)) else 1 end";
+
+static const char ack[] = 
+"(:ack,:m,:n)"
+" if :m = 0 do :n + 1 "
+" elseif :n = 0 do :ack(:ack,:m - 1,1) "
+" else :ack(:ack,:m - 1, :ack(:ack,:m, :n - 1)) end";
+
+static const char tak[] = 
+"(:tak,:x,:y,:z)"
+" if :y < :x do "
+"  :tak(:tak, :tak(:tak,:x - 1,:y,:z), :tak(:tak,:y - 1,:z,:x), :tak(:tak,:z - 1,:x,:y) )"
+" else :z end";
 
 void test_runtime_c()
 {
@@ -117,10 +134,38 @@ void test_runtime_c()
 	ASSERT(cle_set_handler(t,root,objone,sizeof(objone),name,eventname,meth,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
 	pt = meth;
-	st_update(t,&pt,testmeth2,sizeof(testmeth2) - 1);
+	st_update(t,&pt,fib,sizeof(fib) - 1);
+
+	tmp = name;
+	st_update(t,&tmp,fibn,sizeof(fibn));
 
 	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
 
+	// ----
+
+	pt = meth;
+	st_update(t,&pt,ack,sizeof(ack) - 1);
+
+	tmp = name;
+	st_update(t,&tmp,ackn,sizeof(ackn));
+
+	ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
+
+	// ----
+
+	{
+		st_ptr pt;
+		st_empty(t,&meth);
+		pt = meth;
+		st_insert(t,&pt,tak,sizeof(tak) - 1);
+
+		pt = name;
+		st_update(t,&pt,takn,sizeof(takn));
+
+		ASSERT(cle_set_expr(t,root,objone,sizeof(objone),name,meth,&_test_pipe_stdout,0) == 0);
+	}
+
+	// ----
 	st_empty(t,&oid);
 	pt = oid;
 	st_insert(t,&pt,"\1\1\0",3);
@@ -146,18 +191,7 @@ void test_runtime_c()
 
 			if(ipt != 0)
 			{
-				// test w structure a {b,c}
-				cle_data(ipt,"a",2);
-				cle_push(ipt);
-				cle_data(ipt,"b",2);
-				cle_pop(ipt);
-				cle_push(ipt);
-				cle_data(ipt,"c",2);
-				cle_pop(ipt);
-				cle_next(ipt);
 				cle_end(ipt,0,0);
-
-				//printf("\n\nevent done\n");
 			}
 			//else
 			//	printf("event not started\n");
@@ -167,6 +201,7 @@ void test_runtime_c()
 	}
 	stop = clock();
 
-	printf("\nsimple event-stream. Time %d\n\n",stop - start);
+	printf("\n\npagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+	printf("\nRuntimeTest. Time %d\n\n",stop - start);
 }
 

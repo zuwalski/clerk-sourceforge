@@ -28,82 +28,82 @@
 // TEST Scripts
 
 static char test1[] = 
-"$a)"
-"	if $a > 1 do"
-"		1 + 2 * 3 / $a"
-"	elseif $a == 0 do"
-"		$a"
+":a)"
+"	if :a > 1 do"
+"		1 + 2 * 3 / :a"
+"	elseif :a = 0 do"
+"		:a"
 "	end";
 
 static char test2[] = 
-"$a)"
-"	var $b = 0;"
-"	while $a > 0 do"
-"		var $c = "
+":a)"
+"	var :b = 0;"
+"	while :a > 0 do"
+"		var :c = "
 "			repeat"
-"				$a and $b or $c"
+"				:a and :b or :c"
 "				break"
-"			until $a == 0 end;"
+"			until :a = 0 end;"
 "	"
 "		do"
-"			var $d = 0;"
+"			var :d = 0;"
 "			break"
 "		end"
 "	end";
 
 static char test3[] = 
-"$a,$b)"
-"	$a{a,b= 1+1;c{['a' 'b' $b]}} "
-"handle a,$c do"
-"	$c "
+":a,:b)"
+"	:a{a,b= 1+1;c{['a' 'b' :b]}} "
+"handle a,:c do"
+"	:c "
 "handle v do"
 "	'end'";
 
 static char test4[] = 
-"$a,$b)"
-"	pipe fun3($a,$b) do "
-"		fun3($a)"
+":a,:b)"
+"	pipe fun3(:a,:b) do "
+"		fun3(:a)"
 "	end"
 "	"
-"	$b.each a{+*.$1,-$2.$3} do"
+"	:b.each a{+*.:1,-:2.:3} do"
 "		'each'"
 "	end";
 
 static char test5[] = 
-"$a,$b)"
+":a,:b)"
 "   fun1(1)"
 "	if fun2(,) do "
 "		fun3()"
 "	end "
 "   b.d = c;"
 "   b.d = c d;"
-"   var $1 = fun4() d;"
-"   var $2 = a b c;"
-"   #var $3,$4 = a,b;\n"
-"   $a"
+"   var :1 = fun4() d;"
+"   var :2 = a b c;"
+"   #var :3,:4 = a,b;\n"
+"   :a"
 "	";
 
 static char test6[] = 
-"$a)"
-"	if $a do"
-"		$a $a"
-"	elseif if $a do 1 else 0 end do"
+":a)"
+"	if :a do"
+"		:a :a"
+"	elseif if :a do 1 else 0 end do"
 "	#elseif 0 do\n"
-"		$a;"
-"		$a $a;"
-"		$a"
+"		:a;"
+"		:a :a;"
+"		:a"
 "	end";
 
 static char test7[] = 
-"$a)"
+":a)"
 "   while 1 do"
-"      $a $a;"
-"      $a $a"
+"      :a :a;"
+"      :a :a"
 "   end"
 "      "
-"   var $b ="
+"   var :b ="
 "      while 0 do"
-"       $a"
+"       :a"
 "      end;"
 "      ";
 
@@ -114,20 +114,29 @@ static char test8[] =
 ;
 
 static char test9[] = 
-"$1)"
-" if $1 > 1 do start($1 - 1) + start($1 - 2) else $1 end";
+":x,:y,:z)"
+" if :y < :x do "
+"  tak( tak(:x - 1,:y,:z), tak(:y - 1,:z,:x), tak(:z - 1,:x,:y) )"
+" else :z end";
+//":1)"
+//" if :1 > 1 do start(:1 - 1) + start(:1 - 2) else :1 end";
 
-static void _null_to_space(char* src, int len)
-{
-	while(len > 0)
-	{
-		if(*src == 0)
-			*src = ' ';
+static char fib[] = 
+":fib,:n)"
+" if :n > 1 do :fib(:fib,:n - 1) + :fib(:fib,:n - 2) else 1 end";
 
-		src++;
-		len--;
-	}
-}
+static char neg[] = 
+":in)"
+"-( a  - -c )";
+
+static char out[] = 
+":in)"
+":in = a b c;"
+"a b :in "
+" b if a do c d end e";
+
+static char trouble[] =
+") d call() me() (call it)";
 
 static void _do_test(task* t, char* test, int length)
 {
@@ -138,8 +147,7 @@ static void _do_test(task* t, char* test, int length)
 	st_empty(t,&src);
 	tmp = src;
 
-	_null_to_space(test,length);
-	st_insert(t,&tmp,test,length);
+	st_insert(t,&tmp,test,length - 1);
 
 	//puts(test);
 
@@ -148,6 +156,8 @@ static void _do_test(task* t, char* test, int length)
 	if(cmp_method(t,&dest,&src,&_test_pipe_stdout,0) == 0)
 		_rt_dump_function(t,&tmp);
 }
+
+#define CMPTEST(f) _do_test(t,(f),sizeof((f)))
 
 void test_compile_c()
 {
@@ -161,7 +171,12 @@ void test_compile_c()
 	//_do_test(t,test6,sizeof(test6));
 	//_do_test(t,test7,sizeof(test7));
 	//_do_test(t,test8,sizeof(test8));
-	_do_test(t,test9,sizeof(test9));
+	//_do_test(t,test9,sizeof(test9));
+	CMPTEST(test1);
+	CMPTEST(fib);
+	CMPTEST(neg);
+	CMPTEST(out);
+	CMPTEST(trouble);
 
 	tk_drop_task(t);
 }

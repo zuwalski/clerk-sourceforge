@@ -84,6 +84,8 @@ enum cle_opcode
 	OP_MERGE,
 	OP_DOCALL_T,
 	OP_SUPER,
+	OP_2STR,
+	OP_NEG,
 
 	OP_OP_MAX
 };

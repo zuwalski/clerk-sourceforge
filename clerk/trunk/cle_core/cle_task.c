@@ -189,7 +189,7 @@ void tk_unref(task* t, page_wrap* pg)
 
 	/* internal dead page ? */
 	if(pg->refcount == 0 && pg->pg->id == 0)
-		_tk_release_page(t,pg);
+		;//_tk_release_page(t,pg);
 }
 
 void _tk_write_copy(task* t, page_wrap* pg)

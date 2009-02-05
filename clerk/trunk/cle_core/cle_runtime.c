@@ -21,10 +21,13 @@
 
 typedef double rt_number;
 
+struct _rt_callframe;
+
 struct _rt_code
 {
 	struct _rt_code* next;
 	char* code;
+	struct _rt_callframe* free;
 	st_ptr home;
 	st_ptr strings;
 	struct _body_ body;
@@ -44,8 +47,6 @@ enum {
 	STACK_RO_PTR,
 	STACK_PROP
 };
-
-struct _rt_callframe;
 
 struct _rt_stack
 {
@@ -106,6 +107,7 @@ struct _rt_invocation
 
 static void _rt_error(struct _rt_invocation* inv, uint code)
 {
+	printf("runtime failed %d\n",code);
 	cle_stream_fail(inv->hdl,"runtime",8);
 }
 
@@ -158,14 +160,24 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 	ret->strings = code;
 	st_move(inv->t,&ret->strings,"S",2);
 
+	// zero invocation-cache
+	ret->free = 0;
+
 	return ret;
 }
 
 static struct _rt_callframe* _rt_newcall(struct _rt_invocation* inv, struct _rt_code* code, st_ptr* object, int is_expr)
 {
-	struct _rt_callframe* cf =
-	(struct _rt_callframe*)tk_alloc(inv->t,sizeof(struct _rt_callframe)
-		+ (code->body.maxvars + code->body.maxstack) * sizeof(struct _rt_stack));
+	struct _rt_callframe* cf;
+
+	if(code->free != 0)
+	{
+		cf = code->free;
+		code->free = cf->parent;
+	}
+	else
+		cf = (struct _rt_callframe*)tk_alloc(inv->t,sizeof(struct _rt_callframe)
+			+ (code->body.maxvars + code->body.maxstack) * sizeof(struct _rt_stack));
 
 	// push
 	cf->parent = inv->top;
@@ -480,21 +492,47 @@ static uint _rt_num(struct _rt_invocation* inv, struct _rt_stack* sp)
 	return 0;
 }
 
-static int _rt_equal(struct _rt_stack* op1, struct _rt_stack* op2)
+static int _rt_equal(struct _rt_invocation* inv, struct _rt_stack* op1, struct _rt_stack* op2)
 {
-	if(op1->type != op2->type)
-		return 0;
+	if(op1->type == STACK_NUM)
+	{
+		if(_rt_num(inv,op2))
+			return 0;
+	}
+	else if(op2->type == STACK_NUM)
+	{
+		if(_rt_num(inv,op1))
+			return 0;
+	}
+	// not a number
+	else
+	{
+		return (op1->type == op2->type);
+	}
 
-	// illegal compare
-	op2->type = STACK_NULL;
-	return 0;
+	return op1->num == op2->num;
 }
 
-static int _rt_compare(struct _rt_stack* op1, struct _rt_stack* op2)
+static int _rt_compare(struct _rt_invocation* inv, struct _rt_stack* op1, struct _rt_stack* op2)
 {
-	// illegal compare
-	op2->type = STACK_NULL;
-	return 0;
+	if(op1->type == STACK_NUM)
+	{
+		if(_rt_num(inv,op2))
+			return 0;
+	}
+	else if(op2->type == STACK_NUM)
+	{
+		if(_rt_num(inv,op1))
+			return 0;
+	}
+	// not a number
+	else
+	{
+		op2->type = STACK_NULL;
+		return 0;
+	}
+
+	return op1->num - op2->num;
 }
 
 static void _rt_run(struct _rt_invocation* inv)
@@ -557,29 +595,29 @@ static void _rt_run(struct _rt_invocation* inv)
 			break;
 
 		case OP_EQ:
-			sp[1].num = _rt_equal(sp,sp + 1);
+			sp[1].num = _rt_equal(inv,sp,sp + 1);
 			sp[1].type = STACK_NUM;
 			sp++;
 			break;
 		case OP_NE:
-			sp[1].num = _rt_equal(sp,sp + 1) == 0;
+			sp[1].num = _rt_equal(inv,sp,sp + 1) == 0;
 			sp[1].type = STACK_NUM;
 			sp++;
 			break;
 		case OP_GE:
-			sp[1].num = _rt_compare(sp,sp + 1) >= 0;
+			sp[1].num = _rt_compare(inv,sp,sp + 1) >= 0;
 			sp++;
 			break;
 		case OP_GT:
-			sp[1].num = _rt_compare(sp,sp + 1) > 0;
+			sp[1].num = _rt_compare(inv,sp,sp + 1) > 0;
 			sp++;
 			break;
 		case OP_LE:
-			sp[1].num = _rt_compare(sp,sp + 1) <= 0;
+			sp[1].num = _rt_compare(inv,sp,sp + 1) <= 0;
 			sp++;
 			break;
 		case OP_LT:
-			sp[1].num = _rt_compare(sp,sp + 1) < 0;
+			sp[1].num = _rt_compare(inv,sp,sp + 1) < 0;
 			sp++;
 			break;
 
@@ -605,13 +643,13 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_BR:
 			// emit Is (branch forward)
 			tmp = *((ushort*)inv->top->pc);
-			inv->top->pc += tmp - sizeof(ushort);
+			inv->top->pc += tmp + sizeof(ushort);
 			break;
 
 		case OP_LOOP:	// JIT-HOOK 
 			// emit Is (branch back)
 			tmp = *((ushort*)inv->top->pc);
-			inv->top->pc -= tmp - sizeof(ushort);
+			inv->top->pc -= tmp + sizeof(ushort);
 			break;
 
 		case OP_FREE:
@@ -861,6 +899,27 @@ static void _rt_run(struct _rt_invocation* inv)
 			if(sp->type == STACK_OUTPUT)
 				sp->out->next(sp->outdata);
 			break;
+		case OP_2STR:
+			tmp = *inv->top->pc++;	// vars
+			if(tmp != 1)
+			{
+				_rt_error(inv,__LINE__);
+				return;
+			}
+			switch(sp->type)
+			{
+			case STACK_NUM:
+				{
+					char buffer[32];
+					int len = sprintf(buffer,"%.14g",sp->num);
+					st_empty(inv->t,&sp->single_ptr);
+					sp->single_ptr_w = sp->single_ptr;
+					sp->type = STACK_PTR;
+					st_insert(inv->t,&sp->single_ptr_w,buffer,len);
+				}
+				break;
+			}
+			break;
 
 		case OP_AVAR:
 			inv->top->vars[*inv->top->pc++] = *sp;
@@ -888,8 +947,15 @@ static void _rt_run(struct _rt_invocation* inv)
 				cle_stream_end(inv->hdl);
 				return;
 			}
-			inv->top = inv->top->parent;
-			sp = inv->top->sp;
+			else
+			{
+				struct _rt_callframe* cf = inv->top;
+				inv->top = inv->top->parent;
+				sp = inv->top->sp;
+
+				cf->parent = cf->code->free;
+				cf->code->free = cf;
+			}
 			break;
 		case OP_DOCALL:
 			tmp = *inv->top->pc++;	// params
@@ -913,6 +979,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->sp--;
 			inv->top->sp->type = STACK_REF;	// ref to sp-top
 			inv->top->sp->var = sp + tmp;
+			inv->top->sp->var->type = STACK_NULL;
 			sp = inv->top->sp;		// set new stack
 			break;
 		default:

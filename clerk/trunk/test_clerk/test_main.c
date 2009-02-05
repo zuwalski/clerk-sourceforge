@@ -598,7 +598,7 @@ int main(int argc, char* argv[])
 
 	//heap_check();
 
-	test_runtime_c();
+	//test_runtime_c();
 
 	heap_check();
 	// test
