@@ -58,6 +58,14 @@ static const char testmeth[] =
 " 'Fib(3) : ' str(fib(fib,3)) ' / ' "
 " 'Tak(3,2,1) : ' str(tak(tak,3,2,1)) ' / ' ";
 
+//"()"
+//" var :n = 11;"
+//" 'Ack(3,' :n ') : ' ack(3,:n) ' / ' "
+//" 'Fib(' :n + 27 ') : ' fib(:n + 27) ' / ' "
+//" 'Tak(' (:n - 1) * 3 ',' (:n - 1) * 2 ',' :n - 1 ') : ' tak(3 * (:n - 1), 2 * (:n - 1), :n - 1) ' / ' "
+//" 'Fib(3) : ' fib(3) ' / ' "
+//" 'Tak(3,2,1) : ' tak(3,2,1) ' / ' ";
+
 static const char fib[] = 
 "(:fib,:n)"
 " if :n > 1 do (:fib(:fib,:n - 1)) + (:fib(:fib,:n - 2)) else 1 end";

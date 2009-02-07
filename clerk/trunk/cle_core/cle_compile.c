@@ -127,7 +127,7 @@ struct _cmp_var
 static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","pipe",
 	"var","new","each","break","and","or","not","null",
-	"handle","raise","switch","case","default","select","where","this","super",0
+	"handle","raise","switch","case","default","select","where","this","super","goto",0
 };
 
 #define KW_MAX_LEN 7
@@ -158,7 +158,8 @@ enum cmp_keywords {
 	KW_SELECT,
 	KW_WHERE,
 	KW_THIS,
-	KW_SUPER
+	KW_SUPER,
+	KW_GOTO
 };
 
 struct _cmp_buildin
@@ -760,7 +761,73 @@ static void _cmp_call(struct _cmp_state* cst, uchar nest)
 	}
 }
 
+/*
+	var :a,:b = 1,2;
+	var :a = 1,:b = 2,:c = x;
+*/
+struct _cmp_var_list
+{
+	struct _cmp_var* var;
+	struct _cmp_var_list* prev;
+};
+
+static void _cmp_var_assignlist(struct _cmp_state* cst, struct _cmp_var_list* list)
+{
+	if(_cmp_expr(cst,0,NEST_EXPR) == ',')
+	{
+		if(list->prev != 0)
+			_cmp_var_assignlist(cst,list->prev);
+
+		_cmp_emitIc(cst,OP_AVAR,list->var? list->var->id : 0);
+		_cmp_stack(cst,-1);
+		_cmp_nextc(cst);
+	}
+}
+
+static uint _cmp_var_assign2(struct _cmp_state* cst, struct _cmp_var_list* list, const uint state)
+{
+	struct _cmp_var_list elm;
+	elm.prev = list;
+	elm.var = (state == ST_DEF)? _cmp_def_var(cst) : _cmp_var(cst);
+
+	if(whitespace(cst->c)) _cmp_whitespace(cst);
+	if(cst->c == '=')
+	{
+		_cmp_nextc(cst);
+		_cmp_var_assignlist(cst,&elm);
+	}
+	else if(cst->c == ',')
+	{
+		_cmp_whitespace(cst);
+		if(cst->c == ':')
+			return _cmp_var_assign2(cst,&elm,state);
+		else err(__LINE__)
+	}
+	else if(cst->c != ';')
+	{
+		_cmp_emitIc(cst,OP_LVAR,elm.var? elm.var->id : 0);
+		_cmp_stack(cst,1);
+		return ST_VAR;
+	}
+	else _cmp_nextc(cst);
+
+	return ST_0;
+}
+
 static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
+{
+	uint term;
+	while(1)
+	{
+		term = _cmp_var_assign2(cst,0,state);
+		if(term == ST_VAR || cst->c != ',')
+			break;
+	}
+
+	return term;
+}
+
+static uint _cmp_var_assignXXX(struct _cmp_state* cst, const uint state)
 {
 	struct _cmp_var* var;
 	uint coff  = cst->code_next;
@@ -854,6 +921,9 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
 
+/*
+	path.path =|>|<... expr AND|OR * do -> exit
+*/
 static void _cmp_where_condition(struct _cmp_state* cst)
 {
 }
@@ -1058,10 +1128,16 @@ static void _cmp_new(struct _cmp_state* cst)
 //	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM) && *cst->lastop != OP_DOCALL){
 #define chk_out()\
 	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
-		_cmp_op_clear(cst,&otop);\
-		if(nest == NEST_EXPR) \
-		{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
+	_cmp_op_clear(cst,&otop);\
+		if(*cst->lastop != OP_OUT && *cst->lastop != OP_DOCALL){\
+			if(nest == NEST_EXPR)\
+				_cmp_emit0(cst,OP_CAT);\
+			else\
+			{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}\
 		_cmp_op_push(cst,&otop,OP_OUT,0);}
+
+//		{nest = (PURE_EXPR|NEST_EXPR);_cmp_emit0(cst,OP_CAT);} \
+//		_cmp_op_push(cst,&otop,OP_OUT,0);}
 //		else if(*cst->lastop != OP_OUT) {_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}\
 
 //		else{_cmp_emit0(cst,OP_OUT);_cmp_stack(cst,-1);}}
@@ -1261,6 +1337,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			}
 			break;
 		case '[':
+			// TODO: build chain if [][][] = x
 			chk_state(ST_ALPHA|ST_VAR)
 			chk_call()
 			_cmp_nextc(cst);

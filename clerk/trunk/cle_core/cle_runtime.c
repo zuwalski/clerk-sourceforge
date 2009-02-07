@@ -889,6 +889,9 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			sp++;
 			break;
+		case OP_OUTL:
+			sp++;
+			break;
 		case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
 			if(_rt_out(inv,sp))
 			{

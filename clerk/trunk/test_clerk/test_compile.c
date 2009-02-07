@@ -133,10 +133,15 @@ static char out[] =
 ":in)"
 ":in = a b c;"
 "a b :in "
-" b if a do c d end e";
+" b if a b do c d end e";
 
 static char trouble[] =
 ") d call() me() (call it)";
+
+static char assign[] = 
+":a,:b) "
+" :a,:b = :b,:a;"
+;
 
 static void _do_test(task* t, char* test, int length)
 {
@@ -172,11 +177,12 @@ void test_compile_c()
 	//_do_test(t,test7,sizeof(test7));
 	//_do_test(t,test8,sizeof(test8));
 	//_do_test(t,test9,sizeof(test9));
-	CMPTEST(test1);
-	CMPTEST(fib);
-	CMPTEST(neg);
-	CMPTEST(out);
-	CMPTEST(trouble);
+	//CMPTEST(test1);
+	//CMPTEST(fib);
+	//CMPTEST(neg);
+	//CMPTEST(out);
+	//CMPTEST(trouble);
+	CMPTEST(assign);
 
 	tk_drop_task(t);
 }
