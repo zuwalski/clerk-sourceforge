@@ -140,7 +140,10 @@ static char trouble[] =
 
 static char assign[] = 
 ":a,:b) "
-" :a,:b = :b,:a;"
+" var :c = 1,:d = 2;"
+" :a,:b = :b,:a, :b = :a;"
+" if :c do :a :b else :d end"
+" f = :a :b;"
 ;
 
 static void _do_test(task* t, char* test, int length)
