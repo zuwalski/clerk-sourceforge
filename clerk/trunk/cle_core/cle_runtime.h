@@ -86,6 +86,7 @@ enum cle_opcode
 	OP_SUPER,
 	OP_2STR,
 	OP_NEG,
+	OP_NEXT,
 
 	OP_OP_MAX
 };

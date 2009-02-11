@@ -426,7 +426,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				st_delete(app_instance,&root,0,0);
 
 				// insert source
-				_record_source_and_path(app_instance,root,_blank,expr,'(');
+				_record_source_and_path(app_instance,root,eventname,expr,'(');
 				// call compiler
 				if(cmp_method(app_instance,&root,&expr,response,data))
 					return 1;

@@ -21,6 +21,8 @@
 
 typedef double rt_number;
 
+static const char to_str_expr[] = "str\0E";
+
 struct _rt_callframe;
 
 struct _rt_code
@@ -37,7 +39,6 @@ struct _rt_code
 enum {
 	STACK_NULL = 0,
 	STACK_NUM,
-	STACK_CALL,
 	STACK_OBJ,
 	STACK_OUTPUT,
 	STACK_REF,
@@ -53,7 +54,6 @@ struct _rt_stack
 	union 
 	{
 		rt_number num;
-		struct _rt_callframe* cfp;
 		struct _rt_stack* var;
 		struct
 		{
@@ -62,18 +62,18 @@ struct _rt_stack
 		};
 		struct
 		{
-			st_ptr ptr;
 			st_ptr obj;
+			st_ptr ptr;
 		};
 		struct
 		{
-			ulong prop_id;
 			st_ptr prop_obj;
+			ulong prop_id;
 		};
 		struct
 		{
-			struct _rt_code* code;
 			st_ptr code_obj;
+			struct _rt_code* code;
 		};
 		struct
 		{
@@ -89,7 +89,7 @@ struct _rt_callframe
 {
 	struct _rt_callframe* parent;
 	struct _rt_code* code;
-	char* pc;
+	const char* pc;
 	struct _rt_stack* vars;
 	struct _rt_stack* sp;
 	st_ptr object;
@@ -105,10 +105,13 @@ struct _rt_invocation
 	int params_before_run;
 };
 
+const static char exec_error = OP_ERROR;
+
 static void _rt_error(struct _rt_invocation* inv, uint code)
 {
 	printf("runtime failed %d\n",code);
 	cle_stream_fail(inv->hdl,"runtime",8);
+	inv->top->pc = &exec_error;
 }
 
 static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
@@ -129,16 +132,10 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 	// not found -> load it and add it
 	pt = code;
 	if(st_move(inv->t,&pt,"B",2) != 0)
-	{
-		_rt_error(inv,__LINE__);
 		return 0;
-	}
 
 	if(st_get(inv->t,&pt,(char*)&body,sizeof(struct _body_)) != -2)
-	{
-		_rt_error(inv,__LINE__);
 		return 0;
-	}
 
 	ret = (struct _rt_code*)tk_alloc(inv->t,sizeof(struct _rt_code) + body.codesize - sizeof(struct _body_));
 
@@ -151,10 +148,7 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 
 	ret->code = (char*)ret + sizeof(struct _rt_code);
 	if(st_get(inv->t,&pt,ret->code,ret->body.codesize - sizeof(struct _body_)) != -1)
-	{
-		_rt_error(inv,__LINE__);
 		return 0;
-	}
 
 	// get strings
 	ret->strings = code;
@@ -225,29 +219,13 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 	case 'E':	// expr
 		if(extcall)
 			return;
-		// check for constants
-		if(st_move(inv->t,&top.ptr,HEAD_NUM,HEAD_SIZE) == 0)
-		{
-			if(st_get(inv->t,&top.ptr,(char*)&(*sp)->num,sizeof(rt_number)) != -1)
-				return;
-			(*sp)->type = STACK_NUM;
-		}
-		else if(st_move(inv->t,&top.ptr,HEAD_CONST,HEAD_SIZE) == 0)
-		{
-			(*sp)->single_ptr = top.ptr;
-			(*sp)->type = STACK_RO_PTR;
-		}
-		else
-		{
-			// eval expr
-			inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
+		inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
 
-			(*sp)->type = STACK_NULL;
-			inv->top->sp--;
-			inv->top->sp->type = STACK_REF;
-			inv->top->sp->var = *sp;
-			*sp = inv->top->sp;
-		}
+		(*sp)->type = STACK_NULL;
+		inv->top->sp--;
+		inv->top->sp->type = STACK_REF;
+		inv->top->sp->var = *sp;
+		*sp = inv->top->sp;
 		break;
 	case 'R':	// ref (oid)
 		if(extcall)
@@ -390,56 +368,124 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 	return 0;
 }
 
-static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack* sp)
+static struct _rt_stack* _rt_eval_expr(struct _rt_invocation* inv, struct _rt_stack* target, struct _rt_stack* expr)
 {
-	switch(sp->type)
+	inv->top = _rt_newcall(inv,_rt_load_code(inv,expr->ptr),&expr->obj,1);
+	inv->top->sp--;
+	*inv->top->sp = *target;
+	return inv->top->sp;
+}
+
+static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
+{
+	if(to->type == STACK_REF)
+	{
+		st_ptr pt;
+		st_empty(inv->t,&pt);
+		to->var->single_ptr_w = to->var->single_ptr = pt;
+		to->var->type = STACK_PTR;
+		*to = *to->var;
+	}
+
+	switch(from->type)
 	{
 	case STACK_PROP:
-		if(_rt_find_prop_value(inv,sp))
+		if(_rt_find_prop_value(inv,from))
 			return 1;
 	case STACK_RO_PTR:
 	case STACK_PTR:
-		switch(sp[1].type)
+		switch(to->type)
 		{
-		case STACK_REF:
-			st_insert_st(inv->t,&sp[1].var->single_ptr_w,&sp->single_ptr);
-			break;
-		case STACK_PTR:
-			st_insert_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
-			break;
 		case STACK_OUTPUT:
-			return st_map(inv->t,&sp->single_ptr,sp[1].out->data,sp[1].outdata);
+			return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
+		case STACK_PTR:
+			st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
 		}
 		break;
 	case STACK_NUM:
-		switch(sp[1].type)
 		{
-		case STACK_REF:
-			if(sp[1].var->type == STACK_PTR)
+			char buffer[32];
+			int len = sprintf(buffer,"%.14g",from->num);
+			switch(to->type)
 			{
-				st_insert(inv->t,&sp[1].var->single_ptr_w,HEAD_NUM,HEAD_SIZE);
-				st_insert(inv->t,&sp[1].var->single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
+			case STACK_OUTPUT:
+				to->out->data(to->outdata,buffer,len);
+			case STACK_PTR:
+				st_insert(inv->t,&to->single_ptr_w,buffer,len);
 			}
-			else
-			{
-				sp[1].var->num = sp->num;
-				sp[1].var->type = STACK_NUM;
-			}
-			break;
-		case STACK_PTR:
-			st_insert(inv->t,&sp[1].single_ptr_w,HEAD_NUM,HEAD_SIZE);
-			st_insert(inv->t,&sp[1].single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
-			break;
-		case STACK_OUTPUT:
-			sp[1].out->data(sp[1].outdata,HEAD_NUM,HEAD_SIZE);
-			sp[1].out->data(sp[1].outdata,(cdat)&sp->num,sizeof(rt_number));
 		}
 		break;
-	default:
-		// default -> output nothing .. but
-		if(sp[1].type == STACK_REF)
-			*sp[1].var = *sp;
+	case STACK_OBJ:
+		if(st_move(inv->t,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
+			*sp = _rt_eval_expr(inv,to,from);
+		break;	// no "str" expr? output nothing
+	case STACK_CODE:
+		{
+			st_ptr pt = from->code->home;
+			if(st_move(inv->t,&pt,"p",1) != 0)
+				break;
+			// write out path/event to method/handler
+			switch(to->type)
+			{
+			case STACK_OUTPUT:
+				return st_map(inv->t,&pt,to->out->data,to->outdata);
+			case STACK_PTR:
+				st_insert_st(inv->t,&to->single_ptr_w,&pt);
+			}
+		}
 	}
+	return 0;
+}
+
+static uint _rt_out_l(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
+{
+	//switch(from->type)
+	//{
+	//case STACK_PROP:
+	//	if(_rt_find_prop_value(inv,from))
+	//		return 1;
+	//case STACK_RO_PTR:
+	//case STACK_PTR:
+	//	switch(to->type)
+	//	{
+	//	case STACK_OUTPUT:
+	//		return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
+	//	case STACK_PTR:
+	//		st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
+	//	}
+	//	break;
+	//case STACK_NUM:
+	//	{
+	//		char buffer[32];
+	//		int len = sprintf(buffer,"%.14g",from->num);
+	//		switch(to->type)
+	//		{
+	//		case STACK_OUTPUT:
+	//			to->out->data(to->outdata,buffer,len);
+	//		case STACK_PTR:
+	//			st_insert(inv->t,&to->single_ptr_w,buffer,len);
+	//		}
+	//	}
+	//	break;
+	//case STACK_OBJ:
+	//	if(st_move(inv->t,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
+	//		*sp = _rt_eval_expr(inv,to,from);
+	//	break;	// no "str" expr? output nothing
+	//case STACK_CODE:
+	//	{
+	//		st_ptr pt = from->code->home;
+	//		if(st_move(inv->t,&pt,"p",1) != 0)
+	//			break;
+	//		// write out path/event to method/handler
+	//		switch(to->type)
+	//		{
+	//		case STACK_OUTPUT:
+	//			return st_map(inv->t,&pt,to->out->data,to->outdata);
+	//		case STACK_PTR:
+	//			st_insert_st(inv->t,&to->single_ptr_w,&pt);
+	//		}
+	//	}
+	//}
 	return 0;
 }
 
@@ -553,37 +599,25 @@ static void _rt_run(struct _rt_invocation* inv)
 			break;
 		case OP_ADD:
 			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
-			{
 				_rt_error(inv,__LINE__);
-				return;
-			}
 			sp[1].num += sp[0].num;
 			sp++;
 			break;
 		case OP_SUB:
 			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
-			{
 				_rt_error(inv,__LINE__);
-				return;
-			}
 			sp[1].num -= sp[0].num;
 			sp++;
 			break;
 		case OP_MUL:
 			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1))
-			{
 				_rt_error(inv,__LINE__);
-				return;
-			}
 			sp[1].num *= sp[0].num;
 			sp++;
 			break;
 		case OP_DIV:
 			if(_rt_num(inv,sp) || _rt_num(inv,sp + 1) || sp->num == 0)
-			{
 				_rt_error(inv,__LINE__);
-				return;
-			}
 			sp[1].num /= sp[0].num;
 			sp++;
 			break;
@@ -592,6 +626,11 @@ static void _rt_run(struct _rt_invocation* inv)
 				(sp[0].type == STACK_NUM && sp[0].num == 0) ||
 				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr)));
 			sp->type = STACK_NUM;
+			break;
+		case OP_NEG:
+			if(_rt_num(inv,sp))
+				_rt_error(inv,__LINE__);
+			sp->num *= -1;
 			break;
 
 		case OP_EQ:
@@ -701,20 +740,20 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp->ptr = sp->obj = inv->top->object;
 			if(cle_get_property_host(inv->t,inv->hdl->instance,&sp->ptr,inv->top->pc,tmp) < 0)
 			{
-				_rt_error(inv,__LINE__);
-				return;
+				sp->type = STACK_NULL;
+				inv->top->pc += tmp;
 			}
-			inv->top->pc += tmp;
-			_rt_get(inv,&sp);
+			else
+			{
+				inv->top->pc += tmp;
+				_rt_get(inv,&sp);
+			}
 			break;
 		case OP_MV:
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			if(_rt_move(inv,&sp,inv->top->pc,tmp))
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
+				sp->type = STACK_NULL;
 			inv->top->pc += tmp;
 			break;
 		case OP_RIDX:
@@ -726,10 +765,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				memcpy(buffer + 2,&sp->num,sizeof(rt_number));
 				sp++;
 				if(_rt_move(inv,&sp,buffer,sizeof(buffer)))
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
+					sp->type = STACK_NULL;
 			}
 			else if(sp->type == STACK_PTR ||
 				sp->type == STACK_RO_PTR)
@@ -737,10 +773,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				st_ptr mv = sp->single_ptr;
 				sp++;
 				if(_rt_move_st(inv,&sp,&mv))
-				{
-					_rt_error(inv,__LINE__);
-					return;
-				}
+					sp->type = STACK_NULL;
 			}
 			break;
 		case OP_LVAR:
@@ -790,11 +823,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc += tmp;
 			break;
 		case OP_WIDX:	// replace by OP_OUT ?
-			if(_rt_out(inv,sp))
-			{
+			if(_rt_out(inv,&sp,sp,sp + 1))
 				_rt_error(inv,__LINE__);
-				return;
-			}
 			sp++;
 			break;
 
@@ -809,15 +839,15 @@ static void _rt_run(struct _rt_invocation* inv)
 			{
 			case STACK_PROP:
 				if(inv->top->is_expr != 0)
-				{
 					_rt_error(inv,__LINE__);
-					return;
+				else
+				{
+					st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
+					if(st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE) == 0)
+						st_delete(inv->t,&sp->prop_obj,0,0);
+					sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
+					sp->type = STACK_PTR;
 				}
-				st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
-				if(st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE) == 0)
-					st_delete(inv->t,&sp->prop_obj,0,0);
-				sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
-				sp->type = STACK_PTR;
 				break;
 			case STACK_PTR:
 				st_delete(inv->t,&sp->single_ptr,0,0);
@@ -833,14 +863,14 @@ static void _rt_run(struct _rt_invocation* inv)
 			{
 			case STACK_PROP:
 				if(inv->top->is_expr != 0)
-				{
 					_rt_error(inv,__LINE__);
-					return;
+				else
+				{
+					st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
+					st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE);
+					sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
+					sp->type = STACK_PTR;
 				}
-				st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
-				st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE);
-				sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
-				sp->type = STACK_PTR;
 				break;
 			case STACK_REF:
 				if(sp->var->type == STACK_NULL)
@@ -850,78 +880,48 @@ static void _rt_run(struct _rt_invocation* inv)
 					sp->var->type = STACK_PTR;
 				}
 				else if(sp->var->type != STACK_PTR)
-				{
 					_rt_error(inv,__LINE__);
-					return;
-				}
 			case STACK_PTR:
 			case STACK_OUTPUT:
 				break;
 			default:
 				_rt_error(inv,__LINE__);
-				return;
 			}
-			break;
-		case OP_CAT:
-			if(sp->type == STACK_PROP)
-				_rt_find_prop_value(inv,sp);
-
-			if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
-			{
-				st_ptr pt = sp->single_ptr;
-				st_empty(inv->t,&sp->single_ptr);
-				sp->single_ptr_w = sp->single_ptr;
-				sp->type = STACK_PTR;
-				st_insert_st(inv->t,&sp->single_ptr_w,&pt);
-			}
-			else
-			{
-				st_empty(inv->t,&sp->single_ptr);
-				sp->single_ptr_w = sp->single_ptr;
-				sp->type = STACK_PTR;
-			}
-			break;
-		case OP_OUT:	// stream out string
-			if(_rt_out(inv,sp))
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
-			sp++;
-			break;
-		case OP_OUTL:
-			sp++;
-			break;
-		case OP_OUTLT:	// non-string (concat) out-ing [OUT Last Tree]
-			if(_rt_out(inv,sp))
-			{
-				_rt_error(inv,__LINE__);
-				return;
-			}
-			sp++;
-			if(sp->type == STACK_OUTPUT)
-				sp->out->next(sp->outdata);
 			break;
 		case OP_2STR:
 			tmp = *inv->top->pc++;	// vars
 			if(tmp != 1)
 			{
 				_rt_error(inv,__LINE__);
-				return;
-			}
-			switch(sp->type)
-			{
-			case STACK_NUM:
-				{
-					char buffer[32];
-					int len = sprintf(buffer,"%.14g",sp->num);
-					st_empty(inv->t,&sp->single_ptr);
-					sp->single_ptr_w = sp->single_ptr;
-					sp->type = STACK_PTR;
-					st_insert(inv->t,&sp->single_ptr_w,buffer,len);
-				}
 				break;
 			}
+			// fall throu
+		case OP_CAT:
+			{
+				struct _rt_stack to;
+				st_empty(inv->t,&to.single_ptr);
+				to.single_ptr_w = to.single_ptr;
+				to.type = STACK_PTR;
+				if(_rt_out(inv,&sp,&to,sp))
+					_rt_error(inv,__LINE__);
+				*sp = to;
+			}
+			break;
+		case OP_OUT:	// stream out string
+			if(_rt_out(inv,&sp,sp,sp + 1))
+				_rt_error(inv,__LINE__);
+			sp++;
+			break;
+		case OP_OUTL:
+			if(sp[1].type == STACK_REF)
+				*sp[1].var = *sp;
+			else if(_rt_out_l(inv,&sp,sp,sp + 1))
+				_rt_error(inv,__LINE__);
+			sp++;
+			break;
+		case OP_NEXT:	// non-string (concat) out-ing [OUT Last Tree]
+			if(sp->type == STACK_OUTPUT)
+				sp->out->next(sp->outdata);
 			break;
 
 		case OP_AVAR:
@@ -963,31 +963,32 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_DOCALL:
 			tmp = *inv->top->pc++;	// params
 			if(_rt_call(inv,sp,tmp))
-			{
 				_rt_error(inv,__LINE__);
-				return;
+			else
+			{
+				inv->top->parent->sp = sp + 1 + tmp;	// return-stack
+				*(--inv->top->sp) = *(sp + 1 + tmp);	// copy output-target
+				sp = inv->top->sp;		// set new stack
 			}
-			inv->top->parent->sp = sp + 1 + tmp;	// return-stack
-			*(--inv->top->sp) = *(sp + 1 + tmp);	// copy output-target
-			sp = inv->top->sp;		// set new stack
 			break;
 		case OP_DOCALL_N:
 			tmp = *inv->top->pc++;	// params
 			if(_rt_call(inv,sp,tmp))
-			{
 				_rt_error(inv,__LINE__);
-				return;
+			else
+			{
+				inv->top->parent->sp = sp + tmp;	// return-stack
+				inv->top->sp--;
+				inv->top->sp->type = STACK_REF;	// ref to sp-top
+				inv->top->sp->var = sp + tmp;
+				inv->top->sp->var->type = STACK_NULL;
+				sp = inv->top->sp;		// set new stack
 			}
-			inv->top->parent->sp = sp + tmp;	// return-stack
-			inv->top->sp--;
-			inv->top->sp->type = STACK_REF;	// ref to sp-top
-			inv->top->sp->var = sp + tmp;
-			inv->top->sp->var->type = STACK_NULL;
-			sp = inv->top->sp;		// set new stack
 			break;
+		case OP_ERROR:	// system exception
+			return;
 		default:
 			_rt_error(inv,__LINE__);
-			return;
 		}
 	}
 }
@@ -1006,7 +1007,11 @@ static void _rt_start(event_handler* hdl)
 	inv->hdl = hdl;
 	inv->top = 0;
 
-	_rt_load_code(inv,hdl->handler);
+	if(_rt_load_code(inv,hdl->handler))
+	{
+		cle_stream_fail(hdl,"runtime:start",14);
+		return;
+	}
 	_rt_newcall(inv,inv->code_cache,&hdl->object,0);
 
 	// push response-pipe

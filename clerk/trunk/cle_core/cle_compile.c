@@ -953,7 +953,7 @@ static void _cmp_new(struct _cmp_state* cst)
 			chk_state(ST_ALPHA)
 			_cmp_nextc(cst);
 			{
-				uint term = _cmp_expr(cst,0,NEST_EXPR);
+				uint term = _cmp_expr(cst,0,PURE_EXPR);
 				//_cmp_emit0(cst,OP_POPW);
 				// assign out stack +2
 				_cmp_stack(cst,-1);
@@ -1081,8 +1081,7 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 		if(exittype == ';')
 		{
 			_cmp_nextc(cst);
-			_cmp_emit0(cst,OP_OUTLT);
-//			_cmp_stack(cst,-1);
+			_cmp_emit0(cst,OP_NEXT);
 		}
 		else break;
 	}

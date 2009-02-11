@@ -440,6 +440,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_2STR";
 	case OP_NEG:
 		return "OP_NEG";
+	case OP_NEXT:
+		return "OP_NEXT";
 
 	default:
 		return "OP_ILLEGAL";
@@ -544,6 +546,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_OBJ:
 		case OP_MERGE:
 		case OP_NEG:
+		case OP_NEXT:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
