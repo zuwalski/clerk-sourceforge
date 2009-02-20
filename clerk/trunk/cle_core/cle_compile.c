@@ -958,11 +958,10 @@ static void _cmp_new(struct _cmp_state* cst)
 				// assign out stack +2
 				_cmp_stack(cst,-1);
 				state = ST_0;
-				if(term == ';')
-					break;
-				else if(term != '}')
+				if(term != ';' && term != '}')
 					err(__LINE__)
 			}
+			break;
 		case '}':
 			chk_state(ST_0|ST_ALPHA)
 			if(cst->s_top != stack)

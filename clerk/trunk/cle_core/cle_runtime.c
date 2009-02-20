@@ -195,7 +195,6 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 {
 	struct _rt_stack top = **sp;
 	char buffer[HEAD_SIZE];
-	char extcall;
 
 	// look for header
 	if(st_get(inv->t,&top.ptr,buffer,HEAD_SIZE) != -2 || buffer[0] != 0)
@@ -206,9 +205,6 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 	(*sp)->type = STACK_NULL;
 
-	// geting from within objectcontext or external?
-	extcall = (top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key);
-
 	switch(buffer[1])
 	{
 	case 'M':	// method
@@ -217,8 +213,6 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		(*sp)->type = STACK_CODE;
 		break;
 	case 'E':	// expr
-		if(extcall)
-			return;
 		inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&top.obj,1);
 
 		(*sp)->type = STACK_NULL;
@@ -228,7 +222,8 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		*sp = inv->top->sp;
 		break;
 	case 'R':	// ref (oid)
-		if(extcall)
+		// geting from within objectcontext or external?
+		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
 		(*sp)->obj = inv->hdl->instance;
 		if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
@@ -240,7 +235,8 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		(*sp)->type = STACK_OBJ;
 		break;
 	case 'y':	// property
-		if(extcall)
+		// geting from within objectcontext or external?
+		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
 		if(st_get(inv->t,&top.ptr,(char*)&(*sp)->prop_id,PROPERTY_SIZE) != -1)
 			return;
@@ -378,15 +374,6 @@ static struct _rt_stack* _rt_eval_expr(struct _rt_invocation* inv, struct _rt_st
 
 static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
 {
-	if(to->type == STACK_REF)
-	{
-		st_ptr pt;
-		st_empty(inv->t,&pt);
-		to->var->single_ptr_w = to->var->single_ptr = pt;
-		to->var->type = STACK_PTR;
-		*to = *to->var;
-	}
-
 	switch(from->type)
 	{
 	case STACK_PROP:
@@ -410,6 +397,7 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 			{
 			case STACK_OUTPUT:
 				to->out->data(to->outdata,buffer,len);
+				break;
 			case STACK_PTR:
 				st_insert(inv->t,&to->single_ptr_w,buffer,len);
 			}
@@ -420,72 +408,39 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 			*sp = _rt_eval_expr(inv,to,from);
 		break;	// no "str" expr? output nothing
 	case STACK_CODE:
+		if(st_move(inv->t,&from->single_ptr,"p",1) == 0)
 		{
-			st_ptr pt = from->code->home;
-			if(st_move(inv->t,&pt,"p",1) != 0)
-				break;
 			// write out path/event to method/handler
 			switch(to->type)
 			{
 			case STACK_OUTPUT:
-				return st_map(inv->t,&pt,to->out->data,to->outdata);
+				st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
 			case STACK_PTR:
-				st_insert_st(inv->t,&to->single_ptr_w,&pt);
+				st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
 			}
 		}
 	}
 	return 0;
 }
 
-static uint _rt_out_l(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
+static uint _rt_ref_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to)
 {
-	//switch(from->type)
-	//{
-	//case STACK_PROP:
-	//	if(_rt_find_prop_value(inv,from))
-	//		return 1;
-	//case STACK_RO_PTR:
-	//case STACK_PTR:
-	//	switch(to->type)
-	//	{
-	//	case STACK_OUTPUT:
-	//		return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
-	//	case STACK_PTR:
-	//		st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
-	//	}
-	//	break;
-	//case STACK_NUM:
-	//	{
-	//		char buffer[32];
-	//		int len = sprintf(buffer,"%.14g",from->num);
-	//		switch(to->type)
-	//		{
-	//		case STACK_OUTPUT:
-	//			to->out->data(to->outdata,buffer,len);
-	//		case STACK_PTR:
-	//			st_insert(inv->t,&to->single_ptr_w,buffer,len);
-	//		}
-	//	}
-	//	break;
-	//case STACK_OBJ:
-	//	if(st_move(inv->t,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
-	//		*sp = _rt_eval_expr(inv,to,from);
-	//	break;	// no "str" expr? output nothing
-	//case STACK_CODE:
-	//	{
-	//		st_ptr pt = from->code->home;
-	//		if(st_move(inv->t,&pt,"p",1) != 0)
-	//			break;
-	//		// write out path/event to method/handler
-	//		switch(to->type)
-	//		{
-	//		case STACK_OUTPUT:
-	//			return st_map(inv->t,&pt,to->out->data,to->outdata);
-	//		case STACK_PTR:
-	//			st_insert_st(inv->t,&to->single_ptr_w,&pt);
-	//		}
-	//	}
-	//}
+	st_ptr pt;
+	st_empty(inv->t,&pt);
+
+	if(to->var->type != STACK_NULL)
+	{
+		struct _rt_stack target;
+		target.type = STACK_PTR;
+		target.single_ptr_w = pt;
+
+		if(_rt_out(inv,sp,&target,to->var))
+			return 1;
+	}
+
+	to->var->single_ptr_w = to->var->single_ptr = pt;
+	to->var->type = STACK_PTR;
+	*to = *to->var;
 	return 0;
 }
 
@@ -514,24 +469,18 @@ static uint _rt_num(struct _rt_invocation* inv, struct _rt_stack* sp)
 	if(sp->type == STACK_NUM)
 		return 0;
 
-	if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
-		loadfrom = &sp->single_ptr;
-	else if(sp->type == STACK_PROP)
-	{
-		if(_rt_find_prop_value(inv,sp))
-			return 1;
+	if(sp->type != STACK_PROP)
+		return 1;
 
-		loadfrom = &sp->prop_obj;
-	}
-	else
+	if(_rt_find_prop_value(inv,sp))
 		return 1;
 
 	// is there a number here?
-	if(st_move(inv->t,loadfrom,HEAD_NUM,HEAD_SIZE) != 0)
+	if(st_move(inv->t,&sp->single_ptr,HEAD_NUM,HEAD_SIZE) != 0)
 		return 1;
 
 	// .. load it
-	if(st_get(inv->t,loadfrom,(char*)&sp->num,sizeof(rt_number)) != -1)
+	if(st_get(inv->t,&sp->single_ptr,(char*)&sp->num,sizeof(rt_number)) != -1)
 		return 1;
 
 	sp->type = STACK_NUM;
@@ -907,15 +856,17 @@ static void _rt_run(struct _rt_invocation* inv)
 				*sp = to;
 			}
 			break;
-		case OP_OUT:	// stream out string
-			if(_rt_out(inv,&sp,sp,sp + 1))
-				_rt_error(inv,__LINE__);
-			sp++;
-			break;
 		case OP_OUTL:
-			if(sp[1].type == STACK_REF)
+			if(sp[1].type == STACK_REF && sp[1].var->type == STACK_NULL)
+			{
 				*sp[1].var = *sp;
-			else if(_rt_out_l(inv,&sp,sp,sp + 1))
+				break;
+			}
+			// fall throu
+		case OP_OUT:	// stream out string
+			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp))
+				_rt_error(inv,__LINE__);
+			else if(_rt_out(inv,&sp,sp,sp + 1))
 				_rt_error(inv,__LINE__);
 			sp++;
 			break;
