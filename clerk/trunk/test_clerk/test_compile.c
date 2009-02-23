@@ -146,6 +146,11 @@ static char assign[] =
 " f = :a :b;"
 ;
 
+static char mixed[] = 
+")"
+" if 0 do {a,b,c} v end a b c "
+;
+
 static void _do_test(task* t, char* test, int length)
 {
 	st_ptr dest,src,tmp;
@@ -185,7 +190,8 @@ void test_compile_c()
 	//CMPTEST(neg);
 	//CMPTEST(out);
 	//CMPTEST(trouble);
-	CMPTEST(assign);
+	//CMPTEST(assign);
+	CMPTEST(mixed);
 
 	tk_drop_task(t);
 }

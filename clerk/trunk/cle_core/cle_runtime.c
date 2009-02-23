@@ -109,8 +109,9 @@ const static char exec_error = OP_ERROR;
 
 static void _rt_error(struct _rt_invocation* inv, uint code)
 {
-	printf("runtime failed %d\n",code);
-	cle_stream_fail(inv->hdl,"runtime",8);
+	char buffer[64];
+	int len = sprintf(buffer,"runtime:failed(%d)",code);
+	cle_stream_fail(inv->hdl,buffer,len);
 	inv->top->pc = &exec_error;
 }
 
@@ -386,7 +387,7 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 		case STACK_OUTPUT:
 			return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
 		case STACK_PTR:
-			st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
+			st_copy_st(inv->t,&to->single_ptr_w,&from->single_ptr);
 		}
 		break;
 	case STACK_NUM:
@@ -779,8 +780,6 @@ static void _rt_run(struct _rt_invocation* inv)
 
 		// receive input
 		case OP_RECV:
-			sp--;
-			sp->type = STACK_RO_PTR;
 			return;
 
 		case OP_CLEAR:
@@ -1012,6 +1011,12 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 {
 	struct _rt_invocation* inv = (struct _rt_invocation*)hdl->handler_data;
 
+	if(inv == 0)
+	{
+		cle_stream_fail(hdl,code,length);
+		return;
+	}
+
 	if(length == 0 && inv->params_before_run != 0)
 	{
 		hdl->response->start(hdl->respdata);
@@ -1019,7 +1024,10 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 		_rt_run(inv);
 	}
 
-	hdl->response->end(hdl->respdata,code,length);
+	if(hdl->eventdata->error == 0)
+	{
+		// if blocked on get (not failed) -> raise exception
+	}
 }
 
 cle_syshandler _runtime_handler = {0,{_rt_start,_rt_next,_rt_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};

@@ -230,14 +230,19 @@ void cle_stream_leave(event_handler* hdl)
 	hdl->thehandler = &_copy_handler;
 }
 
+static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3},0};
+
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {
 	if(hdl->eventdata->error == 0)
 	{
 		hdl->eventdata->error = msg;
 		hdl->eventdata->errlength = msglen;
+
+		hdl->response->end(hdl->respdata,msg,msglen);
 	}
-	cle_stream_leave(hdl);
+
+	hdl->thehandler = &_nil_handler;
 }
 
 void cle_stream_end(event_handler* hdl)
@@ -249,9 +254,9 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 {
 	cle_syshandler hdl;
 	hdl.next_handler = 0;
-	hdl.input.start = start == 0 ? _cpy_start : start;
-	hdl.input.next = next == 0 ? _cpy_next : next;
-	hdl.input.end = end == 0 ? _cpy_end : end;
+	hdl.input.start = start == 0 ? _nil1 : start;
+	hdl.input.next = next == 0 ? _nil1 : next;
+	hdl.input.end = end == 0 ? _nil2 : end;
 	hdl.input.pop = cle_standard_pop;
 	hdl.input.push = cle_standard_push;
 	hdl.input.data = cle_standard_data;

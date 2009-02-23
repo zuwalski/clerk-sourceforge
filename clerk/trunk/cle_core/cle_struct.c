@@ -272,10 +272,10 @@ static void _st_write(struct _st_lkup_res* rt)
 	rt->diff = newkey->length;
 
 //#ifdef DEBUG
-	if(rt->pg->pg->used > rt->pg->pg->size)
-	{
-		newkey = newkey;
-	}
+	//if(rt->pg->pg->used > rt->pg->pg->size)
+	//{
+	//	newkey = newkey;
+	//}
 //#endif
 }
 
@@ -1011,6 +1011,74 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
 	to->key = (char*)rt.sub - (char*)rt.pg->pg;
 	to->offset = rt.diff;
 	return no_lookup;
+}
+
+uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
+{
+	return 0;
+}
+
+uint st_copy_(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
+{
+	page_wrap* pg = from->pg;
+	key* me      = GOKEY(from->pg,from->key);
+	key* nxt     = 0;
+	cdat ckey    = KDATA(me) + (from->offset >> 3);
+	uint klen;
+
+	if(me->sub)
+	{
+		nxt = GOOFF(pg,me->sub);
+		while(nxt->offset < from->offset)
+		{
+			if(nxt->next == 0)
+			{
+				nxt = 0;
+				break;
+			}
+			nxt = GOOFF(pg,nxt->next);
+		}
+	}
+
+	klen = ((nxt)? nxt->offset : me->length) - from->offset;
+
+	while(1)
+	{
+		klen >>= 3;
+		if(klen > 0)
+		{
+			uint ret = dat(ctx,ckey,klen);
+			if(ret != 0)
+				return ret;
+		}
+
+		// move to next key for more data?
+		if(nxt == 0)
+			break;
+
+		// no next key! or trying to read past split?
+		if(nxt->offset < me->length && me->length != 1)
+		{
+			uint ret = push(ctx);
+			if(ret != 0)
+				return ret;
+
+		}
+
+		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+		ckey = KDATA(me);
+		if(me->sub)
+		{
+			nxt = GOOFF(pg,me->sub);
+			klen = nxt->offset;
+		}
+		else
+		{
+			klen = me->length;
+			nxt = 0;
+		}
+	}
+	return 0;
 }
 
 /*

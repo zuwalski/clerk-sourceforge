@@ -1184,9 +1184,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 			}
 			else
 			{
-				uint stack;
 				chk_state(ST_ALPHA)
-				stack = cst->s_top;
 				_cmp_nextc(cst);
 				if(_cmp_expr(cst,0,NEST_EXPR) != ';') err(__LINE__)
 				_cmp_emit0(cst,OP_CLEAR);
@@ -1262,7 +1260,14 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		case '{':
 			chk_state(ST_0|ST_ALPHA|ST_VAR)
 			chk_call()
-			_cmp_new(cst);
+			if(stack == cst->s_top)
+				_cmp_new(cst);
+			else
+			{
+				_cmp_new(cst);
+				_cmp_emit0(cst,OP_POPW);
+				_cmp_stack(cst,-1);
+			}
 			state = ST_0;
 			break;
 		case '}':
