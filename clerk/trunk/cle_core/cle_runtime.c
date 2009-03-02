@@ -21,6 +21,8 @@
 
 typedef double rt_number;
 
+static const char number_format[] = "%.14g";
+
 static const char to_str_expr[] = "str\0E";
 
 struct _rt_callframe;
@@ -373,6 +375,33 @@ static struct _rt_stack* _rt_eval_expr(struct _rt_invocation* inv, struct _rt_st
 	return inv->top->sp;
 }
 
+static uint _rt_string_out(struct _rt_invocation* inv, struct _rt_stack* to, struct _rt_stack* from)
+{
+	switch(to->type)
+	{
+	case STACK_OUTPUT:
+		return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
+	case STACK_PTR:
+		return st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
+	default:
+		return 1;
+	}
+}
+
+static void _rt_num_out(struct _rt_invocation* inv, struct _rt_stack* to, rt_number num)
+{
+	char buffer[32];
+	int len = sprintf(buffer,number_format,num);
+	switch(to->type)
+	{
+	case STACK_OUTPUT:
+		to->out->data(to->outdata,buffer,len);
+		break;
+	case STACK_PTR:
+		st_insert(inv->t,&to->single_ptr_w,buffer,len);
+	}
+}
+
 static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
 {
 	switch(from->type)
@@ -382,44 +411,18 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 			return 1;
 	case STACK_RO_PTR:
 	case STACK_PTR:
-		switch(to->type)
-		{
-		case STACK_OUTPUT:
-			return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
-		case STACK_PTR:
-			st_copy_st(inv->t,&to->single_ptr_w,&from->single_ptr);
-		}
-		break;
+		return _rt_string_out(inv,to,from);
 	case STACK_NUM:
-		{
-			char buffer[32];
-			int len = sprintf(buffer,"%.14g",from->num);
-			switch(to->type)
-			{
-			case STACK_OUTPUT:
-				to->out->data(to->outdata,buffer,len);
-				break;
-			case STACK_PTR:
-				st_insert(inv->t,&to->single_ptr_w,buffer,len);
-			}
-		}
+		_rt_num_out(inv,to,from->num);
 		break;
 	case STACK_OBJ:
 		if(st_move(inv->t,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
 			*sp = _rt_eval_expr(inv,to,from);
 		break;	// no "str" expr? output nothing
 	case STACK_CODE:
+		// write out path/event to method/handler
 		if(st_move(inv->t,&from->single_ptr,"p",1) == 0)
-		{
-			// write out path/event to method/handler
-			switch(to->type)
-			{
-			case STACK_OUTPUT:
-				st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
-			case STACK_PTR:
-				st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
-			}
-		}
+			return _rt_string_out(inv,to,from);
 	}
 	return 0;
 }
@@ -783,27 +786,37 @@ static void _rt_run(struct _rt_invocation* inv)
 			return;
 
 		case OP_CLEAR:
-			switch(sp->type)
-			{
-			case STACK_PROP:
-				if(inv->top->is_expr != 0)
-					_rt_error(inv,__LINE__);
-				else
-				{
-					st_insert(inv->t,&sp->prop_obj,HEAD_PROPERTY,HEAD_SIZE);
-					if(st_insert(inv->t,&sp->prop_obj,(cdat)&sp->prop_id,PROPERTY_SIZE) == 0)
-						st_delete(inv->t,&sp->prop_obj,0,0);
-					sp->single_ptr_w = sp->single_ptr = sp->prop_obj;
-					sp->type = STACK_PTR;
-				}
-				break;
-			case STACK_PTR:
-				st_delete(inv->t,&sp->single_ptr,0,0);
-				sp->single_ptr_w = sp->single_ptr;
-				break;
-			default:
+			if(inv->top->is_expr != 0)
 				_rt_error(inv,__LINE__);
-				return;
+			else if(sp[1].type != STACK_PROP)
+				_rt_error(inv,__LINE__);
+			else
+			{
+				st_insert(inv->t,&sp[1].prop_obj,HEAD_PROPERTY,HEAD_SIZE);
+				if(st_insert(inv->t,&sp[1].prop_obj,(cdat)&sp[1].prop_id,PROPERTY_SIZE) == 0)
+					st_delete(inv->t,&sp[1].prop_obj,0,0);
+
+				switch(sp->type)
+				{
+				case STACK_PROP:
+					if(_rt_find_prop_value(inv,sp) == 0)
+					{}
+					break;
+				case STACK_RO_PTR:
+				case STACK_PTR:
+					// copy / link
+					break;
+				case STACK_NUM:
+					// bin-num
+					break;
+				case STACK_OBJ:
+					// obj-ref
+					break;
+				case STACK_CODE:
+					// write out path/event to method/handler
+					if(st_move(inv->t,&sp->single_ptr,"p",1) == 0)
+						_rt_string_out(inv,sp + 1,sp);
+				}
 			}
 			break;
 		case OP_MERGE:
