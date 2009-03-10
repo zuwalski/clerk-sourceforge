@@ -746,6 +746,20 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc += sizeof(ushort);
 			switch(sp->type)
 			{
+			case STACK_REF:
+				if(sp->var->type == STACK_NULL)
+				{
+					st_empty(inv->t,&sp->var->single_ptr_w);
+					sp->var->single_ptr = sp->var->single_ptr_w;
+				}
+				else if(sp->var->type != STACK_PTR)
+				{
+					_rt_error(inv,__LINE__);
+					return;
+				}
+				sp->single_ptr_w = sp->var->single_ptr;
+				sp->single_ptr = sp->single_ptr_w;
+				sp->type = STACK_PTR;
 			case STACK_PTR:
 				sp--;
 				sp[0] = sp[1];
@@ -754,11 +768,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			case STACK_OUTPUT:
 				sp->out->push(sp->outdata);
 				sp->out->data(sp->outdata,inv->top->pc,tmp);
-				break;
-			case STACK_REF:
-				sp--;
-				sp[0] = *sp[1].var;
-				st_insert(inv->t,&sp->single_ptr_w,inv->top->pc,tmp);
 			}
 			inv->top->pc += tmp;
 			break;
@@ -803,14 +812,21 @@ static void _rt_run(struct _rt_invocation* inv)
 					{}
 					break;
 				case STACK_RO_PTR:
+					// link
+					st_link(inv->t,&sp[1].single_ptr_w,inv->t,&sp->single_ptr);
+					break;
 				case STACK_PTR:
-					// copy / link
+					// copy 
+					st_copy_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
 					break;
 				case STACK_NUM:
 					// bin-num
+					st_insert(inv->t,&sp[1].single_ptr_w,HEAD_NUM,HEAD_SIZE);
+					st_insert(inv->t,&sp[1].single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
 					break;
 				case STACK_OBJ:
 					// obj-ref
+					st_insert(inv->t,&sp[1].single_ptr_w,HEAD_REF,HEAD_SIZE);
 					break;
 				case STACK_CODE:
 					// write out path/event to method/handler

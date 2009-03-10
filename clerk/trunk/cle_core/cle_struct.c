@@ -1018,7 +1018,7 @@ uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
 	return 0;
 }
 
-uint st_copy_(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
+uint st_trace(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
 {
 	page_wrap* pg = from->pg;
 	key* me      = GOKEY(from->pg,from->key);
@@ -1054,15 +1054,41 @@ uint st_copy_(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(voi
 
 		// move to next key for more data?
 		if(nxt == 0)
-			break;
+			return 0;
 
-		// no next key! or trying to read past split?
 		if(nxt->offset < me->length && me->length != 1)
 		{
 			uint ret = push(ctx);
 			if(ret != 0)
 				return ret;
 
+			ret = st_trace(t,from,dat,push,pop,ctx);
+			if(ret != 0)
+				return ret;
+
+			ret = pop(ctx);
+			if(ret != 0)
+				return ret;
+
+			ckey += nxt->offset >> 3;
+			klen = nxt->offset;
+
+			if(nxt->next == 0)
+			{
+				if(klen < me->length)
+					return dat(ctx,ckey,(me->length - klen) >> 3);
+
+				return 0;
+			}
+
+			nxt = GOOFF(pg,me->next);
+			klen = (nxt->offset - klen) >> 3;
+			if(klen != 0)
+			{
+				ret = dat(ctx,ckey,klen);
+				if(ret)
+					return ret;
+			}
 		}
 
 		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
@@ -1078,7 +1104,6 @@ uint st_copy_(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(voi
 			nxt = 0;
 		}
 	}
-	return 0;
 }
 
 /*

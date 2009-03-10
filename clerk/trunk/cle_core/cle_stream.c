@@ -720,11 +720,3 @@ void cle_data(_ipt* ipt, cdat data, uint length)
 
 	_pa_data(ipt->event_chain_begin,data,length);
 }
-
-void cle_submit(_ipt* ipt, task* t, st_ptr* root)
-{
-	if(ipt == 0 || ipt->sys.error != 0)
-		return;
-
-	_pa_submit(ipt->event_chain_begin,t,root);
-}

@@ -51,7 +51,6 @@ void cle_end(_ipt* inpt, cdat code, uint length);
 void cle_pop(_ipt* inpt);
 void cle_push(_ipt* inpt);
 void cle_data(_ipt* inpt, cdat data, uint length);
-void cle_submit(_ipt* inpt, task* t, st_ptr* root);
 
 // system-event-handlers
 
