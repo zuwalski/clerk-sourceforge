@@ -40,7 +40,7 @@ static char test2[] =
 "	var :b = 0;"
 "	while :a > 0 do"
 "		var :c = "
-"			repeat"
+"			do"
 "				:a and :b or :c"
 "				break"
 "			until :a = 0 end;"

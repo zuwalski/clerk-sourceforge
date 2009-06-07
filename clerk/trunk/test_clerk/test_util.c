@@ -412,8 +412,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_CAV";
 	case OP_NULL:
 		return "OP_NULL";
-	case OP_CLEAR:
-		return "OP_CLEAR";
+	case OP_SET:
+		return "OP_SET";
 	case OP_AVAR:
 		return "OP_AVAR";
 	case OP_ERROR:
@@ -537,7 +537,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_LT:
 		case OP_EQ:
 		case OP_NULL:
-		case OP_CLEAR:
+		case OP_SET:
 		case OP_CAT:
 		case OP_NOT:
 		case OP_END:

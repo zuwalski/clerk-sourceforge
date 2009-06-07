@@ -70,7 +70,7 @@ enum cle_opcode
 	OP_LOOP,
 	OP_CAV,
 	OP_NULL,
-	OP_CLEAR,
+	OP_SET,
 	OP_ERROR,
 	OP_CAT,
 	OP_NOT,

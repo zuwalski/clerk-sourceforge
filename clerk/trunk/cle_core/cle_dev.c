@@ -22,11 +22,12 @@
 	dev.new.<extend-objectname> , objectname
 	dev.set.val.<objectname> , path.path , value
 	dev.set.expr.<objectname> , path.path , expr/method/ref
-	dev.set.state.<objectname> , state
+	dev.create.state.<objectname> , state
 	dev.set.handler.sync.<objectname> , state, event, method/expr (handler)
 	dev.set.handler.asyn.<objectname> , state, event, method/expr (handler)
 	dev.set.handler.resp.<objectname> , state, event, method/expr (handler)
 	dev.set.handler.reqs.<objectname> , state, event, method/expr (handler)
+	dev.create.collection.<objectname> , path.path
 
 */
 #include "cle_instance.h"
@@ -39,6 +40,7 @@ static const char _set_handler_name_sync[] = "dev.set.handler.sync";
 static const char _set_handler_name_asyn[] = "dev.set.handler.asyn";
 static const char _set_handler_name_resp[] = "dev.set.handler.resp";
 static const char _set_handler_name_reqs[] = "dev.set.handler.reqs";
+static const char _create_collection_name[] = "dev.create.collection";
 
 static cle_syshandler _new_object;
 static cle_syshandler _new_extends;

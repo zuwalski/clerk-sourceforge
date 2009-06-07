@@ -225,9 +225,6 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		*sp = inv->top->sp;
 		break;
 	case 'R':	// ref (oid)
-		// geting from within objectcontext or external?
-		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
-			return;
 		(*sp)->obj = inv->hdl->instance;
 		if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
 			return;
@@ -794,7 +791,7 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_RECV:
 			return;
 
-		case OP_CLEAR:
+		case OP_SET:
 			if(inv->top->is_expr != 0)
 				_rt_error(inv,__LINE__);
 			else if(sp[1].type != STACK_PROP)

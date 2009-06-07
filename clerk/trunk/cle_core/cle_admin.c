@@ -23,6 +23,7 @@
 	admin.role.give.<event-path> , role
 	admin.get.<objectname> , path.path
 	admin.set.state.<objectname> , state
+	admin.index.new.<objectname> , path.path , field
 */
 
 #include "cle_instance.h"
