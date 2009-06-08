@@ -18,6 +18,7 @@
 #include "cle_runtime.h"
 #include "cle_stream.h"
 #include "cle_instance.h"
+#include <stdio.h>
 
 typedef double rt_number;
 
