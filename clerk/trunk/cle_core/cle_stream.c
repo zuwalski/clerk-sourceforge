@@ -92,7 +92,7 @@ struct _ipt_internal
 static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
 static uint _nil2x(void* v,cdat c,uint u){return 0;}
-static void _nil3(void* v,task* t,st_ptr* st){}
+static void _nil3(void* v,st_ptr* st){}
 static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3};
 
 // async output-handler
@@ -143,38 +143,13 @@ uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 	return st_append(hdl->instance_tk,&hdl->top->pt,data,length);
 }
 
-void cle_standard_submit(event_handler* hdl, task* t_from, st_ptr* from)
+void cle_standard_submit(event_handler* hdl, st_ptr* from)
 {
 	// toplevel?
-	if(hdl->top->link == 0 && hdl->instance_tk == t_from)
+	if(hdl->top->link == 0)
 		hdl->top->pt = *from;	// subst
 	else
-		st_link(hdl->instance_tk,&hdl->top->pt,t_from,from);
-}
-
-// TODO: could use up alot of RAM for no reason - write better streamer
-// FAIL: data-leaf can not have null-char !
-// task* t - unused???
-void cle_stream_submit_beta(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt)
-{
-	if(st_is_empty(pt) == 0)
-	{
-		it_ptr it;
-		st_ptr tpt;
-
-		it_create(t_pt,&it,pt);
-
-		recv->push(data);
-		while(it_next(t_pt,&tpt,&it))
-		{
-			recv->data(data,it.kdata,it.kused);
-
-			cle_stream_submit_beta(t,recv,data,t_pt,&tpt);
-		}
-		recv->pop(data);
-
-		it_dispose(t_pt,&it);
-	}
+		st_link(hdl->instance_tk,&hdl->top->pt,from);
 }
 
 // pipeline activate All handlers
@@ -209,11 +184,11 @@ static uint _pa_data(event_handler* hdl, cdat data, uint length)
 	return 0;
 }
 
-static void _pa_submit(event_handler* hdl, task* t, st_ptr* st)
+static void _pa_submit(event_handler* hdl, st_ptr* st)
 {
 	do
 	{
-		cle_standard_submit(hdl,t,st);
+		cle_standard_submit(hdl,st);
 		hdl = hdl->next;
 	}
 	while(hdl != 0);
@@ -230,7 +205,7 @@ static void _cpy_end(event_handler* hdl,cdat c,uint u) {hdl->response->end(hdl->
 static void _cpy_pop(event_handler* hdl) {hdl->response->pop(hdl->respdata);}
 static void _cpy_push(event_handler* hdl) {hdl->response->push(hdl->respdata);}
 static uint _cpy_data(event_handler* hdl,cdat c,uint u) {return hdl->response->data(hdl->respdata,c,u);}
-static void _cpy_submit(event_handler* hdl,task* t,st_ptr* s) {hdl->response->submit(hdl->respdata,t,s);}
+static void _cpy_submit(event_handler* hdl,st_ptr* s) {hdl->response->submit(hdl->respdata,s);}
 
 static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop,_cpy_push,_cpy_data,_cpy_submit},0};
 

@@ -488,30 +488,20 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
 	return (length > 0);
 }
 
-uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from)
+uint st_link(task* t, st_ptr* to, st_ptr* from)
 {
 	struct _st_lkup_res rt;
 	struct _prepare_update pu = _st_prepare_update(&rt,t,to);
+	ptr* pt = _st_page_overflow(&rt,0);
 
-	// the same task -> set link
-	if(t == t_from)
-	{
-		ptr* pt = _st_page_overflow(&rt,0);
-
-		if(from->offset > 0)
-		{
-			unimplm();
-		}
-		else
-		{
-			pt->pg = from->pg;
-			pt->koffset = from->key;
-		}
-	}
-	// copy all
-	else
+	if(from->offset != 0)
 	{
 		unimplm();
+	}
+	else
+	{
+		pt->pg = from->pg;
+		pt->koffset = from->key;
 	}
 
 	if(rt.pg->pg->id)	// should we care about cleanup?
@@ -763,62 +753,11 @@ int st_scan(task* t, st_ptr* pt)
 	}
 }
 
+static uint _dont_use(void* ctx) {return -2;}
+
 int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx)
 {
-	page_wrap* pg = str->pg;
-	key* me      = GOKEY(str->pg,str->key);
-	key* nxt     = 0;
-	cdat ckey    = KDATA(me) + (str->offset >> 3);
-	uint klen;
-
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < str->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
-
-	klen = ((nxt)? nxt->offset : me->length) - str->offset;
-
-	while(1)
-	{
-		klen >>= 3;
-		if(klen > 0)
-		{
-			uint ret = fun(ctx,ckey,klen);
-			if(ret != 0)
-				return ret;
-		}
-
-		// move to next key for more data?
-		if(nxt == 0)
-			break;
-
-		// no next key! or trying to read past split?
-		if(nxt->offset < me->length && me->length != 1)
-			return -1;
-
-		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
-		ckey = KDATA(me);
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
-		}
-		else
-		{
-			klen = me->length;
-			nxt = 0;
-		}
-	}
-	return 0;
+	return st_map_st(t,str,fun,_dont_use,_dont_use,ctx);
 }
 
 static uint _mv_st(struct _st_lkup_res* rt, cdat txt, uint len)
@@ -836,7 +775,37 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 	rt.sub    = GOKEY(mv->pg,mv->key);
 	rt.diff   = mv->offset;
 
-	return st_map(t,str,_mv_st,&rt);
+	return st_map_st(t,str,_mv_st,_dont_use,_dont_use,&rt);
+}
+
+struct _st_insert
+{
+	struct _st_lkup_res rt;
+	uint no_lookup;
+};
+
+static uint _ins_st(struct _st_insert* sins, cdat txt, uint len)
+{
+	sins->rt.path = txt;
+	sins->rt.length = len << 3;
+	if(sins->no_lookup || _st_lookup(&sins->rt) == 0)
+	{
+		sins->no_lookup = 1;
+		_st_write(&sins->rt);
+	}
+	return 0;
+}
+
+uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
+{
+	struct _st_insert sins;
+	sins.rt.t      = t;
+	sins.rt.pg     = to->pg;
+	sins.rt.sub    = GOKEY(to->pg,to->key);
+	sins.rt.diff   = to->offset;
+	sins.no_lookup = 0;
+
+	return st_map_st(t,from,_mv_st,_dont_use,_dont_use,&sins);
 }
 
 int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
@@ -847,189 +816,85 @@ int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
 	rt.sub    = GOKEY(p1->pg,p1->key);
 	rt.diff   = p1->offset;
 
-	return st_map(t,p2,_mv_st,&rt);
+	return st_map_st(t,p2,_mv_st,_dont_use,_dont_use,&rt);
 }
 
-//uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
-//{
-//	struct _st_lkup_res rt;
-//	page_wrap* pg = str->pg;
-//	key* me      = GOKEY(str->pg,str->key);
-//	key* nxt     = 0;
-//	cdat ckey    = KDATA(me) + (str->offset >> 3);
-//	uint klen;
-//
-//	rt.t      = t;
-//	rt.pg     = mv->pg;
-//	rt.sub    = GOKEY(mv->pg,mv->key);
-//	rt.diff   = mv->offset;
-//
-//	if(me->sub)
-//	{
-//		nxt = GOOFF(pg,me->sub);
-//		while(nxt->offset < str->offset)
-//		{
-//			if(nxt->next == 0)
-//			{
-//				nxt = 0;
-//				break;
-//			}
-//			nxt = GOOFF(pg,nxt->next);
-//		}
-//	}
-//
-//	klen = ((nxt)? nxt->offset : me->length) - str->offset;
-//
-//	while(1)
-//	{
-//		if(klen > 1)
-//		{
-//			rt.path   = ckey;
-//			rt.length = klen;
-//
-//			if(_st_lookup(&rt) == 0)
-//				return 1;
-//		}
-//
-//		// move to next key for more data?
-//		if(nxt == 0)
-//			break;
-//
-//		// no next key! or trying to read past split?
-//		if(nxt->offset < me->length && me->length != 1)
-//			return 1;
-//
-//		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
-//		ckey = KDATA(me);
-//		if(me->sub)
-//		{
-//			nxt = GOOFF(pg,me->sub);
-//			klen = nxt->offset;
-//		}
-//		else
-//		{
-//			klen = me->length;
-//			nxt = 0;
-//		}
-//	}
-//
-//	mv->pg  = rt.pg;
-//	mv->key = (char*)rt.sub - (char*)rt.pg->pg;
-//	mv->offset = rt.diff;
-//	return 0;
-//}
-
-//static uint _ins_st(struct _st_lkup_res* rt, cdat txt, uint len)
-//{
-//	rt->path = txt;
-//	rt->length = len << 3;
-//	if(no_lookup || _st_lookup(rt) == 0)
-//	{
-//		no_lookup = 1;
-//		_st_write(&rt);
-//	}
-//}
-//
-//uint st_insert_st(task* t, st_ptr* to, st_ptr* str)
-//{
-//	struct _st_lkup_res rt;
-//	rt.t      = t;
-//	rt.pg     = to->pg;
-//	rt.sub    = GOKEY(to->pg,to->key);
-//	rt.diff   = to->offset;
-//
-//	return st_map(t,from,_mv_st,&rt);
-//}
-
-uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
+struct _ptr_stack
 {
-	struct _st_lkup_res rt;
-	page_wrap* pg = from->pg;
-	key* me      = GOKEY(from->pg,from->key);
-	key* nxt     = 0;
-	cdat ckey    = KDATA(me) + (from->offset >> 3);
-	uint klen,no_lookup = 0;
+	task* t;
+	ptr_list* head;
+	ptr_list* free;
+};
 
-	rt.t      = t;
-	rt.pg     = to->pg;
-	rt.sub    = GOKEY(to->pg,to->key);
-	rt.diff   = to->offset;
+static uint _ptr_pop(void* ctx)
+{
+	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
+	ptr_list* elm = stk->head;
+	if(elm->link == 0)
+		return 1;
+	stk->head = elm->link;
+	elm->link = stk->free;
+	stk->free = elm;
+	return 0;
+}
 
-	if(me->sub)
+static uint _ptr_push(void* ctx)
+{
+	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
+	ptr_list* elm;
+
+	if(stk->free == 0)
+		elm = (ptr_list*)tk_alloc(stk->t,sizeof(ptr_list));
+	else
 	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < from->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
+		elm = stk->free;
+		stk->free = elm->link;
 	}
+	elm->pt = stk->head->pt;
+	elm->link = stk->head;
+	stk->head = elm;
+	return 0;
+}
 
-	klen = ((nxt)? nxt->offset : me->length) - from->offset;
-
-	while(1)
-	{
-		if(klen > 1)
-		{
-			rt.path   = ckey;
-			rt.length = klen;
-
-			if(no_lookup || _st_lookup(&rt) == 0)
-			{
-				no_lookup = 1;
-				_st_write(&rt);
-			}
-		}
-
-		// move to next key for more data?
-		if(nxt == 0)
-			break;
-
-		// no next key! or trying to read past split?
-		if(nxt->offset < me->length && me->length != 1)
-			return 1;
-
-		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
-		ckey = KDATA(me);
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
-		}
-		else
-		{
-			klen = me->length;
-			nxt = 0;
-		}
-	}
-
-	to->pg  = rt.pg;
-	to->key = (char*)rt.sub - (char*)rt.pg->pg;
-	to->offset = rt.diff;
-	return no_lookup;
+static uint _cpy_dat(void* ctx, cdat dat, uint len)
+{
+	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
+	return st_insert(stk->t,&stk->head->pt,dat,len);
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
 {
-	return 0;
+	struct _ptr_stack stk;
+	stk.t = t;
+	stk.free = 0;
+	stk.head = (ptr_list*)tk_alloc(t,sizeof(ptr_list));
+	stk.head->link = 0;
+	stk.head->pt = *to;
+
+	return st_map_st(t,from,_cpy_dat,_ptr_push,_ptr_pop,&stk);
 }
 
-uint st_trace(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
+struct _st_trace_ctx
 {
+	struct _st_trace_ctx* prev;
+	key* me;
+	key* nxt;
+};
+
+uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
+{
+	struct _st_trace_ctx* stack = 0;
+	struct _st_trace_ctx* free = 0;
 	page_wrap* pg = from->pg;
 	key* me      = GOKEY(from->pg,from->key);
 	key* nxt     = 0;
-	cdat ckey    = KDATA(me) + (from->offset >> 3);
-	uint klen;
+	uint ret = 0, offset = from->offset;
 
+	// deal with offset
 	if(me->sub)
 	{
 		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < from->offset)
+		while(nxt->offset < offset)
 		{
 			if(nxt->next == 0)
 			{
@@ -1040,154 +905,74 @@ uint st_trace(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(voi
 		}
 	}
 
-	klen = ((nxt)? nxt->offset : me->length) - from->offset;
-
 	while(1)
 	{
+		uint klen = (nxt != 0)? nxt->offset : me->length;
 		klen >>= 3;
-		if(klen > 0)
+		klen -= offset >> 3;
+		if(klen != 0)
 		{
-			uint ret = dat(ctx,ckey,klen);
-			if(ret != 0)
-				return ret;
+			cdat ckey = KDATA(me) + (offset >> 3);
+			if(ret = dat(ctx,ckey,klen))
+				break;
 		}
 
-		// move to next key for more data?
 		if(nxt == 0)
-			return 0;
-
-		if(nxt->offset < me->length && me->length != 1)
 		{
-			uint ret = push(ctx);
-			if(ret != 0)
-				return ret;
+			struct _st_trace_ctx* stnxt;
+			if(stack == 0)
+				break;
 
-			ret = st_trace(t,from,dat,push,pop,ctx);
-			if(ret != 0)
-				return ret;
+			if(ret = pop(ctx))
+				break;
 
-			ret = pop(ctx);
-			if(ret != 0)
-				return ret;
+			// pop-context (nxt,me)
+			me = stack->me;
+			nxt = stack->nxt;
+			stnxt = stack;
+			stack = stack->prev;
 
-			ckey += nxt->offset >> 3;
-			klen = nxt->offset;
+			stnxt->prev = free;
+			free = stnxt;
 
-			if(nxt->next == 0)
-			{
-				if(klen < me->length)
-					return dat(ctx,ckey,(me->length - klen) >> 3);
-
-				return 0;
-			}
-
-			nxt = GOOFF(pg,me->next);
-			klen = (nxt->offset - klen) >> 3;
-			if(klen != 0)
-			{
-				ret = dat(ctx,ckey,klen);
-				if(ret)
-					return ret;
-			}
-		}
-
-		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
-		ckey = KDATA(me);
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
+			offset = nxt->offset;
+			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
 		}
 		else
 		{
-			klen = me->length;
-			nxt = 0;
+			if(nxt->offset < me->length && me->length != 1)
+			{
+				struct _st_trace_ctx* stnxt;
+
+				if(ret = push(ctx))
+					break;
+
+				// push-context (nxt,me)
+				if(free == 0)
+					stnxt = (struct _st_trace_ctx*)tk_alloc(t,sizeof(struct _st_trace_ctx));
+				else
+				{
+					stnxt = free;
+					free = free->prev;
+				}
+
+				stnxt->me = me;
+				stnxt->nxt = nxt;
+				stnxt->prev = stack;
+				stack = stnxt;
+			}
+
+			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;
+			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
+			offset = 0;
 		}
 	}
+
+	//TODO free stack-elements
+	return ret;
 }
 
 /*
-// should use repeated calls to st_get(...) with own buffer
-char* st_get_all(task* t, st_ptr* pt, uint* length)
-{
-	char* buffer  = 0;
-	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt      = 0;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
-	uint rlength  = 0;
-	uint boffset  = 0;
-	uint klen;
-
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < pt->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
-
-	klen = ((nxt)? nxt->offset : me->length) - pt->offset;
-
-	while(1)
-	{
-		klen >>= 3;
-		if(klen > 0)
-		{
-			uint max = klen;
-			//for(klen = 0; klen < max && ckey[klen]; klen++);	// find zero-term
-
-			if(klen + boffset > rlength)
-			{
-				rlength += klen > GET_ALL_BUFFER? klen : GET_ALL_BUFFER;
-				buffer = (char*)tk_realloc(t,buffer,rlength);
-			}
-
-			memcpy(buffer + boffset,ckey,klen);
-			boffset += klen;
-
-			if(max != klen)	// stop at zero-term
-			{
-				pt->pg = pg;
-				pt->key = (uint)me - (uint)pg;
-				pt->offset = klen << 3;
-				*length = boffset;
-				return buffer;
-			}
-		}
-
-		// no next key! or trying to read past split?
-		if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
-		{
-			pt->pg = pg;
-			pt->key = (uint)me - (uint)pg->pg;
-			pt->offset = nxt? nxt->offset : me->length;
-			*length = boffset;
-			return buffer;
-		}
-
-		// move to next key for more data
-		me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
-		ckey = KDATA(me);
-		if(me->sub)
-		{
-			nxt = GOOFF(pg,me->sub);
-			klen = nxt->offset;
-		}
-		else
-		{
-			klen = me->length;
-			nxt = 0;
-		}
-	}
-}
-
 // ------ USED? ----------------------
 
 // FIXME 

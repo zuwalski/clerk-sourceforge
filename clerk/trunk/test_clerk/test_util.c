@@ -746,7 +746,7 @@ static uint _data2(event_handler* v,cdat c,uint u)
 	printf("%.*s",u,c);
 	return 0;
 }
-static void _submit2(event_handler* v,task* t,st_ptr* st)
+static void _submit2(event_handler* v,st_ptr* st)
 {
 	printf(" + submit2: ");
 }

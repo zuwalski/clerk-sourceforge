@@ -540,6 +540,57 @@ void test_task_c_filepager()
 	tk_drop_task(t);
 }
 
+static uint dat(void* ctx,cdat dat,uint len)
+{
+	printf("dat %d %.*s\n",len,len,dat);
+	return 0;
+}
+
+static uint push(void* ctx)
+{
+	puts("push");
+	return 0;
+}
+
+static uint pop(void* ctx)
+{
+	puts("pop");
+	return 0;
+}
+
+void test_st_trace()
+{
+	st_ptr root,tmp;
+	task* t;
+
+	page_size = 0;
+	resize_count = 0;
+	overflow_size = 0;
+
+	//  new task
+	t = tk_create_task(0,0);
+
+	// should not happen.. but
+	ASSERT(t);
+
+	ASSERT(st_empty(t,&root) == 0);
+
+	tmp = root;
+	st_insert(t,&tmp,"aaa",4);
+	tmp = root;
+	st_insert(t,&tmp,"abb",4);
+	tmp = root;
+	st_insert(t,&tmp,"aac",4);
+	tmp = root;
+	st_insert(t,&tmp,"abc",4);
+	tmp = root;
+	st_insert(t,&tmp,"aaa\0a",6);	// continue 1
+
+	st_map_st(t,&root,dat,push,pop,0);
+
+	tk_drop_task(t);
+}
+
 void heap_check()
 {
 ///*
@@ -567,6 +618,8 @@ int heapstatus = _heapchk();
 int main(int argc, char* argv[])
 {
 	test_struct_c();
+
+	test_st_trace();
 
 	//heap_check();
 

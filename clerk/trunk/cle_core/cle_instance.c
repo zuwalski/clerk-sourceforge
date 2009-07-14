@@ -766,7 +766,7 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		pt = obj;
 		st_insert(app_instance,&pt,HEAD_PROPERTY,HEAD_SIZE);
 		st_insert(app_instance,&pt,(cdat)&header.level,4);
-		st_link(app_instance,&pt,app_instance,&defaultvalue);
+		st_link(app_instance,&pt,&defaultvalue);
 	}
 
 	header.next_property_id++;

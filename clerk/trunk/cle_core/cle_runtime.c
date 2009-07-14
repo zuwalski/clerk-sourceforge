@@ -811,7 +811,7 @@ static void _rt_run(struct _rt_invocation* inv)
 					break;
 				case STACK_RO_PTR:
 					// link
-					st_link(inv->t,&sp[1].single_ptr_w,inv->t,&sp->single_ptr);
+					st_link(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
 					break;
 				case STACK_PTR:
 					// copy 

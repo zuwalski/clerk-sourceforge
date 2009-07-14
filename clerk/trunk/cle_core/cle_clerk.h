@@ -83,11 +83,13 @@ int st_compare_st(task* t, st_ptr* to, st_ptr* from);
 
 int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx);
 
+uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx);
+
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from);
 
 //if task's are the same then create a simple pointer
 //not same: copy from one task to the other
-uint st_link(task* t, st_ptr* to, task* t_from, st_ptr* from);
+uint st_link(task* t, st_ptr* to, st_ptr* from);
 
 uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length);
 

@@ -73,14 +73,14 @@ static void _data(event_handler* v,cdat c,uint u)
 {
 	v->response->data(v->respdata,c,u);
 }
-static void _submit(event_handler* v,task* t,st_ptr* st)
+static void _submit(event_handler* v,st_ptr* st)
 {
 	//char buffer[50];
 	//int size = sprintf_s(buffer,sizeof(buffer)," - submit: %p - ",v->thehandler);
 //	v->response->push(v->respdata);
 	//v->response->data(v->respdata,buffer,size);
 //	v->response->pop(v->respdata);
-	v->response->submit(v->respdata,t,st);
+	v->response->submit(v->respdata,st);
 }
 
 // testhandler w any argument
@@ -108,7 +108,7 @@ static void _data2(event_handler* v,cdat c,uint u)
 {
 //	printf("%.*s",u,c);
 }
-static void _submit2(event_handler* v,task* t,st_ptr* st)
+static void _submit2(event_handler* v,st_ptr* st)
 {
 //	printf(" + submit2: ");
 }
