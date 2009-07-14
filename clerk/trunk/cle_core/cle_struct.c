@@ -859,7 +859,8 @@ static uint _ptr_push(void* ctx)
 static uint _cpy_dat(void* ctx, cdat dat, uint len)
 {
 	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
-	return st_insert(stk->t,&stk->head->pt,dat,len);
+	st_insert(stk->t,&stk->head->pt,dat,len);
+	return 0;
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from)

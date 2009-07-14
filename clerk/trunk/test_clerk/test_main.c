@@ -586,7 +586,17 @@ void test_st_trace()
 	tmp = root;
 	st_insert(t,&tmp,"aaa\0a",6);	// continue 1
 
-	st_map_st(t,&root,dat,push,pop,0);
+//	st_map_st(t,&root,dat,push,pop,0);
+
+	ASSERT(st_empty(t,&tmp) == 0);
+	
+	ASSERT(st_copy_st(t,&tmp,&root) == 0);
+
+	ASSERT(st_exsist(t,&tmp,"aaa",4));
+	ASSERT(st_exsist(t,&tmp,"abb",4));
+	ASSERT(st_exsist(t,&tmp,"aac",4));
+	ASSERT(st_exsist(t,&tmp,"abc",4));
+	ASSERT(st_exsist(t,&tmp,"aaa\0a",6));
 
 	tk_drop_task(t);
 }
