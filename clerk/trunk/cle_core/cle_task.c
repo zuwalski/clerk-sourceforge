@@ -183,6 +183,11 @@ void tk_dup_ptr(st_ptr* to, st_ptr* from)
 	to->pg->refcount++;
 }
 
+void tk_free_ptr(st_ptr* ptr)
+{
+	tk_unref(0,ptr->pg);
+}
+
 void tk_unref(task* t, page_wrap* pg)
 {
 	pg->refcount--;

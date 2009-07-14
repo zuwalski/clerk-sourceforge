@@ -23,6 +23,15 @@
 *	Events/messages are "pumped" in through the exported set of functions
 */
 
+/* TODO: 
+		handle end: make sure all receive the event
+		async handlers should have preprocessed input from req-handlers
+		(async are not just toplevel)
+		debugger id in event-string e.g. path.path[#objid][@debuggerId]
+		if adressing specific object (#oid) -> only perfect match on event
+		kill submit or rework st_link etc.
+*/
+
 // error-messages
 static char input_underflow[] = "stream:input underflow";
 static char input_incomplete[] = "stream:input incomplete";
@@ -80,7 +89,6 @@ struct _ipt_internal
 };
 
 // nil output-handler
-
 static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
 static uint _nil2x(void* v,cdat c,uint u){return 0;}
@@ -146,6 +154,7 @@ void cle_standard_submit(event_handler* hdl, task* t_from, st_ptr* from)
 
 // TODO: could use up alot of RAM for no reason - write better streamer
 // FAIL: data-leaf can not have null-char !
+// task* t - unused???
 void cle_stream_submit_beta(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt)
 {
 	if(st_is_empty(pt) == 0)

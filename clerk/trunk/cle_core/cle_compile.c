@@ -173,11 +173,11 @@ struct _cmp_buildin
 
 static const struct _cmp_buildin buildins[] = {
 	{"void",OP_NULL,0,1,255},			// throw away values
-	{"get",OP_NULL,0,0,1},				// recieve data-structure from event-queue
+	{"get",OP_NULL,0,1,0},				// recieve data-structure from event-queue
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
-	{"str",OP_2STR,0,1,255},
+	{"str",OP_2STR,0,255,1},
 	{0,0,0,0,0}	// STOP
 };
 
