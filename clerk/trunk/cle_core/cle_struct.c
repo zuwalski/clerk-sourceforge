@@ -553,29 +553,36 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	return 0;
 }
 
+static key* _trace_nxt(st_ptr* pt)
+{
+	key* nxt;
+	key* me = GOKEY(pt->pg,pt->key);
+	// deal with offset
+	if(me->sub == 0)
+		return 0;
+
+	nxt = GOOFF(pt->pg,me->sub);
+	while(nxt->offset < pt->offset)
+	{
+		if(nxt->next == 0)
+			return 0;
+
+		nxt = GOOFF(pt->pg,nxt->next);
+	}
+	return nxt;
+}
+
 int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;
 	key* me      = GOKEY(pt->pg,pt->key);
-	key* nxt     = 0;
+	key* nxt;
 	cdat ckey    = KDATA(me) + (pt->offset >> 3);
 	uint offset  = pt->offset;
 	uint klen;
 	int read     = 0;
 
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
+	nxt = _trace_nxt(pt);
 
 	klen = ((nxt)? nxt->offset : me->length) - offset;
 
@@ -652,23 +659,11 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 {
 	page_wrap* pg = pt->pg;
 	key* me       = GOKEY(pt->pg,pt->key);
-	key* nxt      = 0;
+	key* nxt;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint klen;
 
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < pt->offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
+	nxt = _trace_nxt(pt);
 
 	klen = (nxt)? nxt->offset : me->length;
 
@@ -819,60 +814,16 @@ int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
 	return st_map_st(t,p2,_mv_st,_dont_use,_dont_use,&rt);
 }
 
-struct _ptr_stack
+static uint _cpy_dat(task* t, st_ptr* to, cdat dat, uint len)
 {
-	task* t;
-	ptr_list* head;
-	ptr_list* free;
-};
-
-static uint _ptr_pop(void* ctx)
-{
-	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
-	ptr_list* elm = stk->head;
-	if(elm->link == 0)
-		return 1;
-	stk->head = elm->link;
-	elm->link = stk->free;
-	stk->free = elm;
-	return 0;
-}
-
-static uint _ptr_push(void* ctx)
-{
-	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
-	ptr_list* elm;
-
-	if(stk->free == 0)
-		elm = (ptr_list*)tk_alloc(stk->t,sizeof(ptr_list));
-	else
-	{
-		elm = stk->free;
-		stk->free = elm->link;
-	}
-	elm->pt = stk->head->pt;
-	elm->link = stk->head;
-	stk->head = elm;
-	return 0;
-}
-
-static uint _cpy_dat(void* ctx, cdat dat, uint len)
-{
-	struct _ptr_stack* stk = (struct _ptr_stack*)ctx;
-	st_insert(stk->t,&stk->head->pt,dat,len);
+	st_insert(t,to,dat,len);
 	return 0;
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
 {
-	struct _ptr_stack stk;
-	stk.t = t;
-	stk.free = 0;
-	stk.head = (ptr_list*)tk_alloc(t,sizeof(ptr_list));
-	stk.head->link = 0;
-	stk.head->pt = *to;
-
-	return st_map_st(t,from,_cpy_dat,_ptr_push,_ptr_pop,&stk);
+	st_ptr _to = *to;
+	return st_map_ptr(t,from,&_to,_cpy_dat);
 }
 
 struct _st_trace_ctx
@@ -882,29 +833,45 @@ struct _st_trace_ctx
 	key* nxt;
 };
 
+struct _st_map_stack
+{
+	struct _st_trace_ctx* stack;
+	struct _st_trace_ctx* free;
+};
+
+static void _push_map_stack(task* t, struct _st_map_stack* stk, const uint plussize)
+{
+	struct _st_trace_ctx* stnxt;
+	if(stk->free == 0)
+		stnxt = (struct _st_trace_ctx*)tk_alloc(t,sizeof(struct _st_trace_ctx) + plussize);
+	else
+	{
+		stnxt = stk->free;
+		stk->free = stk->free->prev;
+	}
+
+	stnxt->prev = stk->stack;
+	stk->stack = stnxt;
+}
+
+static void _pop_map_stack(struct _st_map_stack* stk)
+{
+	struct _st_trace_ctx* stnxt = stk->stack;
+	stk->stack = stnxt->prev;
+	stnxt->prev = stk->free;
+	stk->free = stnxt;
+}
+
 uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
 {
-	struct _st_trace_ctx* stack = 0;
-	struct _st_trace_ctx* free = 0;
+	struct _st_map_stack stk;
 	page_wrap* pg = from->pg;
-	key* me      = GOKEY(from->pg,from->key);
-	key* nxt     = 0;
+	key* me = GOKEY(from->pg,from->key);
+	key* nxt;
 	uint ret = 0, offset = from->offset;
 
-	// deal with offset
-	if(me->sub)
-	{
-		nxt = GOOFF(pg,me->sub);
-		while(nxt->offset < offset)
-		{
-			if(nxt->next == 0)
-			{
-				nxt = 0;
-				break;
-			}
-			nxt = GOOFF(pg,nxt->next);
-		}
-	}
+	stk.free = stk.stack = 0;
+	nxt = _trace_nxt(from);
 
 	while(1)
 	{
@@ -920,21 +887,13 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 
 		if(nxt == 0)
 		{
-			struct _st_trace_ctx* stnxt;
-			if(stack == 0)
+			if(stk.stack == 0 || (ret = pop(ctx)))
 				break;
 
-			if(ret = pop(ctx))
-				break;
+			me = stk.stack->me;
+			nxt = stk.stack->nxt;
 
-			// pop-context (nxt,me)
-			me = stack->me;
-			nxt = stack->nxt;
-			stnxt = stack;
-			stack = stack->prev;
-
-			stnxt->prev = free;
-			free = stnxt;
+			_pop_map_stack(&stk);
 
 			offset = nxt->offset;
 			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
@@ -943,24 +902,72 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 		{
 			if(nxt->offset < me->length && me->length != 1)
 			{
-				struct _st_trace_ctx* stnxt;
-
 				if(ret = push(ctx))
 					break;
 
-				// push-context (nxt,me)
-				if(free == 0)
-					stnxt = (struct _st_trace_ctx*)tk_alloc(t,sizeof(struct _st_trace_ctx));
-				else
-				{
-					stnxt = free;
-					free = free->prev;
-				}
+				_push_map_stack(t,&stk,0);
 
-				stnxt->me = me;
-				stnxt->nxt = nxt;
-				stnxt->prev = stack;
-				stack = stnxt;
+				stk.stack->me = me;
+				stk.stack->nxt = nxt;
+			}
+
+			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;
+			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
+			offset = 0;
+		}
+	}
+
+	//TODO free stack-elements
+	return ret;
+}
+
+uint st_map_ptr(task* t, st_ptr* from, st_ptr* to, uint(*dat)(task*,st_ptr*,cdat,uint))
+{
+	struct _st_map_stack stk;
+	page_wrap* pg = from->pg;
+	key* me = GOKEY(from->pg,from->key);
+	key* nxt;
+	uint ret = 0, offset = from->offset;
+
+	stk.free = stk.stack = 0;
+	nxt = _trace_nxt(from);
+
+	while(1)
+	{
+		uint klen = (nxt != 0)? nxt->offset : me->length;
+		klen >>= 3;
+		klen -= offset >> 3;
+		if(klen != 0)
+		{
+			cdat ckey = KDATA(me) + (offset >> 3);
+			if(ret = dat(t,to,ckey,klen))
+				break;
+		}
+
+		if(nxt == 0)
+		{
+			if(stk.stack == 0)
+				break;
+
+			me = stk.stack->me;
+			nxt = stk.stack->nxt;
+			// pop ptr
+			*to = *((st_ptr*)(stk.stack + 1));
+
+			_pop_map_stack(&stk);
+
+			offset = nxt->offset;
+			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
+		}
+		else
+		{
+			if(nxt->offset < me->length && me->length != 1)
+			{
+				_push_map_stack(t,&stk,sizeof(st_ptr));
+
+				stk.stack->me = me;
+				stk.stack->nxt = nxt;
+				*((st_ptr*)(stk.stack + 1)) = *to;
 			}
 
 			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;

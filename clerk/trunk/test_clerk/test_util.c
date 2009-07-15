@@ -240,6 +240,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 
 void st_prt_distribution(st_ptr* pt, task* tsk)
 {
+	page_wrap* pw;
 	int i;
 
 	t = tsk;
@@ -265,6 +266,45 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 	printf("zero offset: %d\n",offset_zero);
 	printf("key count: %d\n",key_count);
 	printf("ptr count: %d\n",ptr_count);
+
+	{
+		int pages_written = 0;
+		int ovf_pages = 0;
+		int ovf_used = 0;
+		int ovf_free = 0;
+		int stack_pages = 0;
+
+		pw = t->stack;
+		while(pw)
+		{
+			stack_pages++;
+			if(pw->ovf != 0)
+			{
+				ovf_pages++;
+				ovf_used += pw->ovf->used;
+				ovf_free += pw->ovf->size - pw->ovf->used;
+				if(pw->ovf->size > OVERFLOW_GROW)
+				{
+					printf("OVF size: %d used: %d\n",pw->ovf->size,pw->ovf->used);
+				}
+			}
+
+			pw = pw->next;
+		}
+
+		pw = t->wpages;
+		while(pw)
+		{
+			pages_written++;
+			pw = pw->next;
+		}
+
+		printf("pages_written: %d\n",pages_written);
+		printf("stack_pages: %d\n",stack_pages);
+		printf("ovf_pages: %d\n",ovf_pages);
+		printf("ovf_used: %d\n",ovf_used);
+		printf("ovf_free: %d\n",ovf_free);
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////

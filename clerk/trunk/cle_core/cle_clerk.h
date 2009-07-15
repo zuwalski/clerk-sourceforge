@@ -85,6 +85,8 @@ int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx);
 
 uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx);
 
+uint st_map_ptr(task* t, st_ptr* from, st_ptr* to, uint(*dat)(task*,st_ptr*,cdat,uint));
+
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from);
 
 //if task's are the same then create a simple pointer

@@ -385,6 +385,54 @@ void tk_drop_task(task* t)
 	}
 }
 
+// ---- commit v2 -------------------------------
+
+struct _pc_ctx
+{
+	page* dest;
+	key*  know;
+};
+
+static uint _pc_dat(void* ctx, cdat dat, uint len)
+{
+	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
+	if(pctx->know == 0)
+	{
+		pctx->dest->used += pctx->dest->used & 1;
+		pctx->know = (key*)((char*)pctx->dest + pctx->dest->used);
+		pctx->dest->used += sizeof(key);
+		memset(pctx->know,0,sizeof(key));
+	}
+
+	memcpy((char*)pctx->dest + pctx->dest->used,dat,len);
+	pctx->dest->used += len;
+	pctx->know->length += len << 3;
+	return 0;
+}
+
+static uint _pc_push(void* ctx)
+{
+	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
+	return 0;
+}
+
+static uint _pc_pop(void* ctx)
+{
+	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
+	pctx->know = 0;
+	return 0;
+}
+
+static uint _tk_page_copy(task* t, st_ptr* from, page* dest)
+{
+	struct _pc_ctx ctx;
+	ctx.dest = dest;
+	ctx.know = 0;
+
+	dest->used = sizeof(page);
+	return st_map_st(t,from,_pc_dat,_pc_push,_pc_pop,&ctx);
+}
+
 // ---- commit ----------------------------------
 struct _tk_create
 {
