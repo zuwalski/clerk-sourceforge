@@ -1,0 +1,51 @@
+/* 
+    Clerk application and storage engine.
+    Copyright (C) 2008  Lars Szuwalski
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#ifndef __CLE_TEST_H__
+#define __CLE_TEST_H__
+
+#include "../cle_core/cle_clerk.h"
+#include "../cle_core/cle_struct.h"
+#include "../cle_core/backends/cle_backends.h"
+#include "../cle_core/cle_stream.h"
+
+#define HIGH_ITERATION_COUNT 1000000
+
+#define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
+
+void st_prt_page(st_ptr* pt);
+
+void st_prt_distribution(st_ptr* pt, task* tsk);
+
+void _tk_print(page* pg);
+
+int rt_do_read(task* t, st_ptr root);
+
+void _rt_dump_function(task* t, st_ptr* root);
+
+void test_stream_c();
+
+void test_compile_c();
+
+void test_instance_c();
+
+void test_runtime_c();
+
+extern cle_pipe _test_pipe_stdout;
+
+#endif
