@@ -270,13 +270,6 @@ static void _st_write(struct _st_lkup_res* rt)
 	
 	rt->sub  = newkey;
 	rt->diff = newkey->length;
-
-//#ifdef DEBUG
-	//if(rt->pg->pg->used > rt->pg->pg->size)
-	//{
-	//	newkey = newkey;
-	//}
-//#endif
 }
 
 /* Interface-functions */
