@@ -227,8 +227,6 @@ void _tk_stack_new(task* t)
 	tmp->ovf = 0;
 	tmp->pg = pg;
 	t->stack = tmp;
-
-	page_size++;	// TEST
 }
 
 void* tk_alloc(task* t, uint size)
@@ -256,8 +254,6 @@ void* tk_alloc(task* t, uint size)
 			// push behind (its full)
 			tmp->next = t->stack->next;
 			t->stack->next = tmp;
-
-			page_size++;	// TEST
 
 			return (void*)((char*)pg + sizeof(page));
 		}
@@ -387,10 +383,20 @@ void tk_drop_task(task* t)
 
 // ---- commit v2 -------------------------------
 
+// ---- pagecopy ----
 struct _pc_ctx
 {
 	page* dest;
 	key*  know;
+	key*  sub;
+	ushort suboffset;
+	ushort koff;
+	ushort indx;
+	struct
+	{
+		ushort koff;
+		ushort offset;
+	} stack[64];
 };
 
 static uint _pc_dat(void* ctx, cdat dat, uint len)
@@ -398,39 +404,101 @@ static uint _pc_dat(void* ctx, cdat dat, uint len)
 	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
 	if(pctx->know == 0)
 	{
-		pctx->dest->used += pctx->dest->used & 1;
-		pctx->know = (key*)((char*)pctx->dest + pctx->dest->used);
+		key* k;
+		pctx->dest->used += pctx->dest->used & 1;	// align
+		pctx->koff = pctx->dest->used;				// record last key
+		k = pctx->know = (key*)((char*)pctx->dest + pctx->dest->used);	// new key
 		pctx->dest->used += sizeof(key);
-		memset(pctx->know,0,sizeof(key));
+
+		k->offset = k->length = k->next = k->sub = 0;
+
+		if(pctx->sub != 0)
+		{
+			uint a = *(KDATA(pctx->sub) + pctx->suboffset) ^ *dat;
+			// fold 1's after msb
+			a |= (a >> 1);
+			a |= (a >> 2);
+			a |= (a >> 4);
+			// lzc(a)
+			a -= ((a >> 1) & 0x55);
+			a = (((a >> 2) & 0x33) + (a & 0x33));
+			a = (((a >> 4) + a) & 0x0f);
+
+			k->offset = a + pctx->suboffset;
+			k->next = pctx->sub->sub;
+			pctx->sub->sub = pctx->koff;
+		}
 	}
 
 	memcpy((char*)pctx->dest + pctx->dest->used,dat,len);
-	pctx->dest->used += len;
 	pctx->know->length += len << 3;
+	pctx->dest->used += len;
 	return 0;
 }
 
 static uint _pc_push(void* ctx)
 {
 	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
+	pctx->stack[pctx->indx].offset = (pctx->know == 0)? 0 : pctx->know->length;
+	pctx->stack[pctx->indx].koff = pctx->koff;
+	pctx->indx++;
 	return 0;
 }
 
 static uint _pc_pop(void* ctx)
 {
 	struct _pc_ctx* pctx = (struct _pc_ctx*)ctx;
+	pctx->sub = (key*)((char*)pctx->dest + pctx->stack[pctx->indx].koff);
+	pctx->suboffset = pctx->stack[pctx->indx].offset;
 	pctx->know = 0;
+	pctx->indx--;
 	return 0;
 }
 
-static uint _tk_page_copy(task* t, st_ptr* from, page* dest)
+static void _tk_copy2newpage(task* t, st_ptr* from, page* dest)
 {
+	cle_pageid newpageid;
 	struct _pc_ctx ctx;
 	ctx.dest = dest;
 	ctx.know = 0;
-
+	ctx.indx = 0;
+	ctx.sub  = 0;
 	dest->used = sizeof(page);
-	return st_map_st(t,from,_pc_dat,_pc_push,_pc_pop,&ctx);
+
+	// copy content
+	st_map_st(t,from,_pc_dat,_pc_push,_pc_pop,&ctx);
+
+	// write page
+	newpageid = t->ps->new_page(t->psrc_data,dest);
+
+	// cut off 'from' -> insert pointer to new page
+}
+// ---- measure ----
+struct _ms_ctx
+{
+	uint one;
+};
+
+static uint _ms_dat(void* p, cdat dat, uint len)
+{
+	struct _ms_ctx* ctx = (struct _ms_ctx*)p;
+	return 0;
+}
+static uint _ms_pop(void* p)
+{
+	struct _ms_ctx* ctx = (struct _ms_ctx*)p;
+	return 0;
+}
+static uint _ms_push(void* p)
+{
+	struct _ms_ctx* ctx = (struct _ms_ctx*)p;
+	return 0;
+}
+static void _tk_measure_2(task* t, st_ptr* from)
+{
+	struct _ms_ctx ctx;
+	
+	st_map_st(t,from,_ms_dat,_ms_push,_ms_pop,&ctx);
 }
 
 // ---- commit ----------------------------------

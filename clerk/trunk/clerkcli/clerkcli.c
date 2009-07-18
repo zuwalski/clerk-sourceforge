@@ -26,11 +26,6 @@ void unimplm()
 	exit(-1);
 }
 
-uint page_size;
-uint resize_count;
-uint overflow_size;
-
-
 int main(int argc, char* argv[])
 {
 	return 0;

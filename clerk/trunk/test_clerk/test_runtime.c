@@ -96,9 +96,6 @@ void test_runtime_c()
 
 	// setup
 	puts("\nRunning test_runtime_c\n");
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
 
 	//  new task
 	t = tk_create_task(psource,pdata);
@@ -209,7 +206,7 @@ void test_runtime_c()
 	}
 	stop = clock();
 
-	printf("\n\npagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+//	printf("\n\npagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	printf("\nRuntimeTest. Time %d\n\n",stop - start);
 }
 

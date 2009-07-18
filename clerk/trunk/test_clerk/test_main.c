@@ -429,7 +429,7 @@ void test_task_c()
 	// destroy
 	it_dispose(t,&it);
 
-	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+//	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);
 }
@@ -451,10 +451,6 @@ void test_task_c_filepager()
 	_unlink(testdbfilename);
 	
 	pdata = util_create_filepager(testdbfilename);
-
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
 
 	//  new task
 	t = tk_create_task(psource,pdata);
@@ -498,7 +494,7 @@ void test_task_c_filepager()
 	// destroy
 	it_dispose(t,&it);
 
-	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+//	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	// commit!
 	start = clock();
@@ -535,7 +531,7 @@ void test_task_c_filepager()
 	// destroy
 	it_dispose(t,&it);
 
-	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+//	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);
 }

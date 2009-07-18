@@ -49,9 +49,6 @@ void test_instance_c()
 
 	// setup
 	puts("\nRunning test_instance_c\n");
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
 
 	st_empty(t,&root);
 	st_empty(t,&name);

@@ -114,8 +114,6 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		ovf->used = 16;
 
 		rt->pg->ovf = ovf;
-
-		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 	else if(ovf->used == ovf->size)	/* resize overflow-block */
 	{
@@ -132,9 +130,6 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 		/* rebuild prev-pointer in (possibly) new ovf */
 		if(prev_offset)
 			rt->prev = (key*)((char*)ovf + prev_offset);
-
-		resize_count++;	// TEST
-		overflow_size += OVERFLOW_GROW;	// TEST
 	}
 
 	// +1 make sure it can be aligned as well
@@ -868,7 +863,7 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 
 	while(1)
 	{
-		uint klen = (nxt != 0)? nxt->offset : me->length;
+		uint klen = (nxt != 0)? (nxt->offset + 7): (me->length + 6);
 		klen >>= 3;
 		klen -= offset >> 3;
 		if(klen != 0)
@@ -904,6 +899,7 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 				stk.stack->nxt = nxt;
 			}
 
+			// TODO callback on pointers
 			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;
 			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 			offset = 0;

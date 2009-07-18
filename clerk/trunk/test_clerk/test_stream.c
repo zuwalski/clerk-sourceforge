@@ -155,9 +155,6 @@ void test_stream_c()
 
 	// setup
 	puts("\nRunning test_stream_c\n");
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
 
 	handler1.input = _test_pipe;
 	handler1.systype = SYNC_REQUEST_HANDLER;

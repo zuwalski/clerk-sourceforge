@@ -152,8 +152,4 @@ void* tk_push_frame(task* t, void* f);
 
 void unimplm();
 
-extern uint page_size;
-extern uint resize_count;
-extern uint overflow_size;
-
 #endif
