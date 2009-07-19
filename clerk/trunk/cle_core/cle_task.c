@@ -457,7 +457,6 @@ static uint _pc_pop(void* ctx)
 
 static void _tk_copy2newpage(task* t, st_ptr* from, page* dest)
 {
-	cle_pageid newpageid;
 	struct _pc_ctx ctx;
 	ctx.dest = dest;
 	ctx.know = 0;
@@ -467,21 +466,40 @@ static void _tk_copy2newpage(task* t, st_ptr* from, page* dest)
 
 	// copy content
 	st_map_st(t,from,_pc_dat,_pc_push,_pc_pop,&ctx);
-
-	// write page
-	newpageid = t->ps->new_page(t->psrc_data,dest);
-
-	// cut off 'from' -> insert pointer to new page
 }
 // ---- measure ----
+#define MS_SIZE_ELEMENTS 32
+struct _ms_size
+{
+	struct _ms_size* prev;
+	ulong size[MS_SIZE_ELEMENTS];
+};
 struct _ms_ctx
 {
-	uint one;
+	task* t;
+	struct _ms_size* top;
+	ulong next;
+	ulong hsize;
+	ulong asize;
 };
 
 static uint _ms_dat(void* p, cdat dat, uint len)
 {
 	struct _ms_ctx* ctx = (struct _ms_ctx*)p;
+	if(ctx->top == 0 || ctx->next == MS_SIZE_ELEMENTS)
+	{
+		struct _ms_size* top = (struct _ms_size*)tk_alloc(ctx->t,sizeof(struct _ms_size));
+		top->prev = ctx->top;
+		ctx->top = top;
+		ctx->next = 0;
+	}
+
+	if(len < ctx->hsize)
+		ctx->top->size[ctx->next++] = len;
+	else
+	{
+		// large-key
+	}
 	return 0;
 }
 static uint _ms_pop(void* p)
@@ -497,6 +515,10 @@ static uint _ms_push(void* p)
 static void _tk_measure_2(task* t, st_ptr* from)
 {
 	struct _ms_ctx ctx;
+	ctx.hsize = from->pg->pg->size >> 1;
+	ctx.next = 0;
+	ctx.top = 0;
+	ctx.t = t;
 	
 	st_map_st(t,from,_ms_dat,_ms_push,_ms_pop,&ctx);
 }
