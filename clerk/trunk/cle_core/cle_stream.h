@@ -122,4 +122,11 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength);
 
 // hook-ref for the ignite-interpreter
 extern cle_syshandler _runtime_handler;
+
+
+// standard handlers
+void dev_register_handlers(task* config_t, st_ptr* config_root);
+
+void admin_register_handlers(task* config_t, st_ptr* config_root);
+
 #endif
