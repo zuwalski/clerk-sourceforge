@@ -18,6 +18,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "../cle_core/cle_clerk.h"
 #include "../cle_core/backends/cle_backends.h"
 #include "../cle_core/cle_stream.h"
@@ -61,83 +62,99 @@ static void _submit(void* v,st_ptr* st)
 
 static cle_pipe _pipe_stdout = {_start,_next,_end,_pop,_push,_data,_submit};
 
-static cle_pagesource* psource;
-static cle_psrc_data pdata;
-
-static char* db_file = "cle.db";
-static char* db_event = "main.start";
-
-static int _open_db(const char* dbfile, const char* eventname)
+static int _print_usage(const char* toolname)
 {
-	task* t;
-	st_ptr config_root;
-	_ipt* ipt;
+	printf("%s [-Fdbfilename] [event]\n",toolname);
+	puts("(c) Lars Szuwalski, 2001-2009");
+	return -1;
+}
+
+int main(int argc, char* argv[])
+{
+	char* db_file = "cle.db";
+	char* db_event = "cli.start";
 
 	cle_pagesource* psource = &util_file_pager;
-	cle_psrc_data pdata = util_create_filepager(dbfile);
+	cle_psrc_data pdata;
+	st_ptr config_root;
+	_ipt* ipt;
+	task* t;
+	int i,nodev = 0,noadm = 0;
 
+	// options
+	for(i = 1; i < argc; i++)
+	{
+		if(argv[i][0] == '-')
+		{
+			switch(argv[i][1])
+			{
+			case 'f':
+				if(i + 1 < argc)
+					db_file = argv[i + 1];
+				else return _print_usage(argv[0]);
+				break;
+			case 'e':
+				if(i + 1 < argc)
+					db_event = argv[i + 1];
+				else return _print_usage(argv[0]);
+				break;
+			case 'd':
+				nodev = 1;
+				break;
+			case 'a':
+				noadm = 1;
+				break;
+			case 'h':
+			case '?':
+				_print_usage(argv[0]);
+				return 0;
+			default:
+				return _print_usage(argv[0]);
+			}
+		}
+		else
+			break;
+	}
+
+	// open db-file
+	pdata = util_create_filepager(db_file);
 	if(pdata == 0)
+	{
+		fprintf(stderr,"failed to open file: %s\n",db_file);
 		return -1;
+	}
 
 	//  new task
 	t = tk_create_task(psource,pdata);
 
 	st_empty(t,&config_root);
 
-	dev_register_handlers(t,&config_root);
-	admin_register_handlers(t,&config_root);
+	if(nodev == 0)
+		dev_register_handlers(t,&config_root);
 
-	ipt = cle_start(config_root,test_events[i],10, 0, 0, 0,&_pipe_stdout,0,t);
+	if(noadm == 0)
+		admin_register_handlers(t,&config_root);
 
-	tk_drop_task(t);
-	tk_commit_task(t);
+	ipt = cle_start(config_root,db_event,strlen(db_event), 0, 0, 0,&_pipe_stdout,0,t);
 
-	return (t == 0);
-}
-
-static void _print_usage(const char* toolname)
-{
-	printf("%s [-Fdbfilename] [event]\n",toolname);
-	puts("(c) Lars Szuwalski, 2001-2009");
-}
-
-static void _parse_args(int argc, char* argv[])
-{
-	int i;
-	for(i = 1; i < argc; i++)
+	if(ipt != 0)
 	{
-		if(argv[i][0] == '-')	// option
+		// event-stream
+		for(; i < argc; i++)
 		{
-			switch(argv[i][1])
-			{
-			case 'f':
-			case 'F':
-				break;
-			case 'e':
-			case 'E':
-				break;
-			default:
-				// wtf?
-			}
+			cle_data(ipt,argv[i],strlen(argv[i]));
+			cle_next(ipt);
 		}
-		else	// event
-		{}
-	}
-}
 
-int main(int argc, char* argv[])
-{
-	switch(argc)
-	{
-	case 0:
-		_print_usage("cle");
-		break;
-	case 2:
-		return _open_db("cle.db",argv[1]);
-	case 3:
-		return _open_db(argv[1],argv[2]);
-	default:
-		_print_usage(argv[0]);
+		cle_end(ipt,0,0);
+
+		tk_commit_task(t);
 	}
-	return -1;
+	else
+	{
+		tk_drop_task(t);
+		fprintf(stderr,"failed to fire event: %s\n",db_event);
+	}
+
+	return 0;
 }
