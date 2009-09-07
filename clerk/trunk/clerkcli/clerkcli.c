@@ -65,6 +65,7 @@ static cle_pipe _pipe_stdout = {_start,_next,_end,_pop,_push,_data,_submit};
 static int _print_usage(const char* toolname)
 {
 	printf("%s [-Fdbfilename] [event]\n",toolname);
+	puts("License GPL 3.0");
 	puts("(c) Lars Szuwalski, 2001-2009");
 	return -1;
 }
@@ -79,7 +80,7 @@ int main(int argc, char* argv[])
 	st_ptr config_root;
 	_ipt* ipt;
 	task* t;
-	int i,nodev = 0,noadm = 0;
+	int i,nodev = 0,noadm = 0,failed = 0;
 
 	// options
 	for(i = 1; i < argc; i++)
@@ -140,15 +141,21 @@ int main(int argc, char* argv[])
 	if(ipt != 0)
 	{
 		// event-stream
-		for(; i < argc; i++)
+		for(; failed == 0 && i < argc; i++)
 		{
 			cle_data(ipt,argv[i],strlen(argv[i]));
 			cle_next(ipt);
 		}
 
 		cle_end(ipt,0,0);
+	}
+	else failed = 1;
 
-		tk_commit_task(t);
+	if(failed == 0)
+	{
+		failed = tk_commit_task(t);
+		if(failed != 0)
+			fprintf(stderr,"failed to commit event: %s\n",db_event);
 	}
 	else
 	{
@@ -156,5 +163,5 @@ int main(int argc, char* argv[])
 		fprintf(stderr,"failed to fire event: %s\n",db_event);
 	}
 
-	return 0;
+	return failed;
 }

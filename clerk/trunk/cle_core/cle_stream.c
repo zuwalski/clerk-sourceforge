@@ -260,6 +260,7 @@ static int _validate_eventid(cdat eventid, uint event_len)
 		switch(eventid[i])
 		{
 		case 0:
+		case '.':
 			if(state != 0 || i == 0)
 				return -1;
 			state = 1;
