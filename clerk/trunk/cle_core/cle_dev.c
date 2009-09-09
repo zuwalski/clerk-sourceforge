@@ -20,7 +20,7 @@
 	Dev-functions:
 	dev.new.object , objectname
 	dev.new.<extend-objectname> , objectname
-	dev.set.val.<objectname> , path.path , value
+	dev.set.eval.<objectname> , expr
 	dev.set.expr.<objectname> , path.path , expr/method/ref
 	dev.create.state.<objectname> , state
 	dev.set.handler.sync.<objectname> , state, event, method/expr (handler)
@@ -55,7 +55,7 @@ static const char _illegal_argument[] = "dev:illegal argument";
 
 static void new_object_next(event_handler* hdl)
 {
-	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->top->pt,0,0))
+	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->root,0,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -66,7 +66,7 @@ static void new_extends_next(event_handler* hdl)
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
 
-	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->top->pt,0))
+	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->root,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -89,7 +89,7 @@ static void _set_expr_next(event_handler* hdl)
 		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
 		state = (struct _dev_set*)hdl->handler_data;
 
-		state->p1 = hdl->top->pt;
+		state->p1 = hdl->root;
 	}
 	else
 	{
@@ -97,7 +97,7 @@ static void _set_expr_next(event_handler* hdl)
 		uint obname_length = hdl->eventdata->event_len - sizeof(_set_expr_name);
 
 		hdl->response->start(hdl->respdata);
-		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->top->pt,hdl->response,hdl->respdata);
+		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->root,hdl->response,hdl->respdata);
 		cle_stream_end(hdl);
 	}
 }
@@ -112,13 +112,13 @@ static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_
 		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
 		state = (struct _dev_set*)hdl->handler_data;
 
-		state->p1 = hdl->top->pt;
+		state->p1 = hdl->root;
 		state->hit = 0;
 	}
 	// 2. hit
 	else if(state->hit == 0)
 	{
-		state->p2 = hdl->top->pt;
+		state->p2 = hdl->root;
 		state->hit = 1;
 	}
 	// 3. hit
@@ -128,7 +128,7 @@ static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_
 		uint obname_length = hdl->eventdata->event_len - namesize;
 
 		hdl->response->start(hdl->respdata);
-		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->top->pt,hdl->response,hdl->respdata,tp);
+		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->root,hdl->response,hdl->respdata,tp);
 		cle_stream_end(hdl);
 	}
 }
@@ -155,7 +155,7 @@ static void _create_state_next(event_handler* hdl)
 	cdat obname = hdl->eventdata->eventid + sizeof(_create_state_name);
 	uint obname_length = hdl->eventdata->event_len - sizeof(_create_state_name);
 
-	if(cle_create_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt))
+	if(cle_create_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->root))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);

@@ -36,7 +36,7 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 			{
 				if(state == 2)
 					return -2;
-				if(state != 1)
+				if(state != 0)
 					return -1;
 				state = -1;
 				break;

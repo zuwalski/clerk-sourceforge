@@ -52,6 +52,7 @@ void cle_notify_next(event_handler* handler)
 {
 	while(handler != 0 && handler->eventdata->error == 0)
 	{
+		// TODO: implement these checks elsewhere...
 		if(handler->top->link != 0)
 			cle_stream_fail(handler,input_underflow,sizeof(input_underflow));
 		else
@@ -60,6 +61,7 @@ void cle_notify_next(event_handler* handler)
 
 			// done processing .. clear and ready for next input-stream
 			st_empty(handler->instance_tk,&handler->top->pt);
+			handler->root = handler->top->pt;
 		}
 
 		handler = handler->next;
@@ -132,7 +134,10 @@ void cle_standard_push(event_handler* hdl)
 	if(hdl->top != 0)
 		elm->pt = hdl->top->pt;
 	else
+	{
 		st_empty(hdl->instance_tk,&elm->pt);
+		hdl->root = elm->pt;
+	}
 
 	elm->link = hdl->top;
 	hdl->top = elm;
@@ -254,26 +259,26 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 
 static int _validate_eventid(cdat eventid, uint event_len)
 {
-	uint i,state = 0,from = 0;
+	uint i,state = 1,from = 0;
 	for(i = 0; i < event_len; i++)
 	{
 		switch(eventid[i])
 		{
-		case 0:
 		case '.':
-			if(state != 0 || i == 0)
+		case 0:
+			if(state & 8 == 0)
 				return -1;
-			state = 1;
+			state = 2;
 			break;
 		case '#':
 			if(state != 1)
 				return -1;
 			from = i + 1;
-			state = 2;
+			state = 4;
 			break;
 		default:
 			// illegal character?
-			if(state & 2)
+			if(state & 4)
 			{
 				if(eventid[i] > 'a' && eventid[i] < 'q')
 					return -1;
@@ -281,11 +286,11 @@ static int _validate_eventid(cdat eventid, uint event_len)
 			else if(eventid[i] < '0' || eventid[i] > 'z' || (eventid[i] > 'Z' && eventid[i] < 'a') || (eventid[i] > '9' && eventid[i] < 'A'))
 				return -1;
 			else
-				state = 0;
+				state = 8;
 		}
 	}
 
-	return from;
+	return (state == 2)? from : -1;
 }
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
@@ -352,7 +357,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	for(i = 0; i < event_len; i++)
 	{
 		// event-part-boundary
-		if(eventid[i] != 0)
+		if(!(eventid[i] == 0 || eventid[i] == '.' || eventid[i] == '#'))
 			continue;
 
 		// lookup event-part (module-level)

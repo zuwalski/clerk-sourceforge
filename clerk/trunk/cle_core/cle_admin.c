@@ -57,7 +57,7 @@ static int role_get_arguments(event_handler* hdl, struct _admin_role* args, uint
 	args->eventmask = hdl->eventdata->eventid + mask_cut;
 	args->eventmask_length = hdl->eventdata->event_len - mask_cut;
 
-	args->role_length = st_get(hdl->instance_tk,&hdl->top->pt,args->role,255);
+	args->role_length = st_get(hdl->instance_tk,&hdl->root,args->role,255);
 
 	return (args->role_length > 1);
 }
@@ -104,7 +104,7 @@ static void _get_next(event_handler* hdl)
 	cdat obname = hdl->eventdata->eventid + sizeof(_get_name);
 	uint obname_length = hdl->eventdata->event_len - sizeof(_get_name);
 
-	if(cle_get_property(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->top->pt,&prop))
+	if(cle_get_property(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->root,&prop))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 	{

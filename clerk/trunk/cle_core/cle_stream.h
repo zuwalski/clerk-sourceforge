@@ -98,6 +98,7 @@ struct event_handler
 	st_ptr instance;
 	st_ptr handler;
 	st_ptr object;
+	st_ptr root;
 };
 
 /* event-handler exit-functions */

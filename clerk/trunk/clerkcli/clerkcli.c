@@ -44,11 +44,11 @@ static void _end(void* v,cdat c,uint u)
 }
 static void _pop(void* v)
 {
-	printf(" << ");
+	printf("}");
 }
 static void _push(void* v)
 {
-	printf(" >> ");
+	printf("}");
 }
 static uint _data(void* v,cdat c,uint u)
 {
@@ -64,7 +64,7 @@ static cle_pipe _pipe_stdout = {_start,_next,_end,_pop,_push,_data,_submit};
 
 static int _print_usage(const char* toolname)
 {
-	printf("%s [-Fdbfilename] [event]\n",toolname);
+	printf("%s [-f<dbfilename>] [-e<event>] [params*]|-F [input-files*]|...\n",toolname);
 	puts("License GPL 3.0");
 	puts("(c) Lars Szuwalski, 2001-2009");
 	return -1;
@@ -80,7 +80,7 @@ int main(int argc, char* argv[])
 	st_ptr config_root;
 	_ipt* ipt;
 	task* t;
-	int i,nodev = 0,noadm = 0,failed = 0;
+	int i,nodev = 0,noadm = 0,failed = 1;
 
 	// options
 	for(i = 1; i < argc; i++)
@@ -91,12 +91,12 @@ int main(int argc, char* argv[])
 			{
 			case 'f':
 				if(i + 1 < argc)
-					db_file = argv[i + 1];
+					db_file = argv[++i];
 				else return _print_usage(argv[0]);
 				break;
 			case 'e':
 				if(i + 1 < argc)
-					db_event = argv[i + 1];
+					db_event = argv[++i];
 				else return _print_usage(argv[0]);
 				break;
 			case 'd':
@@ -136,20 +136,20 @@ int main(int argc, char* argv[])
 	if(noadm == 0)
 		admin_register_handlers(t,&config_root);
 
-	ipt = cle_start(config_root,db_event,strlen(db_event), 0, 0, 0,&_pipe_stdout,0,t);
+	ipt = cle_start(config_root,db_event,(uint)strlen(db_event) + 1, 0, 0, 0,&_pipe_stdout,0,t);
 
 	if(ipt != 0)
 	{
+		failed = 0;
 		// event-stream
 		for(; failed == 0 && i < argc; i++)
 		{
-			cle_data(ipt,argv[i],strlen(argv[i]));
+			cle_data(ipt,argv[i],(uint)strlen(argv[i]));
 			cle_next(ipt);
 		}
 
 		cle_end(ipt,0,0);
 	}
-	else failed = 1;
 
 	if(failed == 0)
 	{
