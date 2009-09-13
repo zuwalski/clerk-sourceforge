@@ -298,43 +298,16 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 					cle_pipe* response, void* responsedata, task* app_instance)
 {
 	_ipt* ipt;
-	event_handler* hdlists[4];
+	event_handler* hdlists[4] = {0,0,0,0};
 	event_handler* hdl;
 	st_ptr pt,eventpt,syspt,instance,object;
 	int from,i,allowed;
 
-	// ipt setup - internal task
-	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt));
-	// default null
-	memset(ipt,0,sizeof(_ipt));
-
-	memset(hdlists,0,sizeof(hdlists));
-
 	if(response == 0)
 		response = &_nil_out;
 
-	ipt->sys.config = config;
-	ipt->sys.eventid = eventid;
-	ipt->sys.event_len = event_len;
-	ipt->sys.userid = userid;
-	ipt->sys.userid_len = userid_len;
-
 	/* get a root ptr to instance-db */
 	tk_root_ptr(app_instance,&instance);
-
-	// validate event-id and get target-oid (if any)
-	i = _validate_eventid(eventid,event_len);
-	if(i != 0)
-	{
-		if(i < 0 || cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
-		{
-			// target not found
-			_error(event_not_allowed);
-			return 0;
-		}
-	}
-	else
-		object.pg = 0;
 
 	// no username? -> root/sa
 	allowed = (userid_len == 0);
@@ -351,13 +324,37 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		}
 	}
 
+	object.pg = 0;
+	// validate event-id and get target-oid (if any)
+	i = _validate_eventid(eventid,event_len);
+	if(i != 0)
+	{
+		if(i < 0 || cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
+		{
+			// target not found
+			_error(event_not_allowed);
+			return 0;
+		}
+	}
+
+	// ipt setup - internal task
+	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt));
+	// default null
+	memset(ipt,0,sizeof(_ipt));
+
+	ipt->sys.config = config;
+	ipt->sys.eventid = eventid;
+	ipt->sys.event_len = event_len;
+	ipt->sys.userid = userid;
+	ipt->sys.userid_len = userid_len;
+
 	syspt = config;
 	from = 0;
 
-	for(i = 0; i < event_len; i++)
+	for(i = 0; i <= event_len; i++)
 	{
 		// event-part-boundary
-		if(!(eventid[i] == 0 || eventid[i] == '.' || eventid[i] == '#'))
+		if(i != event_len && !(eventid[i] == 0 || eventid[i] == '.' || eventid[i] == '#'))
 			continue;
 
 		// lookup event-part (module-level)

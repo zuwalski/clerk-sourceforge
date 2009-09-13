@@ -72,8 +72,9 @@ static int _print_usage(const char* toolname)
 
 int main(int argc, char* argv[])
 {
-	char* db_file = "cle.db";
+	char* db_file = "cle.cle";
 	char* db_event = "cli.start";
+	char* script = 0;
 
 	cle_pagesource* psource = &util_file_pager;
 	cle_psrc_data pdata;
@@ -109,6 +110,11 @@ int main(int argc, char* argv[])
 			case '?':
 				_print_usage(argv[0]);
 				return 0;
+			case 's':
+				if(i + 1 < argc)
+					script = argv[++i];
+				else return _print_usage(argv[0]);
+				break;
 			default:
 				return _print_usage(argv[0]);
 			}
@@ -136,19 +142,90 @@ int main(int argc, char* argv[])
 	if(noadm == 0)
 		admin_register_handlers(t,&config_root);
 
-	ipt = cle_start(config_root,db_event,(uint)strlen(db_event) + 1, 0, 0, 0,&_pipe_stdout,0,t);
-
-	if(ipt != 0)
+	if(script == 0)
 	{
-		failed = 0;
-		// event-stream
-		for(; failed == 0 && i < argc; i++)
-		{
-			cle_data(ipt,argv[i],(uint)strlen(argv[i]));
-			cle_next(ipt);
-		}
+		ipt = cle_start(config_root,db_event,(uint)strlen(db_event) + 1, 0, 0, 0,&_pipe_stdout,0,t);
 
-		cle_end(ipt,0,0);
+		if(ipt != 0)
+		{
+			failed = 0;
+			// event-stream
+			for(; failed == 0 && i < argc; i++)
+			{
+				cle_data(ipt,argv[i],(uint)strlen(argv[i]));
+				cle_next(ipt);
+			}
+
+			cle_end(ipt,0,0);
+		}
+	}
+	else
+	{
+		FILE* sfile = fopen(script,"r");
+		if(sfile == 0)
+		{
+			fprintf(stderr,"failed to open script: %s\n",script);
+			failed = 1;
+		}
+		else
+		{
+			int state = 0;
+			char buffer[1024];
+			db_event = buffer;
+
+			while(fgets(buffer,sizeof(buffer),sfile))
+			{
+				if(strcmp(buffer,"!>\n") == 0)
+				{
+					if(state & 6)
+						state = 1;
+					else
+					{
+						failed = 1;
+						break;
+					}
+				}
+				else if(strcmp(buffer,"<!\n") == 0)
+				{
+					if(state != 1)
+					{
+						failed = 1;
+						break;
+					}
+					cle_next(ipt);
+					state = 2;
+				}
+				else
+				{
+					if(state == 1)
+					{
+						cle_data(ipt,buffer,strnlen(buffer,sizeof(buffer) - 1) + 1);
+					}
+					else
+					{
+						size_t len = strnlen(buffer,sizeof(buffer) - 1);
+						if(state != 0)
+							cle_end(ipt,0,0);
+
+						buffer[len - 1] = 0;
+						ipt = cle_start(config_root,buffer,(uint)len, 0, 0, 0,&_pipe_stdout,0,t);
+						if(ipt == 0)
+						{
+							failed = 1;
+							break;
+						}
+						state = 4;
+					}
+				}
+			}
+
+			if(state != 2)
+				failed = 1;
+
+			cle_end(ipt,0,0);
+
+			fclose(sfile);
+		}
 	}
 
 	if(failed == 0)

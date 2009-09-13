@@ -43,13 +43,14 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 			}
 
 			if(c == '.')
-				c = 0;
-			if(c == 0)
 			{
 				if(state != 0)
 					return -1;
 				state = 1;
+				c = 0;
 			}
+			else if(c == 0 || c == ' ' || c == '\t' || c == '\n' || c == '\r')
+				continue;
 			else
 				state = 0;
 
