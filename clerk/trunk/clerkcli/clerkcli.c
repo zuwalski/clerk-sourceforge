@@ -203,12 +203,10 @@ int main(int argc, char* argv[])
 					}
 					else
 					{
-						size_t len = strnlen(buffer,sizeof(buffer) - 1);
 						if(state != 0)
 							cle_end(ipt,0,0);
 
-						buffer[len - 1] = 0;
-						ipt = cle_start(config_root,buffer,(uint)len, 0, 0, 0,&_pipe_stdout,0,t);
+						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer) - 1) + 1, 0, 0, 0,&_pipe_stdout,0,t);
 						if(ipt == 0)
 						{
 							failed = 1;

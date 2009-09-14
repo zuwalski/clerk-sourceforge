@@ -32,15 +32,15 @@
 */
 #include "cle_instance.h"
 
-static const char _new_object_name[] = "dev.new.object";
-static const char _new_extends_name[] = "dev.new";
-static const char _set_expr_name[] = "dev.set.expr";
-static const char _create_state_name[] = "dev.create.state";
-static const char _set_handler_name_sync[] = "dev.set.handler.sync";
-static const char _set_handler_name_asyn[] = "dev.set.handler.asyn";
-static const char _set_handler_name_resp[] = "dev.set.handler.resp";
-static const char _set_handler_name_reqs[] = "dev.set.handler.reqs";
-static const char _create_collection_name[] = "dev.create.collection";
+static const char _new_object_name[] = "dev\0new\0object";
+static const char _new_extends_name[] = "dev\0new";
+static const char _set_expr_name[] = "dev\0set\0expr";
+static const char _create_state_name[] = "dev\0create\0state";
+static const char _set_handler_name_sync[] = "dev\0set\0handler\0sync";
+static const char _set_handler_name_asyn[] = "dev\0set\0handler\0asyn";
+static const char _set_handler_name_resp[] = "dev\0set\0handler\0resp";
+static const char _set_handler_name_reqs[] = "dev\0set\0handler\0reqs";
+static const char _create_collection_name[] = "dev\0create\0collection";
 
 static cle_syshandler _new_object;
 static cle_syshandler _new_extends;

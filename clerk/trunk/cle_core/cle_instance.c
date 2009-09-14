@@ -36,20 +36,20 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 			{
 				if(state == 2)
 					return -2;
-				if(state != 0)
+				if(state != 1)
 					return -1;
 				state = -1;
 				break;
 			}
 
-			if(c == '.')
+			if(c == 0 || c == '.')
 			{
 				if(state != 0)
 					return -1;
 				state = 1;
 				c = 0;
 			}
-			else if(c == 0 || c == ' ' || c == '\t' || c == '\n' || c == '\r')
+			else if(c == ' ' || c == '\t' || c == '\n' || c == '\r')
 				continue;
 			else
 				state = 0;
@@ -567,23 +567,20 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 	int i;
 	char buffer[50];
 
-	if(target_oid_length*2 >= sizeof(buffer))
-		return 1;
-
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
+		return 0;
 
 	// decipher
 	for(i = 0; i < target_oid_length; i++)
 	{
 		char val;
+		if(i >= sizeof(buffer)*2)
+			return 0;
 
 		if(target_oid[i] >= 'a' && target_oid[i] <= 'q')
 			val = target_oid[i] - 'a';
-		else if(target_oid[i] == 0)
-			break;
 		else
-			return 1;
+			break;
 
 		if(i & 1)
 			buffer[i >> 1] |= val;
@@ -596,7 +593,7 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 
 	// lookup target object
 	*object = root;
-	return st_move(app_instance,object,buffer,i);
+	return st_move(app_instance,object,buffer,i) ? 0 : i;
 }
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)

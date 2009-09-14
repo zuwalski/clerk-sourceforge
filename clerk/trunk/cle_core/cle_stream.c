@@ -25,8 +25,6 @@
 
 /* TODO: 
 		handle end: make sure all receive the event
-		async handlers should have preprocessed input from req-handlers
-		(async are not just toplevel)
 		debugger id in event-string e.g. path.path[#objid][@debuggerId]
 		if adressing specific object (#oid) -> only perfect match on event
 		kill submit or rework st_link etc.
@@ -257,40 +255,65 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 // input-functions
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
-static int _validate_eventid(cdat eventid, uint event_len)
+static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 {
-	uint i,state = 1,from = 0;
+	uint i,state = 0,to = 0;
 	for(i = 0; i < event_len; i++)
 	{
 		switch(eventid[i])
 		{
 		case '.':
 		case 0:
-			if(state & 8 == 0)
+			if(state != 1)
 				return -1;
+			ievent[to++] = 0;
 			state = 2;
 			break;
 		case '#':
+		case '@':
 			if(state != 1)
 				return -1;
-			from = i + 1;
-			state = 4;
+			ievent[to++] = 0;
+			return to;
+		case ' ':
+		case '\n':
+		case '\t':
+		case '\r':
 			break;
 		default:
 			// illegal character?
-			if(state & 4)
-			{
-				if(eventid[i] > 'a' && eventid[i] < 'q')
-					return -1;
-			}
-			else if(eventid[i] < '0' || eventid[i] > 'z' || (eventid[i] > 'Z' && eventid[i] < 'a') || (eventid[i] > '9' && eventid[i] < 'A'))
+			if(eventid[i] < '0' || eventid[i] > 'z' || (eventid[i] > 'Z' && eventid[i] < 'a') || (eventid[i] > '9' && eventid[i] < 'A'))
 				return -1;
-			else
-				state = 8;
+
+			ievent[to++] = eventid[i];
+			state = 1;
 		}
 	}
 
-	return (state == 2)? from : -1;
+	return (state == 2)? to : -1;
+}
+
+static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* object, st_ptr* handler, enum handler_type type)
+{
+	event_handler* hdl;
+	if(type != SYNC_REQUEST_HANDLER || hdlists[SYNC_REQUEST_HANDLER] == 0)
+		hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+	else
+	{
+		hdl = hdlists[SYNC_REQUEST_HANDLER];
+		hdlists[SYNC_REQUEST_HANDLER] = 0;
+	}
+
+	hdl->next = hdlists[type];
+	hdlists[type] = hdl;
+	hdl->thehandler = syshandler;
+	hdl->handler_data = 0;
+
+	hdl->object = *object;
+	if(handler == 0)
+		hdl->handler.pg = 0;
+	else
+		hdl->handler = *handler;
 }
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
@@ -302,6 +325,15 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	event_handler* hdl;
 	st_ptr pt,eventpt,syspt,instance,object;
 	int from,i,allowed;
+	char* ievent;
+
+	if(event_len >= EVENT_MAX_LENGTH)
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
+
+	ievent = (char*)tk_alloc(app_instance,event_len);
 
 	if(response == 0)
 		response = &_nil_out;
@@ -326,15 +358,20 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 	object.pg = 0;
 	// validate event-id and get target-oid (if any)
-	i = _validate_eventid(eventid,event_len);
-	if(i != 0)
+	i = _validate_eventid(eventid,event_len,ievent);
+	if(i < 0)
 	{
-		if(i < 0 || cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
-		{
-			// target not found
-			_error(event_not_allowed);
-			return 0;
-		}
+		// illegal event-name
+		_error(event_not_allowed);
+		return 0;
+	}
+	event_len = i;
+
+	if(eventid[i] == '#' && cle_get_target(app_instance,instance,&object,ievent + i + 1,event_len - i))
+	{
+		// target not found
+		_error(event_not_allowed);
+		return 0;
 	}
 
 	// ipt setup - internal task
@@ -342,8 +379,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	// default null
 	memset(ipt,0,sizeof(_ipt));
 
-	ipt->sys.config = config;
-	ipt->sys.eventid = eventid;
+	ipt->sys.eventid = ievent;
 	ipt->sys.event_len = event_len;
 	ipt->sys.userid = userid;
 	ipt->sys.userid_len = userid_len;
@@ -351,14 +387,14 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	syspt = config;
 	from = 0;
 
-	for(i = 0; i <= event_len; i++)
+	for(i = 0; i < event_len; i++)
 	{
 		// event-part-boundary
-		if(i != event_len && !(eventid[i] == 0 || eventid[i] == '.' || eventid[i] == '#'))
+		if(ievent[i] != 0)
 			continue;
 
 		// lookup event-part (module-level)
-		if(eventpt.pg != 0 && st_move(app_instance,&eventpt,eventid + from,i + 1 - from) != 0)
+		if(eventpt.pg != 0 && st_move(app_instance,&eventpt,ievent + from,i + 1 - from) != 0)
 		{
 			eventpt.pg = 0;
 			// not found! scan end (or no possible grants)
@@ -367,7 +403,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		}
 
 		// lookup system-level handlers
-		if(syspt.pg != 0 && st_move(0,&syspt,eventid + from,i + 1 - from) != 0)
+		if(syspt.pg != 0 && st_move(0,&syspt,ievent + from,i + 1 - from) != 0)
 		{
 			syspt.pg = 0;
 			// not found! scan end
@@ -430,47 +466,32 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// iterate instance-refs / event-handler-id
 			while(it_next(app_instance,&pt,&it))
 			{
-				char handlertype;
+				st_ptr handler,obj;
+				int level,handlertype = st_scan(app_instance,&pt);
 
-				if(st_get(app_instance,&pt,(char*)&handlertype,1) == -2)
+				if(handlertype < PIPELINE_REQUEST)
+					obj = object;
+				else
+					obj.pg = 0;
+
+				level = cle_get_handler(app_instance,instance,pt,&handler,&obj,ievent,i + 1,handlertype);
+				if(level < 0)
+					continue;
+
+				if(handlertype < PIPELINE_REQUEST)
 				{
-					st_ptr handler,obj;
-					int level;
-
-					if(handlertype < PIPELINE_REQUEST)
-						obj = object;
-					else
-						obj.pg = 0;
-
-					level = cle_get_handler(app_instance,instance,pt,&handler,&obj,eventid,i + 1,handlertype);
-					if(level < 0)
+					if(object.pg != 0)
+					{
+						if(level < best)
+							continue;
+					}
+					else if(level > best)
 						continue;
 
-					if(handlertype < PIPELINE_REQUEST)
-					{
-						if(object.pg != 0)
-						{
-							if(level < best)
-								continue;
-						}
-						else if(level > best)
-							continue;
-
-						best = level;
-					}
-
-					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
-
-					hdl->next = hdlists[handlertype];
-					hdlists[handlertype] = hdl;
-
-					hdl->thehandler = &_runtime_handler;
-					hdl->eventdata = &ipt->sys;
-					hdl->handler_data = 0;
-
-					hdl->handler = handler;
-					hdl->object = obj;
+					best = level;
 				}
+
+				_register_handler(app_instance,hdlists,&_runtime_handler,&obj,&handler,handlertype);
 			}
 
 			it_dispose(app_instance,&it);
@@ -485,16 +506,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			{
 				do
 				{
-					hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
-
-					hdl->next = hdlists[syshdl->systype];
-					hdlists[syshdl->systype] = hdl;
-					hdl->thehandler = syshdl;
-					hdl->eventdata = &ipt->sys;
-					hdl->handler_data = 0;
-
-					hdl->object = object;
-					hdl->handler.pg = 0;
+					_register_handler(app_instance,hdlists,syshdl,&object,0,syshdl->systype);
 
 					// next in list...
 					syshdl = syshdl->next_handler;
@@ -524,6 +536,9 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// put in separat tasks/transactions
 			hdl->instance_tk = tk_clone_task(app_instance);
 			tk_root_ptr(hdl->instance_tk,&hdl->instance);
+
+			//TODO copy event and user data
+			hdl->eventdata = &ipt->sys;
 
 			// "no output"-handler on all async's
 			hdl->response = &_async_out;
@@ -560,7 +575,9 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				// same task as request-handler
 				last->instance_tk = app_instance;
 				last->instance = instance;
+				last->eventdata = &ipt->sys;
 
+				last->eventdata = &ipt->sys;
 				// prepare for input-stream
 				last->top = last->free = 0;
 				cle_standard_push(last);
@@ -594,6 +611,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			cle_standard_push(sync_handler);
 		}
 
+		sync_handler->eventdata = &ipt->sys;
 		sync_handler->next = ipt->event_chain_begin;
 		ipt->event_chain_begin = sync_handler;
 	}
@@ -622,6 +640,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 			hdl->instance_tk = app_instance;
 			hdl->instance = instance;
+			hdl->eventdata = &ipt->sys;
 
 			// prepare for input-stream
 			hdl->top = hdl->free = 0;

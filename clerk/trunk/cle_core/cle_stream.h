@@ -25,6 +25,7 @@
 *	The main input-interface to the running system
 *	Commands and external events are "pumped" in through this set of functions
 */
+#define EVENT_MAX_LENGTH 512
 
 /* pipe interface begin */
 typedef struct cle_pipe
@@ -64,7 +65,6 @@ enum handler_type
 
 typedef struct sys_handler_data
 {
-	st_ptr config;
 	cdat eventid;
 	uint event_len;
 	cdat userid;
