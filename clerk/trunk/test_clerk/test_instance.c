@@ -172,13 +172,13 @@ void test_instance_c()
 	st_update(t,&pt,prop1,sizeof(prop1));
 
 	// property-1 to objone
-	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name,name) == 0);
+	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name) == 0);
 
 	pt = name;
 	st_update(t,&pt,prop2,sizeof(prop2));
 
 	// property-2 to objtwo
-	ASSERT(cle_set_property(t,root,objtwo,sizeof(objtwo),name,name) == 0);
+	ASSERT(cle_set_property(t,root,objtwo,sizeof(objtwo),name) == 0);
 
 	// property-2 not found in objone
 	ASSERT(cle_get_property(t,root,objone,sizeof(objone),name,&object) != 0);

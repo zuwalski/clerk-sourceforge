@@ -473,7 +473,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
 {
 	st_ptr pt;
-	objectheader header;
+	ulong state = 0;	// no object -> "start"
 	char handlertype[2];
 	handlertype[0] = 0;
 	handlertype[1] = (char)type;
@@ -486,11 +486,10 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 	if(st_move_st(app_instance,handler,&oid) != 0)
 		return -1;
 
-	// if no target -> handler and object are the same
-	if(object->pg == 0)
-		*object = *handler;
-	else
+	// is there a target-object?
+	if(object->pg != 0 && type < PIPELINE_REQUEST)
 	{
+		objectheader header;
 		// verify that target-object extends handler-object
 		pt = *object;
 		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)
@@ -506,20 +505,22 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 			
 			pt = pt0;
 		}
-	}
 
-	// get object-header
-	pt = *object;
-	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
-		return -1;
-	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
-		return -1;
+		// get object-header
+		pt = *object;
+		if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
+			return -1;
+		if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
+			return -1;
+
+		state = header.state;
+	}
 
 	pt = *handler;
 	// target-object must be in a state that allows this event
 	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
 		return -1;
-	if(st_move(app_instance,handler,(cdat)&header.state,sizeof(header.state)) != 0)
+	if(st_move(app_instance,handler,(cdat)&state,sizeof(state)) != 0)
 		return -1;
 	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
 		return -1;
@@ -528,13 +529,7 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 	if(st_move(app_instance,handler,(cdat)&handlertype,2) != 0)
 		return -1;
 
-	// get object-header - for handler-level
-	if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
-		return -1;
-	if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
-		return -1;
-
-	return header.level;
+	return 0;
 }
 
 int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
@@ -732,7 +727,7 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 	return 0;
 }
 
-int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr defaultvalue)
+int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path)
 {
 	st_ptr pt,pt0,obj;
 	objectheader header;
@@ -758,14 +753,6 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		st_delete(app_instance,&root,0,0);
 
 	st_insert(app_instance,&root,(cdat)&header.level,4);
-
-	if(st_is_empty(&defaultvalue) == 0)
-	{
-		pt = obj;
-		st_insert(app_instance,&pt,HEAD_PROPERTY,HEAD_SIZE);
-		st_insert(app_instance,&pt,(cdat)&header.level,4);
-		st_link(app_instance,&pt,&defaultvalue);
-	}
 
 	header.next_property_id++;
 

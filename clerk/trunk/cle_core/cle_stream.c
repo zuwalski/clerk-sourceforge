@@ -293,7 +293,7 @@ static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 	return (state == 2)? to : -1;
 }
 
-static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* object, st_ptr* handler, enum handler_type type)
+static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, enum handler_type type)
 {
 	event_handler* hdl;
 	if(type != SYNC_REQUEST_HANDLER || hdlists[SYNC_REQUEST_HANDLER] == 0)
@@ -309,11 +309,23 @@ static void _register_handler(task* app_instance, event_handler** hdlists, cle_s
 	hdl->thehandler = syshandler;
 	hdl->handler_data = 0;
 
-	hdl->object = *object;
 	if(handler == 0)
 		hdl->handler.pg = 0;
 	else
 		hdl->handler = *handler;
+}
+
+static void _set_object(event_handler* hdl, st_ptr* object)
+{
+	if(object->pg == 0)
+	{
+		if(hdl->handler.pg != 0)
+		{
+			st_empty(hdl->instance_tk,&hdl->object);
+		}
+	}
+	else
+		hdl->object = *object;
 }
 
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
@@ -460,38 +472,16 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		if(pt.pg != 0 && st_move(app_instance,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 		{
 			it_ptr it;
-			int best = (object.pg != 0)? 0 : 0xffff;
 			it_create(app_instance,&it,&pt);
 
 			// iterate instance-refs / event-handler-id
 			while(it_next(app_instance,&pt,&it))
 			{
-				st_ptr handler,obj;
-				int level,handlertype = st_scan(app_instance,&pt);
+				st_ptr handler;
+				int handlertype = st_scan(app_instance,&pt);
 
-				if(handlertype < PIPELINE_REQUEST)
-					obj = object;
-				else
-					obj.pg = 0;
-
-				level = cle_get_handler(app_instance,instance,pt,&handler,&obj,ievent,i + 1,handlertype);
-				if(level < 0)
-					continue;
-
-				if(handlertype < PIPELINE_REQUEST)
-				{
-					if(object.pg != 0)
-					{
-						if(level < best)
-							continue;
-					}
-					else if(level > best)
-						continue;
-
-					best = level;
-				}
-
-				_register_handler(app_instance,hdlists,&_runtime_handler,&obj,&handler,handlertype);
+				if(cle_get_handler(app_instance,instance,pt,&handler,&object,ievent,i + 1,handlertype) == 0)
+					_register_handler(app_instance,hdlists,&_runtime_handler,&handler,handlertype);
 			}
 
 			it_dispose(app_instance,&it);
@@ -506,7 +496,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			{
 				do
 				{
-					_register_handler(app_instance,hdlists,syshdl,&object,0,syshdl->systype);
+					_register_handler(app_instance,hdlists,syshdl,0,syshdl->systype);
 
 					// next in list...
 					syshdl = syshdl->next_handler;
@@ -543,6 +533,11 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			// "no output"-handler on all async's
 			hdl->response = &_async_out;
 			hdl->respdata = hdl;
+
+			if(object.pg != 0)
+				hdl->object = object;
+			else
+				st_empty(hdl->instance_tk,&hdl->object);
 
 			// prepare for input-stream
 			hdl->top = hdl->free = 0;

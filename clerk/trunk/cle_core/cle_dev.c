@@ -22,6 +22,7 @@
 	dev.new.<extend-objectname> , objectname
 	dev.set.eval.<objectname> , expr
 	dev.set.expr.<objectname> , path.path , expr/method/ref
+	dev.set.property.<objectname> , path.path 
 	dev.create.state.<objectname> , state
 	dev.set.handler.sync.<objectname> , state, event, method/expr (handler)
 	dev.set.handler.asyn.<objectname> , state, event, method/expr (handler)
@@ -35,6 +36,7 @@
 static const char _new_object_name[] = "dev\0new\0object";
 static const char _new_extends_name[] = "dev\0new";
 static const char _set_expr_name[] = "dev\0set\0expr";
+static const char _set_property_name[] = "dev\0set\0property";
 static const char _create_state_name[] = "dev\0create\0state";
 static const char _set_handler_name_sync[] = "dev\0set\0handler\0sync";
 static const char _set_handler_name_asyn[] = "dev\0set\0handler\0asyn";
@@ -45,6 +47,7 @@ static const char _create_collection_name[] = "dev\0create\0collection";
 static cle_syshandler _new_object;
 static cle_syshandler _new_extends;
 static cle_syshandler _set_expr;
+static cle_syshandler _set_property;
 static cle_syshandler _create_state;
 static cle_syshandler _set_handler_sync;
 static cle_syshandler _set_handler_asyn;
@@ -67,6 +70,17 @@ static void new_extends_next(event_handler* hdl)
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
 
 	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->root,0))
+		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+	else
+		cle_stream_end(hdl);
+}
+
+static void set_property_next(event_handler* hdl)
+{
+	cdat obname = hdl->eventdata->eventid + sizeof(_set_property_name);
+	uint obname_length = hdl->eventdata->event_len - sizeof(_set_property_name);
+
+	if(cle_set_property(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->root))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -169,6 +183,9 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 	_new_extends = cle_create_simple_handler(0,new_extends_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_new_extends_name,sizeof(_new_extends_name),&_new_extends);
 
+	_set_property = cle_create_simple_handler(0,set_property_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_set_property_name,sizeof(_set_property_name),&_set_property);
+	
 	_set_expr = cle_create_simple_handler(0,_set_expr_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_expr_name,sizeof(_set_expr_name),&_set_expr);
 

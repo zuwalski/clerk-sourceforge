@@ -793,3 +793,71 @@ static void _submit2(event_handler* v,st_ptr* st)
 
 // defs
 cle_pipe _test_pipe_stdout = {_start2,_next2,_end2,_pop2,_push2,_data2,_submit2};
+
+
+/*
+
+#include "cle_struct.h"
+static void print_struct(page_wrap* pg, const key* me, int ind)
+{
+	while(1){
+		int i;
+	
+		const char* path = KDATA(me);
+  		int l = me->length;
+  		int o = me->offset;
+		int meoff = (int)((char*)me - (char*)pg->pg);
+
+		for(i = 0; i < ind; i++)
+			printf("..");
+
+		if(l == 0)
+  		{
+			ptr* pt = (ptr*)me;
+
+			if(pt->koffset == 0)
+			{
+				printf("(%s%d)(EXT) page:%p (%d - n:%d) >>\n",(*path & (0x80 >> (o & 7)))?"+":"-",
+					pt->offset,pt->pg,meoff,pt->next);
+			}
+			else
+			{
+				printf("(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n",(*path & (0x80 >> (o & 7)))?"+":"-",
+					pt->offset,pt->pg,pt->koffset,meoff,pt->next);
+			}
+    	}
+  		else
+  		{
+			int i;
+
+			printf("(%s%d/%d) %s (%d - s:%d n:%d) [",
+				(o < l && *path & (0x80 >> (o & 7)))?"+":"-",o,l,"" ,meoff,me->sub,me->next);
+
+			//printf("%s",path);
+			for(i = 0; i < (l + 7) >> 3; i++)
+			{
+				printf(" %x",path[i]);
+			}
+
+			
+	  		if(me->sub){
+	  			puts("] ->\n");
+				print_struct(pg,GOOFF(pg,me->sub),ind+1);
+			}
+			else
+	  			puts("]\n");
+		}
+  			
+		if(!me->next)
+			break;
+			
+		//if(me == (key*)0x029b7edc)
+		//{
+		//	l = l;
+		//}
+
+		me = GOOFF(pg,me->next);
+	}
+}
+
+*/

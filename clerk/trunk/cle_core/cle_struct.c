@@ -752,13 +752,20 @@ static uint _mv_st(struct _st_lkup_res* rt, cdat txt, uint len)
 
 uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 {
+	uint ret;
 	struct _st_lkup_res rt;
 	rt.t      = t;
 	rt.pg     = mv->pg;
 	rt.sub    = GOKEY(mv->pg,mv->key);
 	rt.diff   = mv->offset;
 
-	return st_map_st(t,str,_mv_st,_dont_use,_dont_use,&rt);
+	if(ret = st_map_st(t,str,_mv_st,_dont_use,_dont_use,&rt))
+		return ret;
+
+	mv->pg  = rt.pg;
+	mv->key = (char*)rt.sub - (char*)rt.pg->pg;
+	mv->offset = rt.diff;
+	return 0;
 }
 
 struct _st_insert
@@ -810,57 +817,28 @@ static uint _cpy_dat(task* t, st_ptr* to, cdat dat, uint len)
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
 {
-	st_ptr _to = *to;
-	return st_map_ptr(t,from,&_to,_cpy_dat);
+	return 1;
+//	st_ptr _to = *to;
+//	return st_map_ptr(t,from,&_to,_cpy_dat);
 }
 
-struct _st_trace_ctx
+struct _st_map_worker_struct
 {
-	struct _st_trace_ctx* prev;
-	key* me;
-	key* nxt;
+	uint(*dat)(void*,cdat,uint);
+	uint(*push)(void*);
+	uint(*pop)(void*);
+	void* ctx;
+	task* t;
 };
 
-struct _st_map_stack
+static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, key* me, key* nxt, uint offset)
 {
-	struct _st_trace_ctx* stack;
-	struct _st_trace_ctx* free;
-};
-
-static void _push_map_stack(task* t, struct _st_map_stack* stk, const uint plussize)
-{
-	struct _st_trace_ctx* stnxt;
-	if(stk->free == 0)
-		stnxt = (struct _st_trace_ctx*)tk_alloc(t,sizeof(struct _st_trace_ctx) + plussize);
-	else
-	{
-		stnxt = stk->free;
-		stk->free = stk->free->prev;
-	}
-
-	stnxt->prev = stk->stack;
-	stk->stack = stnxt;
-}
-
-static void _pop_map_stack(struct _st_map_stack* stk)
-{
-	struct _st_trace_ctx* stnxt = stk->stack;
-	stk->stack = stnxt->prev;
-	stnxt->prev = stk->free;
-	stk->free = stnxt;
-}
-
-uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
-{
-	struct _st_map_stack stk;
-	page_wrap* pg = from->pg;
-	key* me = GOKEY(from->pg,from->key);
-	key* nxt;
-	uint ret = 0, offset = from->offset;
-
-	stk.free = stk.stack = 0;
-	nxt = _trace_nxt(from);
-
+	struct {
+		page_wrap* pg;
+		key* me;
+		key* nxt;
+	} mx[16];
+	uint ret = 0,idx = 0;
 	while(1)
 	{
 		uint klen = (nxt != 0)? (nxt->offset + 7): (me->length + 6);
@@ -869,104 +847,98 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 		if(klen != 0)
 		{
 			cdat ckey = KDATA(me) + (offset >> 3);
-			if(ret = dat(ctx,ckey,klen))
+			if(ret = work->dat(work->ctx,ckey,klen))
 				break;
 		}
 
 		if(nxt == 0)
 		{
-			if(stk.stack == 0 || (ret = pop(ctx)))
+_map_pop:
+			if(idx-- == 0 || (ret = work->pop(work->ctx)))
 				break;
 
-			me = stk.stack->me;
-			nxt = stk.stack->nxt;
-
-			_pop_map_stack(&stk);
+			me = mx[idx].me;
+			nxt = mx[idx].nxt;
+			pg = mx[idx].pg;
 
 			offset = nxt->offset;
 			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
 		}
 		else
 		{
+			// TODO callback on pointers
 			if(nxt->offset < me->length && me->length != 1)
 			{
-				if(ret = push(ctx))
+				if(ret = work->push(work->ctx))
 					break;
 
-				_push_map_stack(t,&stk,0);
+				if(idx & 0xF0)
+				{
+					me = (nxt->length == 0)?_tk_get_ptr(work->t,&pg,nxt) : nxt;
+					nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 
-				stk.stack->me = me;
-				stk.stack->nxt = nxt;
+					if(ret = _st_map_worker(work,pg,me,nxt,0))
+						break;
+					goto _map_pop;
+				}
+				
+				mx[idx].me = me;
+				mx[idx].nxt = nxt;
+				mx[idx].pg = pg;
+				idx++;
 			}
 
-			// TODO callback on pointers
-			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;
+			me = (nxt->length == 0)?_tk_get_ptr(work->t,&pg,nxt) : nxt;
 			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 			offset = 0;
 		}
 	}
 
-	//TODO free stack-elements
 	return ret;
 }
 
-uint st_map_ptr(task* t, st_ptr* from, st_ptr* to, uint(*dat)(task*,st_ptr*,cdat,uint))
+uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
 {
-	struct _st_map_stack stk;
-	page_wrap* pg = from->pg;
-	key* me = GOKEY(from->pg,from->key);
-	key* nxt;
-	uint ret = 0, offset = from->offset;
+	struct _st_map_worker_struct work;
+	work.ctx = ctx;
+	work.dat = dat;
+	work.pop = pop;
+	work.push = push;
+	work.t = t;
 
-	stk.free = stk.stack = 0;
-	nxt = _trace_nxt(from);
+	return _st_map_worker(&work,from->pg,GOKEY(from->pg,from->key),_trace_nxt(from),from->offset);
+}
 
-	while(1)
-	{
-		uint klen = (nxt != 0)? nxt->offset : me->length;
-		klen >>= 3;
-		klen -= offset >> 3;
-		if(klen != 0)
-		{
-			cdat ckey = KDATA(me) + (offset >> 3);
-			if(ret = dat(t,to,ckey,klen))
-				break;
-		}
+struct _cmp_ctx
+{
+	task* t;
+	st_ptr ptr;
+};
 
-		if(nxt == 0)
-		{
-			if(stk.stack == 0)
-				break;
+static uint _cmp_dat(void* p, cdat str, uint len)
+{
+	struct _cmp_ctx* ctx = (struct _cmp_ctx*)p;
+	return 0;
+}
 
-			me = stk.stack->me;
-			nxt = stk.stack->nxt;
-			// pop ptr
-			*to = *((st_ptr*)(stk.stack + 1));
+static uint _cmp_pop(void* p)
+{
+	struct _cmp_ctx* ctx = (struct _cmp_ctx*)p;
+	return 0;
+}
 
-			_pop_map_stack(&stk);
+static uint _cmp_push(void* p)
+{
+	struct _cmp_ctx* ctx = (struct _cmp_ctx*)p;
+	return 0;
+}
 
-			offset = nxt->offset;
-			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
-		}
-		else
-		{
-			if(nxt->offset < me->length && me->length != 1)
-			{
-				_push_map_stack(t,&stk,sizeof(st_ptr));
+uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2)
+{
+	struct _cmp_ctx ctx;
+	ctx.t = t;
 
-				stk.stack->me = me;
-				stk.stack->nxt = nxt;
-				*((st_ptr*)(stk.stack + 1)) = *to;
-			}
-
-			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt) : nxt;
-			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
-			offset = 0;
-		}
-	}
-
-	//TODO free stack-elements
-	return ret;
+	return st_map_st(t,pt1,_cmp_dat,_cmp_push,_cmp_pop,&ctx);
 }
 
 /*

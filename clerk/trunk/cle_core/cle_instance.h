@@ -83,7 +83,7 @@ int cle_get_property_host_st(task* app_instance, st_ptr root, st_ptr* object, st
 
 int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop);
 
-int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr defaultvalue);
+int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path);
 
 int cle_create_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
 

@@ -594,6 +594,8 @@ void test_st_trace()
 	ASSERT(st_exsist(t,&tmp,"abc",4));
 	ASSERT(st_exsist(t,&tmp,"aaa\0a",6));
 
+	ASSERT(st_compare_st(t,&root,&tmp) == 0);
+
 	tk_drop_task(t);
 }
 

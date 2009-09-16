@@ -163,15 +163,36 @@ int main(int argc, char* argv[])
 	{
 		FILE* sfile = fopen(script,"r");
 		if(sfile == 0)
-		{
 			fprintf(stderr,"failed to open script: %s\n",script);
-			failed = 1;
-		}
 		else
 		{
-			int state = 0;
+			int state = 0, data = 0;
 			char buffer[1024];
-			db_event = buffer;
+			failed = 0;
+			/*
+			while(feof(sfile) == 0 && ferror(sfile) == 0)
+			{
+				size_t rd = fread(buffer,1,sizeof(buffer),sfile);
+
+				for(i = 0; i < rd; i++)
+				{
+					switch(buffer[i])
+					{
+					case '<':
+					case '>':
+					case '!':
+					case ' ':
+					case '\t':
+						if(state == 1)
+						break;
+					case '\n':
+					case '\r':
+					default:
+					}
+				}
+			}
+			*/
+
 
 			while(fgets(buffer,sizeof(buffer),sfile))
 			{
