@@ -218,6 +218,37 @@ int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_
 	return 0;
 }
 
+int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
+{
+	objectheader header;
+	st_ptr pt;
+
+	if(st_move(app_instance,&extends,HEAD_OID,HEAD_SIZE) != 0)
+		return 1;
+
+	if(st_get(app_instance,&extends,(char*)&header,sizeof(header)) != -2)
+		return 1;
+
+	// new obj
+	st_empty(app_instance,newobj);
+
+	pt = *newobj;
+	st_insert(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE);
+	// copy id
+	st_insert_st(app_instance,&pt,&extends);
+
+	pt = *newobj;
+	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
+
+	header.level++;
+	header.state = 0;
+	header.next_property_id = 0;
+	header.next_state_id = 1;
+
+	// write header
+	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
+}
+
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 {
 	st_ptr pt = *root;
@@ -492,7 +523,7 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 		objectheader header;
 		// verify that target-object extends handler-object
 		pt = *object;
-		while(pt.pg != handler->pg || pt.key != handler->key || pt.offset != handler->offset)
+		while(pt.pg != handler->pg || pt.key != handler->key)
 		{
 			// go to super-object (if any)
 			st_ptr pt0;
@@ -515,6 +546,8 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 
 		state = header.state;
 	}
+	else
+		*object = *handler;
 
 	pt = *handler;
 	// target-object must be in a state that allows this event

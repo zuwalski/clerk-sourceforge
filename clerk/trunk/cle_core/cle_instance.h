@@ -72,6 +72,7 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 /* object-store */
 int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level);
 int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
+int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends);
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
 
