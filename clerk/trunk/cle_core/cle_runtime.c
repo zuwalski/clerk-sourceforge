@@ -790,6 +790,7 @@ static void _rt_run(struct _rt_invocation* inv)
 
 		// receive input
 		case OP_RECV:
+			*inv->top->pc++;
 			return;
 
 		case OP_SET:

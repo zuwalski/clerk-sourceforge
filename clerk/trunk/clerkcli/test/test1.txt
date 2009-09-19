@@ -18,9 +18,12 @@ start
 dk.event
 <!
 !>
-(:test) "dk.event says: " :test
+(:test) "dk.event says: " :test get()
 <!
 dk.event
 !>
 hello world
+<!
+!>
+hello world 2
 <!

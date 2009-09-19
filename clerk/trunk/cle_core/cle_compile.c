@@ -173,7 +173,7 @@ struct _cmp_buildin
 
 static const struct _cmp_buildin buildins[] = {
 	{"void",OP_NULL,0,1,255},			// throw away values
-	{"get",OP_NULL,0,1,0},				// recieve data-structure from event-queue
+	{"get",OP_RECV,0,1,0},				// recieve data-structure from event-queue
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
@@ -707,6 +707,7 @@ static uint _cmp_call(struct _cmp_state* cst, uchar nest)
 		_cmp_nextc(cst);
 	}
 	if(term != ')') err(__LINE__)
+	_cmp_nextc(cst);
 
 	if(*cst->lastop == OP_NULL)
 	{
@@ -1587,7 +1588,10 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 
 						if(cmd != 0)
 						{
-							uint params = _cmp_call(cst,NEST_EXPR);
+							uint params;
+							if(cst->c != '(') err(__LINE__);
+							_cmp_nextc(cst);
+							params = _cmp_call(cst,NEST_EXPR);
 							if(params > cmd->max_param || params < cmd->min_param) err(__LINE__)
 
 							*cst->lastop = (state & ST_DOT)? cmd->opcode_obj : cmd->opcode;
