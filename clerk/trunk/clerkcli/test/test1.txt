@@ -18,9 +18,9 @@ start
 dk.event
 <!
 !>
-(:test) "hello world with dk.event says: " :test
+(:test) "dk.event says: " :test
 <!
 dk.event
 !>
-omg
+hello world
 <!
