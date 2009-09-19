@@ -1,0 +1,26 @@
+dev.new.object
+!>
+dk.lsz.test
+<!
+dev.new.dk.lsz.test
+!>
+dk.lsz.extest
+<!
+dev.set.property.dk.lsz.test
+!>
+prop1
+<!
+dev.set.handler.sync.dk.lsz.test
+!>
+start
+<!
+!>
+dk.event
+<!
+!>
+(:test) "hello world with dk.event says: " :test
+<!
+dk.event
+!>
+omg
+<!

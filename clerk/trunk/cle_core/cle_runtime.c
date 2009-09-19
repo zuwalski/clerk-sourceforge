@@ -1015,14 +1015,14 @@ static void _rt_next(event_handler* hdl)
 	if(inv->params_before_run == 0)
 	{
 		inv->top->sp--;
-		inv->top->sp->single_ptr = hdl->top->pt;
+		inv->top->sp->single_ptr = hdl->root;
 		inv->top->sp->type = STACK_RO_PTR;
 	}
 	else
 	{
 		struct _rt_stack* var = inv->top->vars + (inv->top->code->body.maxparams - inv->params_before_run);
 
-		var->single_ptr = hdl->top->pt;
+		var->single_ptr = hdl->root;
 		var->type = STACK_RO_PTR;
 
 		if(--inv->params_before_run != 0)

@@ -1,0 +1,6 @@
+
+dev.new.object dk.lsz.test
+
+dev.new.dk.lsz.test !>
+dk.lsz.extest
+<!
