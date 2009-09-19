@@ -238,7 +238,7 @@ int main(int argc, char* argv[])
 				}
 			}
 
-			if(state != 2)
+			if(state & 6 == 0)
 				failed = 1;
 
 			cle_end(ipt,0,0);

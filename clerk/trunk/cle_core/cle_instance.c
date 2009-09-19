@@ -21,17 +21,16 @@
 static const char start_state[] = "start";
 
 // helper-functions
-static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert)
+static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), void* ctx)
 {
-	int lastinsert = 0,state = 2;
-
+	int state = 2;
 	do
 	{
 		int i = 0;
 		char buffer[100];
 		do
 		{
-			int c = st_scan(t,&from);
+			int c = st_scan(t,from);
 			if(c < 0)
 			{
 				if(state == 2)
@@ -58,18 +57,77 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from, const uint do_insert
 		}
 		while(i < sizeof(buffer));
 
-		if(do_insert)
-		{
-			lastinsert = st_insert(t,to,buffer,i);
-		}
-		else if(st_move(t,to,buffer,i) != 0)
-			return 1;
+		if(i = fun(ctx,buffer,i))
+			return i;
 	}
 	while(state >= 0);
-
-	return (do_insert)? (lastinsert == 0) : 0;
+	return 0;
 }
 
+struct _val_ctx
+{
+	task* t;
+	union 
+	{
+		st_ptr* ptr;
+		const char* chr;
+	};
+	uint val;
+};
+
+static int _mv(void* p, char* buffer, int len)
+{
+	struct _val_ctx* ctx = (struct _val_ctx*)p;
+	return st_move(ctx->t,ctx->ptr,buffer,len);
+}
+
+static int _ins(void* p, char* buffer, int len)
+{
+	struct _val_ctx* ctx = (struct _val_ctx*)p;
+	ctx->val = st_insert(ctx->t,ctx->ptr,buffer,len);
+	return 0;
+}
+
+static _cmp(void* p, char* buffer, int len)
+{
+	struct _val_ctx* ctx = (struct _val_ctx*)p;
+	int min_len = len > ctx->val ? ctx->val : len;
+	if(min_len <= 0 || memcmp(buffer,ctx->chr,min_len) != 0)
+		return 1;
+
+	ctx->val -= min_len;
+	ctx->chr += min_len;
+	return 0;
+}
+
+static int _move_validate(task* t, st_ptr* to, st_ptr from)
+{
+	struct _val_ctx ctx;
+	ctx.t = t;
+	ctx.ptr = to;
+	return _scan_validate(t,&from,_mv,&ctx);
+}
+
+static int _copy_validate(task* t, st_ptr* to, st_ptr from)
+{
+	struct _val_ctx ctx;
+	int ret;
+	ctx.t = t;
+	ctx.ptr = to;
+	ctx.val = 0;
+	if(ret = _scan_validate(t,&from,_ins,&ctx))
+		return ret;
+	return ctx.val;
+}
+
+static int _cmp_validate(task* t, st_ptr from, const char* str, uint len)
+{
+	struct _val_ctx ctx;
+	ctx.t = t;
+	ctx.val = len;
+	ctx.chr = str;
+	return _scan_validate(t,&from,_cmp,&ctx);
+}
 
 /****************************************************
 	implementations
@@ -144,7 +202,7 @@ int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj
 	pt = app_root;
 	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
 
-	if(_copy_validate(app_instance,&pt,name,1))
+	if(_copy_validate(app_instance,&pt,name) <= 0)
 		return 1;
 
 	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
@@ -247,6 +305,7 @@ int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 
 	// write header
 	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
+	return 0;
 }
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
@@ -266,36 +325,33 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 
 int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	st_ptr pt,pt0,app_root;
+	st_ptr pt,pt1,app_root;
 	objectheader header;
-	char buffer[sizeof(start_state)];
 
 	app_root = root;
 	if(st_move(app_instance,&app_root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
 
 	// reserved state-name
-	pt = state;
-	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) == -1 && memcmp(start_state,buffer,sizeof(buffer)) == 0)
+	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) != 0)
 		return 1;
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
 	// name must not be used at lower level
-	pt0 = root;
+	pt = root;
 	while(1)
 	{
-		st_ptr pt1;
 		// go to super-object (if any)
-		if(st_move(app_instance,&pt0,HEAD_EXTENDS,HEAD_SIZE) != 0)
+		if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
 			break;
 
 		pt1 = app_root;
-		if(st_move_st(app_instance,&pt1,&pt0) != 0)
+		if(st_move_st(app_instance,&pt1,&pt) != 0)
 			break;
 		
-		pt0 = pt1;
+		pt = pt1;
 		if(st_move(app_instance,&pt1,HEAD_STATE_NAMES,HEAD_SIZE) == 0)
 		{
 			// state-name used at lower level!
@@ -308,14 +364,14 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 	st_insert(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE);
 
 	// copy state-name
-	if(_copy_validate(app_instance,&pt,state,1))
+	if(_copy_validate(app_instance,&pt,state) <= 0)
 		return 1;
 
 	st_insert(app_instance,&pt,"\0",1);
 
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return 1;
-	pt0 = root;
+	pt1 = root;
 	if(st_get(app_instance,&root,(char*)&header,sizeof(header)) != -2)
 		return 1;
 
@@ -325,7 +381,7 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 
 	header.next_state_id++;
 	// save new id
-	return st_dataupdate(app_instance,&pt0,(char*)&header,sizeof(header));
+	return st_dataupdate(app_instance,&pt1,(char*)&header,sizeof(header));
 }
 
 int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
@@ -362,7 +418,7 @@ int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object
 			if(st_move(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE) == 0)
 			{
 				// state-name found
-				if(_copy_validate(app_instance,&pt,state,0) == 0)
+				if(_move_validate(app_instance,&pt,state) == 0)
 				{
 					if(st_move(app_instance,&pt,"\0",1) == 0)
 						break;
@@ -409,24 +465,24 @@ static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path
 int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr expr, cle_pipe* response, void* data, enum handler_type type)
 {
 	st_ptr pt,obj_root,app_root = root;
-	char buffer[sizeof(start_state)];
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))
 		return 1;
 
-	obj_root = root;
-	pt = state;
-	if(st_get(app_instance,&pt,buffer,sizeof(buffer)) != -1 || memcmp(start_state,buffer,sizeof(buffer)) != 0)
+	pt = obj_root = root;
+
+	// find state
+	if(st_move(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE) != 0 ||
+		_move_validate(app_instance,&pt,state))
 	{
-		// find state
-		pt = root;
-		if(st_move(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE) != 0)
+		if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)))
 			return 1;
 
-		// to name
-		if(_copy_validate(app_instance,&pt,state,0))
-			return 1;
-
+		// start
+		st_insert(app_instance,&root,"\0s\0\0\0\0",6);
+	}
+	else
+	{
 		if(st_move(app_instance,&pt,"\0",1) != 0)
 			return 1;
 
@@ -434,12 +490,9 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 
 		st_insert_st(app_instance,&root,&pt);
 	}
-	// start-state
-	else
-		st_insert(app_instance,&root,"\0s\0\0\0\0",6);
 
 	// insert event-name
-	if(_copy_validate(app_instance,&root,eventname,1) < 0)
+	if(_copy_validate(app_instance,&root,eventname) <= 0)
 		return 1;
 
 	while(1)
@@ -449,9 +502,8 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 		case '(':	// method
 			{
 				it_ptr it;
-				char handlertype[2];
-				handlertype[0] = 0;
-				handlertype[1] = (char)type;
+				char handlertype[2] = {0,(char)type};
+
 				st_insert(app_instance,&root,(cdat)&handlertype,2);
 
 				// clear all
@@ -467,7 +519,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				st_insert(app_instance,&app_root,HEAD_EVENT,HEAD_SIZE);
 
 				// event-name
-				if(_copy_validate(app_instance,&app_root,eventname,1) < 0)
+				if(_copy_validate(app_instance,&app_root,eventname) < 0)
 					return 1;
 
 				st_insert(app_instance,&app_root,HEAD_HANDLER,HEAD_SIZE);
@@ -503,11 +555,8 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 
 int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
 {
-	st_ptr pt;
 	ulong state = 0;	// no object -> "start"
-	char handlertype[2];
-	handlertype[0] = 0;
-	handlertype[1] = (char)type;
+	char handlertype[2] = {0,(char)type};
 
 	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
 		return -1;
@@ -520,6 +569,7 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 	// is there a target-object?
 	if(object->pg != 0 && type < PIPELINE_REQUEST)
 	{
+		st_ptr pt;
 		objectheader header;
 		// verify that target-object extends handler-object
 		pt = *object;
@@ -549,7 +599,6 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 	else
 		*object = *handler;
 
-	pt = *handler;
 	// target-object must be in a state that allows this event
 	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
 		return -1;
@@ -704,7 +753,7 @@ int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	// remaining path
-	i = _copy_validate(app_instance,&root,path,0);
+	i = _move_validate(app_instance,&root,path);
 	if(i != 0 && i != -2)
 		return 1;
 
@@ -769,7 +818,7 @@ int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	obj = root;
-	if(_copy_validate(app_instance,&root,path,1))
+	if(_copy_validate(app_instance,&root,path) < 0)
 		return 1;
 
 	// read header
@@ -800,7 +849,7 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 	if(cle_goto_object(app_instance,&pt,object_name,object_length))
 		return 1;
 
-	if(_copy_validate(app_instance,&pt,path,1))
+	if(_copy_validate(app_instance,&pt,path) < 0)
 		return 1;
 
 	// clear old
@@ -816,7 +865,7 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 			pt0 = app_root;
 			if(st_move(app_instance,&pt0,HEAD_NAMES,HEAD_SIZE) != 0)
 				return 1;
-			if(_copy_validate(app_instance,&pt0,expr,0))
+			if(_move_validate(app_instance,&pt0,expr))
 				return 1;
 
 			// copy oid

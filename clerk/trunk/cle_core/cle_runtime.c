@@ -890,9 +890,9 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			// fall throu
 		case OP_OUT:	// stream out string
-			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp))
+			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp + 1))
 				_rt_error(inv,__LINE__);
-			else if(_rt_out(inv,&sp,sp,sp + 1))
+			else if(_rt_out(inv,&sp,sp + 1,sp))
 				_rt_error(inv,__LINE__);
 			sp++;
 			break;
@@ -984,7 +984,7 @@ static void _rt_start(event_handler* hdl)
 	inv->hdl = hdl;
 	inv->top = 0;
 
-	if(_rt_load_code(inv,hdl->handler))
+	if(_rt_load_code(inv,hdl->handler) == 0)
 	{
 		cle_stream_fail(hdl,"runtime:start",14);
 		return;

@@ -789,13 +789,20 @@ static uint _ins_st(struct _st_insert* sins, cdat txt, uint len)
 uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
 {
 	struct _st_insert sins;
+	uint ret;
 	sins.rt.t      = t;
 	sins.rt.pg     = to->pg;
 	sins.rt.sub    = GOKEY(to->pg,to->key);
 	sins.rt.diff   = to->offset;
 	sins.no_lookup = 0;
 
-	return st_map_st(t,from,_mv_st,_dont_use,_dont_use,&sins);
+	if(ret = st_map_st(t,from,_ins_st,_dont_use,_dont_use,&sins))
+		return ret;
+
+	to->pg  = sins.rt.pg;
+	to->key = (char*)sins.rt.sub - (char*)sins.rt.pg->pg;
+	to->offset = sins.rt.diff;
+	return 0;
 }
 
 int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
