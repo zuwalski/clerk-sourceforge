@@ -35,7 +35,7 @@ static void _start(void* v)
 }
 static void _next(void* v)
 {
-	puts("");
+	printf("\n");
 }
 static void _end(void* v,cdat c,uint u)
 {
@@ -52,7 +52,12 @@ static void _push(void* v)
 }
 static uint _data(void* v,cdat c,uint u)
 {
-	printf("%.*s",u,c);
+	uint i;
+	for(i = 0; i < u; i++)
+	{
+		printf("%c",c[i]);
+	}
+	//printf("%.*s",u,c);
 	return 0;
 }
 static void _submit(void* v,st_ptr* st)
@@ -144,7 +149,7 @@ int main(int argc, char* argv[])
 
 	if(script == 0)
 	{
-		ipt = cle_start(config_root,db_event,(uint)strlen(db_event) + 1, 0, 0, 0,&_pipe_stdout,0,t);
+		ipt = cle_start(config_root,db_event,(uint)strlen(db_event), 0, 0, 0,&_pipe_stdout,0,t);
 
 		if(ipt != 0)
 		{
@@ -220,14 +225,14 @@ int main(int argc, char* argv[])
 				{
 					if(state == 1)
 					{
-						cle_data(ipt,buffer,strnlen(buffer,sizeof(buffer) - 1) + 1);
+						cle_data(ipt,buffer,strnlen(buffer,sizeof(buffer)));
 					}
 					else
 					{
 						if(state != 0)
 							cle_end(ipt,0,0);
 
-						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer) - 1) + 1, 0, 0, 0,&_pipe_stdout,0,t);
+						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer)), 0, 0, 0,&_pipe_stdout,0,t);
 						if(ipt == 0)
 						{
 							failed = 1;

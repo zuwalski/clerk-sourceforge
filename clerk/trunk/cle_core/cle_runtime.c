@@ -26,13 +26,10 @@ static const char number_format[] = "%.14g";
 
 static const char to_str_expr[] = "str\0E";
 
-struct _rt_callframe;
-
 struct _rt_code
 {
 	struct _rt_code* next;
 	char* code;
-	struct _rt_callframe* free;
 	st_ptr home;
 	st_ptr strings;
 	struct _body_ body;
@@ -92,6 +89,7 @@ struct _rt_callframe
 {
 	struct _rt_callframe* parent;
 	struct _rt_code* code;
+	struct page_wrap* pg;
 	const char* pc;
 	struct _rt_stack* vars;
 	struct _rt_stack* sp;
@@ -105,7 +103,8 @@ struct _rt_invocation
 	struct _rt_code* code_cache;
 	task* t;
 	event_handler* hdl;
-	int params_before_run;
+	ushort params_before_run;
+	ushort response_started;
 };
 
 const static char exec_error = OP_ERROR;
@@ -157,26 +156,15 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 	// get strings
 	ret->strings = code;
 	st_move(inv->t,&ret->strings,"S",2);
-
-	// zero invocation-cache
-	ret->free = 0;
-
 	return ret;
 }
 
 static struct _rt_callframe* _rt_newcall(struct _rt_invocation* inv, struct _rt_code* code, st_ptr* object, int is_expr)
 {
-	struct _rt_callframe* cf;
-
-	if(code->free != 0)
-	{
-		cf = code->free;
-		code->free = cf->parent;
-	}
-	else
-		cf = (struct _rt_callframe*)tk_alloc(inv->t,sizeof(struct _rt_callframe)
+	struct _rt_callframe* cf = (struct _rt_callframe*)tk_alloc(inv->t,sizeof(struct _rt_callframe)
 			+ (code->body.maxvars + code->body.maxstack) * sizeof(struct _rt_stack));
 
+	cf->pg = 0;	// TODO: ref page of origin
 	// push
 	cf->parent = inv->top;
 	inv->top = cf;
@@ -378,6 +366,11 @@ static uint _rt_string_out(struct _rt_invocation* inv, struct _rt_stack* to, str
 	switch(to->type)
 	{
 	case STACK_OUTPUT:
+		if(inv->response_started == 0)
+		{
+			to->out->start(to->outdata);
+			inv->response_started = 1;
+		}
 		return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
 	case STACK_PTR:
 		return st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
@@ -393,6 +386,11 @@ static void _rt_num_out(struct _rt_invocation* inv, struct _rt_stack* to, rt_num
 	switch(to->type)
 	{
 	case STACK_OUTPUT:
+		if(inv->response_started == 0)
+		{
+			to->out->start(to->outdata);
+			inv->response_started = 1;
+		}
 		to->out->data(to->outdata,buffer,len);
 		break;
 	case STACK_PTR:
@@ -764,6 +762,11 @@ static void _rt_run(struct _rt_invocation* inv)
 				st_insert(inv->t,&sp->single_ptr_w,inv->top->pc,tmp);
 				break;
 			case STACK_OUTPUT:
+				if(inv->response_started == 0)
+				{
+					sp->out->start(sp->outdata);
+					inv->response_started = 1;
+				}
 				sp->out->push(sp->outdata);
 				sp->out->data(sp->outdata,inv->top->pc,tmp);
 			}
@@ -778,6 +781,11 @@ static void _rt_run(struct _rt_invocation* inv)
 				st_insert(inv->t,&sp->single_ptr_w,inv->top->pc,tmp);
 				break;
 			case STACK_OUTPUT:
+				if(inv->response_started == 0)
+				{
+					sp->out->start(sp->outdata);
+					inv->response_started = 1;
+				}
 				sp->out->data(sp->outdata,inv->top->pc,tmp);
 			}
 			inv->top->pc += tmp;
@@ -925,6 +933,12 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_END:
 			if(inv->top->parent == 0)
 			{
+				// any unreportede output?
+				if(inv->hdl->top->pt.offset != inv->hdl->root.offset &&
+					inv->hdl->top->pt.key != inv->hdl->root.key &&
+						inv->hdl->top->pt.pg != inv->hdl->root.pg)
+					inv->hdl->response->next(inv->hdl->respdata);
+
 				cle_stream_end(inv->hdl);
 				return;
 			}
@@ -934,8 +948,8 @@ static void _rt_run(struct _rt_invocation* inv)
 				inv->top = inv->top->parent;
 				sp = inv->top->sp;
 
-				cf->parent = cf->code->free;
-				cf->code->free = cf;
+				// unref page of origin
+				//tk_unref(inv->hdl->instance_tk,cf->pg);
 			}
 			break;
 		case OP_DOCALL:
@@ -981,6 +995,7 @@ static void _rt_start(event_handler* hdl)
 	hdl->handler_data = inv;
 
 	inv->t = hdl->instance_tk;
+	inv->response_started = 0;
 	inv->code_cache = 0;
 	inv->hdl = hdl;
 	inv->top = 0;
@@ -1002,11 +1017,7 @@ static void _rt_start(event_handler* hdl)
 	inv->params_before_run = inv->code_cache->body.maxparams;
 
 	if(inv->params_before_run == 0)
-	{
-		hdl->response->start(hdl->respdata);
-
 		_rt_run(inv);
-	}
 }
 
 static void _rt_next(event_handler* hdl)
@@ -1028,8 +1039,6 @@ static void _rt_next(event_handler* hdl)
 
 		if(--inv->params_before_run != 0)
 			return;
-
-		hdl->response->start(hdl->respdata);
 	}
 
 	_rt_run(inv);
@@ -1040,21 +1049,12 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 	struct _rt_invocation* inv = (struct _rt_invocation*)hdl->handler_data;
 
 	if(inv == 0)
-	{
 		cle_stream_fail(hdl,code,length);
-		return;
-	}
-
-	if(length == 0 && inv->params_before_run != 0)
-	{
-		hdl->response->start(hdl->respdata);
-
+	else if(length == 0 && inv->params_before_run != 0)
 		_rt_run(inv);
-	}
-
-	if(hdl->eventdata->error == 0)
+	else
 	{
-		// if blocked on get (not failed) -> raise exception
+		// blocked on get() -> raise exception
 	}
 }
 

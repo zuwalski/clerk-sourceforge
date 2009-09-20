@@ -24,7 +24,7 @@ static const char start_state[] = "start";
 static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), void* ctx)
 {
 	int state = 2;
-	do
+	while(1)
 	{
 		int i = 0;
 		char buffer[100];
@@ -33,12 +33,10 @@ static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), vo
 			int c = st_scan(t,from);
 			if(c < 0)
 			{
-				if(state == 2)
-					return -2;
-				if(state != 1)
-					return -1;
-				state = -1;
-				break;
+				if(state != 0)
+					return (state == 2)? -2 : -1;
+				buffer[i++] = 0;
+				return fun(ctx,buffer,i);
 			}
 
 			if(c == 0 || c == '.')
@@ -60,8 +58,6 @@ static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), vo
 		if(i = fun(ctx,buffer,i))
 			return i;
 	}
-	while(state >= 0);
-	return 0;
 }
 
 struct _val_ctx
@@ -492,7 +488,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 	}
 
 	// insert event-name
-	if(_copy_validate(app_instance,&root,eventname) <= 0)
+	if(_copy_validate(app_instance,&root,eventname) < 0)
 		return 1;
 
 	while(1)

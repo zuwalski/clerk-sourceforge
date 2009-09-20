@@ -221,13 +221,14 @@ static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_n
 
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {
+	/* race-condition ... hmmm why do this?
 	if(hdl->eventdata->error == 0)
 	{
 		hdl->eventdata->error = msg;
 		hdl->eventdata->errlength = msglen;
+	}*/
 
-		hdl->response->end(hdl->respdata,msg,msglen);
-	}
+	hdl->response->end(hdl->respdata,msg,msglen);
 
 	hdl->thehandler = &_nil_handler;
 }
@@ -289,25 +290,17 @@ static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 			state = 1;
 		}
 	}
-
-	return (state == 2)? to : -1;
+	ievent[to++] = 0;
+	return (state == 1)? to : -1;
 }
 
 static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
 {
-	event_handler* hdl;
-	if(type != SYNC_REQUEST_HANDLER || hdlists[SYNC_REQUEST_HANDLER] == 0)
-		hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
-	else
-	{
-		hdl = hdlists[SYNC_REQUEST_HANDLER];
-		hdlists[SYNC_REQUEST_HANDLER] = 0;
-	}
+	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
 
 	hdl->next = hdlists[type];
 	hdlists[type] = hdl;
 	hdl->thehandler = syshandler;
-	hdl->handler_data = 0;
 	hdl->object = *object;
 
 	if(handler == 0)
@@ -323,6 +316,7 @@ static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, 
 
 	//TODO copy event and user data
 	hdl->eventdata = sysdata;
+	hdl->handler_data = 0;
 
 	// "no output"-handler on all async's
 	hdl->response = response;
@@ -389,7 +383,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		return 0;
 	}
 
-	ievent = (char*)tk_alloc(app_instance,event_len);
+	ievent = (char*)tk_alloc(app_instance,event_len + 1);
 
 	if(response == 0)
 		response = &_nil_out;

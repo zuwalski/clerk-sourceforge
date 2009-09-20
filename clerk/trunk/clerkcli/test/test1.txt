@@ -18,12 +18,33 @@ start
 dk.event
 <!
 !>
-(:test) "dk.event says: " :test get()
+(:test) "dk.event says: " :test 
 <!
 dk.event
 !>
 hello world
 <!
+dev.set.handler.reqs.dk.lsz.test
 !>
-hello world 2
+start
+<!
+!>
+dk.event
+<!
+!>
+() "Req start" get() "Req end"
+<!
+dev.set.handler.resp.dk.lsz.test
+!>
+start
+<!
+!>
+dk.event
+<!
+!>
+() "Resp start " get() " resp end"
+<!
+dk.event
+!>
+hello world
 <!
