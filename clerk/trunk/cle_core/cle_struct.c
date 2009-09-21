@@ -100,6 +100,9 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 	return (rt->length == 0);
 }
 
+/*
+	ovf -> use shared ovf-pages to preserve space
+*/
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
 	overflow* ovf = rt->pg->ovf;
@@ -257,14 +260,13 @@ static void _st_write(struct _st_lkup_res* rt)
 
 		memcpy(KDATA(newkey),rt->path,length >> 3);
 
+		rt->prev = 0;
+		rt->sub  = newkey;
 		rt->diff = length;
 		rt->path += length >> 3;
 		size     -= pgsize - sizeof(key);
 	}
-	while(size);
-	
-	rt->sub  = newkey;
-	rt->diff = newkey->length;
+	while(size);	
 }
 
 /* Interface-functions */
@@ -848,7 +850,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, ke
 	uint ret = 0,idx = 0;
 	while(1)
 	{
-		uint klen = (nxt != 0)? (nxt->offset + 7): (me->length + 6);
+		uint klen = (nxt != 0)? (nxt->offset + 6): (me->length + 6);
 		klen >>= 3;
 		klen -= offset >> 3;
 		if(klen != 0)
