@@ -140,7 +140,7 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 	if(st_get(inv->t,&pt,(char*)&body,sizeof(struct _body_)) != -2)
 		return 0;
 
-	ret = (struct _rt_code*)tk_alloc(inv->t,sizeof(struct _rt_code) + body.codesize - sizeof(struct _body_));
+	ret = (struct _rt_code*)tk_alloc(inv->t,sizeof(struct _rt_code) + body.codesize - sizeof(struct _body_),0);
 
 	// push
 	ret->next = inv->code_cache;
@@ -161,10 +161,11 @@ static struct _rt_code* _rt_load_code(struct _rt_invocation* inv, st_ptr code)
 
 static struct _rt_callframe* _rt_newcall(struct _rt_invocation* inv, struct _rt_code* code, st_ptr* object, int is_expr)
 {
+	struct page_wrap* pw;
 	struct _rt_callframe* cf = (struct _rt_callframe*)tk_alloc(inv->t,sizeof(struct _rt_callframe)
-			+ (code->body.maxvars + code->body.maxstack) * sizeof(struct _rt_stack));
+			+ (code->body.maxvars + code->body.maxstack) * sizeof(struct _rt_stack),&pw);
 
-	cf->pg = 0;	// TODO: ref page of origin
+	cf->pg = pw;
 	// push
 	cf->parent = inv->top;
 	inv->top = cf;
@@ -949,7 +950,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				sp = inv->top->sp;
 
 				// unref page of origin
-				//tk_unref(inv->hdl->instance_tk,cf->pg);
+				tk_unref(inv->hdl->instance_tk,cf->pg);
 			}
 			break;
 		case OP_DOCALL:
@@ -991,7 +992,7 @@ static void _rt_run(struct _rt_invocation* inv)
 */
 static void _rt_start(event_handler* hdl)
 {
-	struct _rt_invocation* inv = (struct _rt_invocation*)tk_alloc(hdl->instance_tk,sizeof(struct _rt_invocation));
+	struct _rt_invocation* inv = (struct _rt_invocation*)tk_alloc(hdl->instance_tk,sizeof(struct _rt_invocation),0);
 	hdl->handler_data = inv;
 
 	inv->t = hdl->instance_tk;

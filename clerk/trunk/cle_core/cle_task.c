@@ -21,6 +21,7 @@
 #include "cle_struct.h"
 
 /* mem-manager */
+// TODO: should not be used outside task.c -> make private
 void* tk_malloc(task* t, uint size)
 {
 	void* m = malloc(size);
@@ -30,6 +31,7 @@ void* tk_malloc(task* t, uint size)
 	return m;
 }
 
+// TODO: remove -> use tk_alloc
 void* tk_realloc(task* t, void* mem, uint size)
 {
 	void* m = realloc(mem,size);
@@ -38,13 +40,13 @@ void* tk_realloc(task* t, void* mem, uint size)
 
 	return m;
 }
-
+// TODO: (see tk_malloc)
 void tk_mfree(task* t, void* mem)
 {
 	free(mem);
 }
 
-static void _tk_release_page(task* t, page_wrap* wp)
+static void _tk_release_page(page_wrap* wp)
 {
 	/* unref linked pages */
 	if(wp->ovf != 0)
@@ -56,15 +58,15 @@ static void _tk_release_page(task* t, page_wrap* wp)
 			page_wrap* wpt = (page_wrap*)pt->pg;
 
 			if(--(wpt->refcount) == 0)
-				_tk_release_page(t,wpt);
+				_tk_release_page(wpt);
 		}
 
 		/* release ovf */
-		tk_mfree(t,wp->ovf);
+		tk_mfree(0,wp->ovf);
 	}
 
 	/* release page */
-	tk_mfree(t,wp->pg);
+	tk_mfree(0,wp->pg);
 }
 
 static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid)
@@ -117,7 +119,7 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 		page* npage = t->ps->read_page(t->psrc_data,pid);
 
 		/* create wrapper and add to w-list */
-		pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap));
+		pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap),0);
 		pw->ext_pageid = pid;
 		pw->ovf = 0;
 		pw->pg = npage;
@@ -194,7 +196,7 @@ void tk_unref(task* t, page_wrap* pg)
 
 	/* internal dead page ? */
 	if(pg->refcount == 0 && pg->pg->id == 0)
-		;//_tk_release_page(t,pg);
+		_tk_release_page(pg);
 }
 
 void _tk_write_copy(task* t, page_wrap* pg)
@@ -229,7 +231,7 @@ void _tk_stack_new(task* t)
 	t->stack = tmp;
 }
 
-void* tk_alloc(task* t, uint size)
+void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 {
 	uint offset;
 	page* pg = t->stack->pg;
@@ -255,6 +257,8 @@ void* tk_alloc(task* t, uint size)
 			tmp->next = t->stack->next;
 			t->stack->next = tmp;
 
+			if(pgref != 0)
+				*pgref = tmp;
 			return (void*)((char*)pg + sizeof(page));
 		}
 
@@ -269,6 +273,9 @@ void* tk_alloc(task* t, uint size)
 	pg->used += size;
 
 	t->stack->refcount++;
+
+	if(pgref != 0)
+		*pgref = t->stack;
 	return (void*)((char*)pg + offset);
 }
 
@@ -488,7 +495,7 @@ static uint _ms_dat(void* p, cdat dat, uint len)
 	struct _ms_ctx* ctx = (struct _ms_ctx*)p;
 	if(ctx->top == 0 || ctx->next == MS_SIZE_ELEMENTS)
 	{
-		struct _ms_size* top = (struct _ms_size*)tk_alloc(ctx->t,sizeof(struct _ms_size));
+		struct _ms_size* top = (struct _ms_size*)tk_alloc(ctx->t,sizeof(struct _ms_size),0);
 		top->prev = ctx->top;
 		ctx->top = top;
 		ctx->next = 0;

@@ -101,7 +101,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 }
 
 /*
-	ovf -> use shared ovf-pages to preserve space
+	ovf -> ovf to to-page. add list of ovf-ptrs
 */
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
@@ -273,10 +273,9 @@ static void _st_write(struct _st_lkup_res* rt)
 
 uint st_empty(task* t, st_ptr* pt)
 {
-	key* nk = tk_alloc(t,sizeof(key) + 2);
+	key* nk = tk_alloc(t,sizeof(key) + 2,&pt->pg);
 
-	pt->key = (char*)nk - (char*)t->stack->pg;
-	pt->pg = t->stack;
+	pt->key = (char*)nk - (char*)pt->pg->pg;
 	pt->offset = 0;
 
 	memset(nk,0,sizeof(key) + 2);

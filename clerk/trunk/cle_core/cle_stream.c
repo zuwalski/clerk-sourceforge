@@ -127,7 +127,7 @@ void cle_standard_push(event_handler* hdl)
 		hdl->free = elm->link;
 	}
 	else
-		elm = (ptr_list*)tk_alloc(hdl->instance_tk,sizeof(ptr_list));
+		elm = (ptr_list*)tk_alloc(hdl->instance_tk,sizeof(ptr_list),0);
 
 	if(hdl->top != 0)
 		elm->pt = hdl->top->pt;
@@ -150,7 +150,7 @@ void cle_standard_submit(event_handler* hdl, st_ptr* from)
 {
 	// toplevel?
 	if(hdl->top->link == 0)
-		hdl->top->pt = *from;	// subst
+		hdl->root = hdl->top->pt = *from;	// subst
 	else
 		st_link(hdl->instance_tk,&hdl->top->pt,from);
 }
@@ -198,6 +198,48 @@ static void _pa_submit(event_handler* hdl, st_ptr* st)
 }
 
 static cle_pipe _pipeline_all = {cle_notify_start,cle_notify_next,cle_notify_end,_pa_pop,_pa_push,_pa_data,_pa_submit};
+
+static void _sync_start(event_handler* hdl)
+{
+	event_handler* chn = (event_handler*)hdl->handler_data;
+	do
+	{
+		chn->thehandler->input.start(chn->handler_data);
+		chn = chn->next;
+	}
+	while(chn != 0);
+}
+
+static void _sync_next(event_handler* hdl)
+{
+	event_handler* chn = (event_handler*)hdl->handler_data;
+	st_ptr pt = chn->root;
+	do
+	{
+		chn->root = pt;
+		chn->thehandler->input.submit(chn->handler_data,&pt);
+		chn->thehandler->input.next(chn->handler_data);
+		chn = chn->next;
+	}
+	while(chn != 0);
+
+	chn->thehandler->input.next(chn->handler_data);
+}
+
+static void _sync_end(event_handler* hdl, cdat c, uint u)
+{
+	event_handler* chn = (event_handler*)hdl->handler_data;
+	do
+	{
+		chn->thehandler->input.end(chn->handler_data,c,u);
+		chn = chn->next;
+	}
+	while(chn != 0);
+	// pass on
+	hdl->response->end(hdl->respdata,c,u);
+}
+
+static cle_syshandler _sync_chain_handler = {0,{_sync_start,_sync_next,_sync_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};
 
 /* event-handler exit-functions */
 
@@ -296,7 +338,7 @@ static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 
 static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
 {
-	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler));
+	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler),0);
 
 	hdl->next = hdlists[type];
 	hdlists[type] = hdl;
@@ -383,7 +425,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		return 0;
 	}
 
-	ievent = (char*)tk_alloc(app_instance,event_len + 1);
+	ievent = (char*)tk_alloc(app_instance,event_len + 1,0);
 
 	if(response == 0)
 		response = &_nil_out;
@@ -425,7 +467,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	}
 
 	// ipt setup - internal task
-	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt));
+	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
 	// default null
 	memset(ipt,0,sizeof(_ipt));
 
@@ -539,6 +581,11 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
 	{
 		event_handler* sync_handler = hdlists[SYNC_REQUEST_HANDLER];
+
+		// more than one sync-handler
+		if(sync_handler->next != 0)
+		{
+		}
 
 		// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
 		// setup response-handler chain (only make sense with sync handlers)

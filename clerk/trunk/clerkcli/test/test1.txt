@@ -32,7 +32,7 @@ start
 dk.event
 <!
 !>
-() "Req start" get() "Req end"
+() "Req start" read() "Req end"
 <!
 dev.set.handler.resp.dk.lsz.test
 !>
@@ -42,7 +42,7 @@ start
 dk.event
 <!
 !>
-() "Resp start " get() " resp end"
+() "Resp start " read() " resp end"
 <!
 dk.event
 !>

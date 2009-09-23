@@ -20,15 +20,15 @@
 	Dev-functions:
 	dev.new.object , objectname
 	dev.new.<extend-objectname> , objectname
-	dev.set.eval.<objectname> , expr
-	dev.set.expr.<objectname> , path.path , expr/method/ref
-	dev.set.property.<objectname> , path.path 
-	dev.create.state.<objectname> , state
-	dev.set.handler.sync.<objectname> , state, event, method/expr (handler)
-	dev.set.handler.asyn.<objectname> , state, event, method/expr (handler)
-	dev.set.handler.resp.<objectname> , state, event, method/expr (handler)
-	dev.set.handler.reqs.<objectname> , state, event, method/expr (handler)
-	dev.create.collection.<objectname> , path.path
+	dev.eval.<objectname> , expr
+	dev.make.expr.<objectname> , path.path , expr/method/ref
+	dev.make.property.<objectname> , path.path 
+	dev.make.state.<objectname> , state [, entry-validation expr]
+	dev.make.handler.sync.<objectname> , state, event, method/expr (handler)
+	dev.make.handler.asyn.<objectname> , state, event, method/expr (handler)
+	dev.make.handler.resp.<objectname> , state, event, method/expr (handler)
+	dev.make.handler.reqs.<objectname> , state, event, method/expr (handler)
+	dev.make.collection.<objectname> , path.path
 
 */
 #include "cle_instance.h"
@@ -100,7 +100,7 @@ static void _set_expr_next(event_handler* hdl)
 	// first hit?
 	if(state == 0)
 	{
-		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
+		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set),0);
 		state = (struct _dev_set*)hdl->handler_data;
 
 		state->p1 = hdl->root;
@@ -123,7 +123,7 @@ static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_
 	// first hit?
 	if(state == 0)
 	{
-		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set));
+		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set),0);
 		state = (struct _dev_set*)hdl->handler_data;
 
 		state->p1 = hdl->root;

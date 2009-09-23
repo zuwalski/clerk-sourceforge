@@ -134,7 +134,7 @@ task* tk_clone_task(task* parent);
 void tk_drop_task(task* t);
 int tk_commit_task(task* t);
 
-void* tk_alloc(task* t, uint size);
+void* tk_alloc(task* t, uint size, struct page_wrap** pgref);
 
 void* tk_malloc(task* t, uint size);
 void* tk_realloc(task* t, void* mem, uint size);

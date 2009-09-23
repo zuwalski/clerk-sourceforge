@@ -173,11 +173,26 @@ struct _cmp_buildin
 
 static const struct _cmp_buildin buildins[] = {
 	{"void",OP_NULL,0,1,255},			// throw away values
-	{"get",OP_RECV,0,1,0},				// recieve data-structure from event-queue
+	{"read",OP_RECV,0,1,0},				// recieve data-structure from event-queue
+
+	{"id",OP_NULL,OP_NULL,0,0},			// get objectid in stringid format
+	{"get",OP_NULL,OP_NULL,0,0},		// lookup object using name og stringid
+	{"put",0,OP_NULL,0,0},
+	{"in",0,OP_NULL,0,0},
+	{"remove",0,OP_NULL,0,0},
+
 	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
+	{"add",0,OP_NULL,0,0},
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
-	{"str",OP_2STR,0,255,1},
+	{"next",0,OP_NULL,0,0},
+	{"prev",0,OP_NULL,0,0},
+	{"gt",0,OP_NULL,0,0},
+	{"gte",0,OP_NULL,0,0},
+	{"lt",0,OP_NULL,0,0},
+	{"lte",0,OP_NULL,0,0},
+
+	{"string",OP_2STR,0,255,1},
 	{0,0,0,0,0}	// STOP
 };
 
@@ -211,7 +226,7 @@ static struct _skips* _cmp_new_skips(struct _cmp_state* cst)
 	if(skips)
 		cst->freeskip = skips->next;
 	else
-		skips = (struct _skips*)tk_alloc(cst->t,sizeof(struct _skips));
+		skips = (struct _skips*)tk_alloc(cst->t,sizeof(struct _skips),0);
 
 	skips->next = 0;
 	return skips;
@@ -678,7 +693,7 @@ static void _cmp_op_push(struct _cmp_state* cst, struct _cmp_op** otop, uchar op
 		oper = oper->prev;
 	}
 
-	oper = (struct _cmp_op*)tk_alloc(cst->t,sizeof(struct _cmp_op));
+	oper = (struct _cmp_op*)tk_alloc(cst->t,sizeof(struct _cmp_op),0);
 
 	oper->opc = opc;
 	oper->prec = prec;
