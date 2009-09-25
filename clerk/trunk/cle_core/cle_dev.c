@@ -18,8 +18,7 @@
 
 /*
 	Dev-functions:
-	dev.new.object , objectname
-	dev.new.<extend-objectname> , objectname
+	dev.new.<extend-objectname> , objectname (if objectname == 'object' -> new root object)
 	dev.eval.<objectname> , expr
 	dev.make.expr.<objectname> , path.path , expr/method/ref
 	dev.make.property.<objectname> , path.path 
@@ -33,7 +32,6 @@
 */
 #include "cle_instance.h"
 
-static const char _new_object_name[] = "dev\0new\0object";
 static const char _new_extends_name[] = "dev\0new";
 static const char _set_expr_name[] = "dev\0set\0expr";
 static const char _set_property_name[] = "dev\0set\0property";
@@ -44,7 +42,6 @@ static const char _set_handler_name_resp[] = "dev\0set\0handler\0resp";
 static const char _set_handler_name_reqs[] = "dev\0set\0handler\0reqs";
 static const char _create_collection_name[] = "dev\0create\0collection";
 
-static cle_syshandler _new_object;
 static cle_syshandler _new_extends;
 static cle_syshandler _set_expr;
 static cle_syshandler _set_property;
@@ -56,20 +53,18 @@ static cle_syshandler _set_handler_reqs;
 
 static const char _illegal_argument[] = "dev:illegal argument";
 
-static void new_object_next(event_handler* hdl)
-{
-	if(cle_new_object(hdl->instance_tk,hdl->instance,hdl->root,0,0))
-		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
-	else
-		cle_stream_end(hdl);
-}
-
 static void new_extends_next(event_handler* hdl)
 {
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
+	uint ret = 0;
 
-	if(cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->root,0))
+	if(exname_length == 7 && memcmp(exname,"object",7) == 0)
+		ret = cle_new_object(hdl->instance_tk,hdl->instance,hdl->root,0,0);
+	else
+		ret = cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->root,0);
+
+	if(ret != 0)
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -177,9 +172,6 @@ static void _create_state_next(event_handler* hdl)
 
 void dev_register_handlers(task* config_t, st_ptr* config_root)
 {
-	_new_object = cle_create_simple_handler(0,new_object_next,0,SYNC_REQUEST_HANDLER);
-	cle_add_sys_handler(config_t,*config_root,_new_object_name,sizeof(_new_object_name),&_new_object);
-
 	_new_extends = cle_create_simple_handler(0,new_extends_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_new_extends_name,sizeof(_new_extends_name),&_new_extends);
 

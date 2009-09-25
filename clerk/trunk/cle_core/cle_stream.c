@@ -299,33 +299,66 @@ struct _sync_chain
 {
 	event_handler* synch;
 	ptr_list*      input;
+	char           create_object;
+	char           started;
+	char           failed;
 };
+
+static void _sync_start_rs(struct _sync_chain* hdl)
+{
+	if(hdl->started == 0)
+	{
+		hdl->started = 1;
+		hdl->synch->response->start(hdl->synch->respdata);
+	}
+}
+
+static void _sync_end_rs(struct _sync_chain* hdl,cdat c,uint u)
+{
+	if(u > 0)
+	{
+		hdl->failed = 1;
+		hdl->synch->response->end(hdl->synch->respdata,c,u);
+	}
+}
+
+static void _sync_next_rs(struct _sync_chain* hdl) {hdl->synch->response->next(hdl->synch->respdata);}
+static void _sync_pop_rs(struct _sync_chain* hdl) {hdl->synch->response->pop(hdl->synch->respdata);}
+static void _sync_push_rs(struct _sync_chain* hdl) {hdl->synch->response->push(hdl->synch->respdata);}
+static uint _sync_data_rs(struct _sync_chain* hdl,cdat c,uint u) {return hdl->synch->response->data(hdl->synch->respdata,c,u);}
+static void _sync_submit_rs(struct _sync_chain* hdl,st_ptr* s) {hdl->synch->response->submit(hdl->synch->respdata,s);}
+
+static cle_pipe _sync_response = {_sync_start_rs,_sync_next_rs,_sync_end_rs,_sync_pop_rs,_sync_push_rs,_sync_data_rs,_sync_submit_rs};
 
 // startup chain of sync-handlers
 static void _sync_start(event_handler* hdl)
 {
-	struct _sync_chain* sc = (struct _sync_chain*)hdl;
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+
+	_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 	// start first handler
 	sc->synch->thehandler->input.start(sc->synch->handler_data);
 }
 
 static void _sync_next(event_handler* hdl)
 {
-	struct _sync_chain* sc = (struct _sync_chain*)hdl;
-	ptr_list* elm = _alloc_elem(hdl);
-
-	// save input
-	elm->pt = hdl->root;
-
-	elm->link = sc->input;
-	sc->input = elm;
-
-	sc->synch->thehandler->input.next(sc->synch->handler_data);
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+	if(sc->failed == 0)
+	{
+		ptr_list* elm = _alloc_elem(hdl);
+		// save input
+		elm->pt = hdl->root;
+		// push
+		elm->link = sc->input;
+		sc->input = elm;
+		// next first handler
+		sc->synch->thehandler->input.next(sc->synch->handler_data);
+	}
 }
 
 static void _sync_end(event_handler* hdl, cdat c, uint u)
 {
-	struct _sync_chain* sc = (struct _sync_chain*)hdl;
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
 	event_handler* chn = sc->synch->next;
 
 	// end first
@@ -337,15 +370,19 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 	{
 		ptr_list* now = sc->input;
 
-		//_ready_handler();
+		_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 
 		chn->thehandler->input.start(chn->handler_data);
-		while(now != 0)
+		while(now != 0 && sc->failed == 0)
 		{
 			chn->thehandler->input.submit(chn->handler_data,&now->pt);
 			chn->thehandler->input.next(chn->handler_data);
 			now = now->link;
 		}
+
+		if(sc->failed != 0)
+			return;
+
 		chn->thehandler->input.end(chn->handler_data,c,u);
 
 		chn = chn->next;
@@ -353,6 +390,7 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 	while(chn != 0);
 
 	// call real response-end
+	hdl->response->end(hdl->respdata,c,u);
 }
 
 static cle_syshandler _sync_chain_handler = {0,{_sync_start,_sync_next,_sync_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};
@@ -613,9 +651,12 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		{
 			struct _sync_chain* sc = (struct _sync_chain*)tk_alloc(app_instance,sizeof(struct _sync_chain),0);
 
-			_register_handler(app_instance,hdlists,&_sync_chain_handler,0,0,SYNC_REQUEST_HANDLER);
+			_register_handler(app_instance,hdlists,&_sync_chain_handler,0,&object,SYNC_REQUEST_HANDLER);
 
 			sc->synch = sync_handler;
+			sc->create_object = (object.pg != 0);
+			sc->started = 0;
+			sc->failed = 0;
 			sc->input = 0;
 
 			sync_handler = hdlists[SYNC_REQUEST_HANDLER];
