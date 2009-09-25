@@ -306,7 +306,7 @@ static void _sync_start(event_handler* hdl)
 {
 	struct _sync_chain* sc = (struct _sync_chain*)hdl;
 	// start first handler
-	sc->first_pipe->start(sc->first_data);
+	sc->synch->thehandler->input.start(sc->synch->handler_data);
 }
 
 static void _sync_next(event_handler* hdl)
@@ -320,16 +320,16 @@ static void _sync_next(event_handler* hdl)
 	elm->link = sc->input;
 	sc->input = elm;
 
-	sc->first_pipe->next(sc->first_data);
+	sc->synch->thehandler->input.next(sc->synch->handler_data);
 }
 
 static void _sync_end(event_handler* hdl, cdat c, uint u)
 {
 	struct _sync_chain* sc = (struct _sync_chain*)hdl;
-	event_handler* chn = sc->next_sync;
+	event_handler* chn = sc->synch->next;
 
 	// end first
-	sc->first_pipe->end(sc->first_data,c,u);
+	sc->synch->thehandler->input.end(sc->synch->handler_data,c,u);
 
 	// replay data on sync-chain
 	sc->input = ptr_list_reverse(sc->input);
@@ -613,7 +613,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		{
 			struct _sync_chain* sc = (struct _sync_chain*)tk_alloc(app_instance,sizeof(struct _sync_chain),0);
 
-			_register_handler(app_instance,hdlists,&_sync_chain,0,0,SYNC_REQUEST_HANDLER);
+			_register_handler(app_instance,hdlists,&_sync_chain_handler,0,0,SYNC_REQUEST_HANDLER);
 
 			sc->synch = sync_handler;
 			sc->input = 0;
