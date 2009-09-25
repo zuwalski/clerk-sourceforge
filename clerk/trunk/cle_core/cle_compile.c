@@ -125,9 +125,9 @@ struct _cmp_var
 #define PEEK_VAR(v) ((struct _cmp_var*)(cst->opbuf + (v)))
 
 static const char* keywords[] = {
-	"do","end","if","elseif","else","while","repeat","until","fire",
-	"var","new","each","break","and","or","not","null",
-	"handle","raise","switch","case","default","select","where","this","super","goto",0
+	"do","end","if","elseif","else","while","repeat","until","open",
+	"var","new","each","break","and","or","not",
+	"handle","raise","switch","case","default","this","super","goto",0
 };
 
 #define KW_MAX_LEN 7
@@ -141,7 +141,7 @@ enum cmp_keywords {
 	KW_WHILE,
 	KW_REPEAT,
 	KW_UNTIL,
-	KW_FIRE,
+	KW_OPEN,
 	KW_VAR,
 	KW_NEW,
 	KW_EACH,
@@ -149,14 +149,11 @@ enum cmp_keywords {
 	KW_AND,
 	KW_OR,
 	KW_NOT,
-	KW_NULL,
 	KW_HANDLE,
 	KW_RAISE,
 	KW_SWITCH,
 	KW_CASE,
 	KW_DEFAULT,
-	KW_SELECT,
-	KW_WHERE,
 	KW_THIS,
 	KW_SUPER,
 	KW_GOTO
@@ -177,20 +174,20 @@ static const struct _cmp_buildin buildins[] = {
 
 	{"id",OP_NULL,OP_NULL,0,0},			// get objectid in stringid format
 	{"get",OP_NULL,OP_NULL,0,0},		// lookup object using name og stringid
-	{"put",0,OP_NULL,0,0},
-	{"in",0,OP_NULL,0,0},
-	{"remove",0,OP_NULL,0,0},
+	{"put",0,OP_NULL,1,1},
+	{"in",0,OP_NULL,1,1},
+	{"remove",0,OP_NULL,1,1},
 
-	{"delete",0,OP_NULL,0,0},			// delete object or delete sub-tree
-	{"add",0,OP_NULL,0,0},
+	{"delete",0,OP_NULL,1,0},			// delete object or delete sub-tree
+	{"add",0,OP_NULL,255,1},
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
 	{"next",0,OP_NULL,0,0},
 	{"prev",0,OP_NULL,0,0},
-	{"gt",0,OP_NULL,0,0},
-	{"gte",0,OP_NULL,0,0},
-	{"lt",0,OP_NULL,0,0},
-	{"lte",0,OP_NULL,0,0},
+	{"gt",0,OP_NULL,1,1},
+	{"gte",0,OP_NULL,1,1},
+	{"lt",0,OP_NULL,1,1},
+	{"lte",0,OP_NULL,1,1},
 
 	{"string",OP_2STR,0,255,1},
 	{0,0,0,0,0}	// STOP
@@ -815,14 +812,6 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 }
 
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
-
-/*
-	path.path =|>|<... expr AND|OR * do -> exit
-*/
-static void _cmp_where_condition(struct _cmp_state* cst)
-{
-}
-
 /*
 * path.+|-:bindvar{path_must_exsist;other.:endvar;+|-*.:x;} do -> exit
 */
@@ -1408,7 +1397,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					state = ST_BREAK;
 					continue;
-				case KW_EACH:	// [struct].each it_expr do bexpr end
+				case KW_EACH:	// [struct|collection].each it_expr [sort sort-rules] do bexpr end
 					chk_state(ST_DOT)
 					{
 						uint loop_coff = cst->code_next;
@@ -1419,7 +1408,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					state = ST_0;
 					continue;
-				case KW_FIRE:	// fire expr do bexpr end
+				case KW_OPEN:	// open expr do bexpr end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
 					if(nest) err(__LINE__)
@@ -1488,12 +1477,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 						_cmp_emit0(cst,OP_NOT);
 						return term;
 					}
-				case KW_NULL:
-					chk_state(ST_0|ST_NUM_OP)
-					_cmp_emit0(cst,OP_NULL);
-					_cmp_stack(cst,1);
-					state = ST_NUM;
-					continue;
 				case KW_SUPER:
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM_OP)
 					chk_out()
@@ -1508,6 +1491,11 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_stack(cst,1);
 					state = ST_ALPHA;
 					continue;
+				case KW_GOTO:	// goto state-name [if expr]
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+					chk_out()
+					if(cst->glevel != 1) err(__LINE__)
+					return 'g';
 				case KW_HANDLE:	// handle it_expr do bexpr end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
@@ -1574,27 +1562,6 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_op_clear(cst,&otop);
 					if(nest == NEST_EXPR && stack == cst->s_top) {_cmp_emit0(cst,OP_NULL);_cmp_stack(cst,1);}
 					return 'f';
-				case KW_SELECT:		// select typename where where-conditions do bexpr end
-					chk_state(ST_0)
-					{
-						uint len = _cmp_typename(cst);
-						if(len == 0)
-						{
-							err(__LINE__)
-							break;
-						}
-
-						_cmp_where_condition(cst);
-						
-						if(_cmp_block_expr(cst,0,nest) != 'e') err(__LINE__)
-						_cmp_emit0(cst,OP_NULL);
-						_cmp_stack(cst,-1);
-						state = ST_0;
-						continue;
-					}
-				case KW_WHERE:
-					err(__LINE__)
-					break;
 				default:
 					chk_out()
 					{
@@ -1729,7 +1696,7 @@ static void _cmp_end(struct _cmp_state* cst)
 	tk_mfree(cst->t,cst->code);
 }
 
-int cmp_method(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* data)
+int cmp_method(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* data, const uint is_handler)
 {
 	struct _cmp_state cst;
 	int ret,codebegin;
@@ -1744,12 +1711,37 @@ int cmp_method(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* dat
 		uint br_prev_handler = 0;
 		_cmp_nextc(&cst);
 		// compile body
-		while(1)
+		ret = _cmp_block_expr(&cst,0,PROC_EXPR);
+		while(ret == 'g')
 		{
-			ret = _cmp_block_expr(&cst,0,PROC_EXPR);
-			if(ret == -1 || ret == 'e')
+			uint len;
+			if(is_handler == 0)
+			{cst.err++; print_err(&cst,__LINE__);}
+
+			len = _cmp_typename(&cst);
+			if(len < 1) {cst.err++; print_err(&cst,__LINE__);}
+
+			if(whitespace(cst.c)) _cmp_whitespace(&cst);
+
+			// look for "if" or end-of-goto's
+			len = _cmp_name(&cst);
+			if(len > 0 && len <= KW_MAX_LEN)
+			{
+				ret = _cmp_keyword(cst.opbuf + cst.top);
+				if(ret != KW_IF)
+					break;
+				ret = _cmp_expr(&cst,0,NEST_EXPR);
+			}
+			else
+			{
+				if(cst.c != -1) {cst.err++; print_err(&cst,__LINE__);}
 				break;
-			else if(ret == 'h')	// (exception) handle it-expr do bexpr end|handle... 
+			}
+		}
+
+		while(ret != -1 && ret != 'e')
+		{
+			if(ret == 'h')	// (exception) handle it-expr do bexpr end|handle... 
 			{
 				_cmp_emit0(&cst,OP_END);		// end func/expr here - begin handler-code
 				if(cst.first_handler == 0) cst.first_handler = cst.code_next - codebegin;
@@ -1763,6 +1755,8 @@ int cmp_method(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* dat
 			}
 			else
 			{cst.err++; print_err(&cst,__LINE__);break;}
+
+			ret = _cmp_block_expr(&cst,0,PROC_EXPR);
 		}
 
 		if(br_prev_handler != 0)

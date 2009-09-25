@@ -148,6 +148,7 @@ void tk_root_ptr(task* t, st_ptr* pt);
 void* tk_pop_frame(task* t);
 void* tk_push_frame(task* t, void* f);
 
+ptr_list* ptr_list_reverse(ptr_list* e);
 /* test */
 
 void unimplm();

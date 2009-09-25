@@ -508,7 +508,7 @@ int cle_set_handler(task* app_instance, st_ptr root, cdat object_name, uint obje
 				// insert source
 				_record_source_and_path(app_instance,root,eventname,expr,'(');
 				// call compiler
-				if(cmp_method(app_instance,&root,&expr,response,data))
+				if(cmp_method(app_instance,&root,&expr,response,data,1))
 					return 1;
 
 				// register handler
@@ -878,7 +878,7 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 
 			_record_source_and_path(app_instance,pt,path,expr,'(');
 			// call compiler
-			return cmp_method(app_instance,&pt,&expr,response,data);
+			return cmp_method(app_instance,&pt,&expr,response,data,0);
 		case ' ':
 		case '\t':
 		case '\r':

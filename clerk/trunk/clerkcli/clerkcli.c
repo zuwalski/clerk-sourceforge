@@ -40,7 +40,10 @@ static void _next(void* v)
 static void _end(void* v,cdat c,uint u)
 {
 	if(u > 0)
+	{
+		*((int*)v) = 1;
 		printf(" [end: %.*s]\n",u,c);
+	}
 }
 static void _pop(void* v)
 {
@@ -52,12 +55,12 @@ static void _push(void* v)
 }
 static uint _data(void* v,cdat c,uint u)
 {
-	uint i;
-	for(i = 0; i < u; i++)
-	{
-		printf("%c",c[i]);
-	}
-	//printf("%.*s",u,c);
+	//uint i;
+	//for(i = 0; i < u; i++)
+	//{
+	//	printf("%c",c[i]);
+	//}
+	printf("%.*s",u,c);
 	return 0;
 }
 static void _submit(void* v,st_ptr* st)
@@ -199,7 +202,7 @@ int main(int argc, char* argv[])
 			*/
 
 
-			while(fgets(buffer,sizeof(buffer),sfile))
+			while(failed == 0 && fgets(buffer,sizeof(buffer),sfile))
 			{
 				if(strcmp(buffer,"!>\n") == 0)
 				{
@@ -232,7 +235,7 @@ int main(int argc, char* argv[])
 						if(state != 0)
 							cle_end(ipt,0,0);
 
-						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer)), 0, 0, 0,&_pipe_stdout,0,t);
+						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer)), 0, 0, 0,&_pipe_stdout,&failed,t);
 						if(ipt == 0)
 						{
 							failed = 1;

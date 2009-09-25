@@ -21,7 +21,7 @@
 #include "cle_clerk.h"
 #include "cle_stream.h"
 
-int cmp_method(task* t, st_ptr* dest, st_ptr* body, cle_pipe* response, void* data);
+int cmp_method(task* t, st_ptr* dest, st_ptr* body, cle_pipe* response, void* data, const uint is_handler);
 
 int cmp_expr(task* t, st_ptr* dest, st_ptr* body, cle_pipe* response, void* data);
 

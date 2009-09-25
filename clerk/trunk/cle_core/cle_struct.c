@@ -949,6 +949,20 @@ uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2)
 	return st_map_st(t,pt1,_cmp_dat,_cmp_push,_cmp_pop,&ctx);
 }
 
+ptr_list* ptr_list_reverse(ptr_list* e)
+{
+	ptr_list* link = 0;
+	do
+	{
+		ptr_list* prev = e->link;
+		e->link = link;
+		link = e;
+		e = prev;
+	}
+	while(e != 0);
+	return e;
+}
+
 /*
 // ------ USED? ----------------------
 
