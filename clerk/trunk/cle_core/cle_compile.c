@@ -1011,7 +1011,7 @@ static void _cmp_new(struct _cmp_state* cst)
 //	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM) && *cst->lastop != OP_DOCALL){
 #define chk_out()\
 	if(state & (ST_ALPHA|ST_STR|ST_VAR|ST_NUM)){\
-	_cmp_op_clear(cst,&otop);\
+		_cmp_op_clear(cst,&otop);\
 		if(*cst->lastop != OP_OUT && *cst->lastop != OP_DOCALL){\
 			if(nest == NEST_EXPR)\
 				_cmp_emit0(cst,OP_CAT);\
@@ -1040,14 +1040,13 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 		exittype = _cmp_expr(cst,skips,nest);
 		if((stack != cst->s_top) && (nest != NEST_EXPR))
 		{
-			_cmp_emit0(cst,OP_OUTL);
+			_cmp_emit0(cst,OP_NEXT);
 			_cmp_stack(cst,-1);
 		}
+		else if(*cst->lastop == OP_OUT)
+			*cst->lastop = OP_NEXT;
 		if(exittype == ';')
-		{
 			_cmp_nextc(cst);
-			_cmp_emit0(cst,OP_NEXT);
-		}
 		else break;
 	}
 	return exittype;
@@ -1578,6 +1577,8 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 
 							*cst->lastop = (state & ST_DOT)? cmd->opcode_obj : cmd->opcode;
 							if(*cst->lastop == 0) err(__LINE__)
+							// for now: all buildins leave a value on the stack
+							_cmp_stack(cst,1);
 						}
 						else if(state & ST_DOT)
 							_cmp_emitS(cst,OP_MV,cst->opbuf + cst->top,len);

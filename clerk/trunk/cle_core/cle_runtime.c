@@ -892,23 +892,29 @@ static void _rt_run(struct _rt_invocation* inv)
 				*sp = to;
 			}
 			break;
-		case OP_OUTL:
-			if(sp[1].type == STACK_REF && sp[1].var->type == STACK_NULL)
+		case OP_NEXT:	// non-string (concat) out-ing [OUT Last Tree]
+			if(sp[1].type == STACK_REF)
 			{
-				*sp[1].var = *sp;
-				break;
+				if(sp[1].var->type == STACK_NULL)
+					*sp[1].var = *sp;
+				else if(_rt_ref_out(inv,&sp,sp + 1))
+					_rt_error(inv,__LINE__);
 			}
-			// fall throu
+			else
+			{
+				if(_rt_out(inv,&sp,sp + 1,sp))
+					_rt_error(inv,__LINE__);
+				sp++;
+				if(sp->type == STACK_OUTPUT)
+					sp->out->next(sp->outdata);
+			}
+			break;
 		case OP_OUT:	// stream out string
 			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp + 1))
 				_rt_error(inv,__LINE__);
 			else if(_rt_out(inv,&sp,sp + 1,sp))
 				_rt_error(inv,__LINE__);
 			sp++;
-			break;
-		case OP_NEXT:	// non-string (concat) out-ing [OUT Last Tree]
-			if(sp->type == STACK_OUTPUT)
-				sp->out->next(sp->outdata);
 			break;
 
 		case OP_AVAR:
@@ -934,12 +940,6 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_END:
 			if(inv->top->parent == 0)
 			{
-				// any unreportede output?
-				if(inv->hdl->top->pt.offset != inv->hdl->root.offset &&
-					inv->hdl->top->pt.key != inv->hdl->root.key &&
-						inv->hdl->top->pt.pg != inv->hdl->root.pg)
-					inv->hdl->response->next(inv->hdl->respdata);
-
 				cle_stream_end(inv->hdl);
 				return;
 			}
@@ -1048,14 +1048,14 @@ static void _rt_next(event_handler* hdl)
 static void _rt_end(event_handler* hdl, cdat code, uint length)
 {
 	struct _rt_invocation* inv = (struct _rt_invocation*)hdl->handler_data;
-
-	if(inv == 0)
-		cle_stream_fail(hdl,code,length);
-	else if(length == 0 && inv->params_before_run != 0)
-		_rt_run(inv);
-	else
+	
+	if(hdl->error == 0)
 	{
-		// blocked on get() -> raise exception
+		if(length == 0 && inv->params_before_run != 0)
+			_rt_run(inv);
+		else
+			// blocked on get() -> raise exception
+			cle_stream_fail(hdl,"runtime:get",12);
 	}
 }
 

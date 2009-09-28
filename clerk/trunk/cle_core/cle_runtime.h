@@ -44,8 +44,8 @@ enum cle_opcode
 	OP_DMVW,
 	OP_MVW,
 	OP_OUT,
-	OP_OUTL,
-	OP_OUTLT,
+	OP_OUTL,	// del
+	OP_OUTLT,	// del
 	OP_RIDX,
 	OP_RVAR,
 	OP_MV,

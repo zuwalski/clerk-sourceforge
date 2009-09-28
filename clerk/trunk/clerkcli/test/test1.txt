@@ -32,7 +32,7 @@ start
 dk.event
 <!
 !>
-() "Req start" read() "Req end"
+() "Req start> " read() " <Req end"
 <!
 dev.set.handler.resp.dk.lsz.test
 !>
@@ -42,9 +42,23 @@ start
 dk.event
 <!
 !>
-() "Resp start " read() " resp end"
+() var :ipt; "Resp start> " do :ipt = read() " <next> " while :ipt end " <resp end"
 <!
 dk.event
 !>
 hello world
+<!
+dev.set.handler.sync.dk.lsz.test
+!>
+start
+<!
+!>
+dk
+<!
+!>
+(:test) "dk alone says: " :test 
+<!
+dk.event
+!>
+hello world 3
 <!

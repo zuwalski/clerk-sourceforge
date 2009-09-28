@@ -69,8 +69,6 @@ typedef struct sys_handler_data
 	uint event_len;
 	cdat userid;
 	uint userid_len;
-	cdat error;
-	uint errlength;
 }
 sys_handler_data;
 
@@ -99,6 +97,8 @@ struct event_handler
 	st_ptr handler;
 	st_ptr object;
 	st_ptr root;
+	cdat error;
+	uint errlength;
 };
 
 /* event-handler exit-functions */

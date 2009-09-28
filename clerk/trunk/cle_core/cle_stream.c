@@ -39,7 +39,7 @@ static char event_not_allowed[] = "stream:event not allowed";
 
 void cle_notify_start(event_handler* handler)
 {
-	while(handler != 0 && handler->eventdata->error == 0)
+	while(handler != 0)
 	{
 		handler->thehandler->input.start(handler);
 		handler = handler->next;
@@ -48,7 +48,7 @@ void cle_notify_start(event_handler* handler)
 
 void cle_notify_next(event_handler* handler)
 {
-	while(handler != 0 && handler->eventdata->error == 0)
+	while(handler != 0)
 	{
 		// TODO: implement these checks elsewhere...
 		if(handler->top->link != 0)
@@ -57,9 +57,12 @@ void cle_notify_next(event_handler* handler)
 		{
 			handler->thehandler->input.next(handler);
 
-			// done processing .. clear and ready for next input-stream
-			st_empty(handler->instance_tk,&handler->top->pt);
-			handler->root = handler->top->pt;
+			if(handler->error == 0)
+			{
+				// done processing .. clear and ready for next input-stream
+				st_empty(handler->instance_tk,&handler->top->pt);
+				handler->root = handler->top->pt;
+			}
 		}
 
 		handler = handler->next;
@@ -226,16 +229,12 @@ static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_n
 
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {
-	/* race-condition ... hmmm why do this?
-	if(hdl->eventdata->error == 0)
-	{
-		hdl->eventdata->error = msg;
-		hdl->eventdata->errlength = msglen;
-	}*/
+	hdl->thehandler = &_nil_handler;
+
+	hdl->error = msg;
+	hdl->errlength = msglen;
 
 	hdl->response->end(hdl->respdata,msg,msglen);
-
-	hdl->thehandler = &_nil_handler;
 }
 
 void cle_stream_end(event_handler* hdl)
@@ -285,6 +284,9 @@ static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, 
 	// set output-handler
 	hdl->response = response;
 	hdl->respdata = respdata;
+
+	hdl->errlength = 0;
+	hdl->error = 0;
 
 	if(targetset == 0 && hdl->handler.pg != 0)
 		cle_new_mem(inst_tk,&hdl->object,hdl->object);
@@ -337,7 +339,7 @@ static void _sync_start(event_handler* hdl)
 
 	_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 	// start first handler
-	sc->synch->thehandler->input.start(sc->synch->handler_data);
+	sc->synch->thehandler->input.start(sc->synch);
 }
 
 static void _sync_next(event_handler* hdl)
@@ -352,7 +354,7 @@ static void _sync_next(event_handler* hdl)
 		elm->link = sc->input;
 		sc->input = elm;
 		// next first handler
-		sc->synch->thehandler->input.next(sc->synch->handler_data);
+		sc->synch->thehandler->input.next(sc->synch);
 	}
 }
 
@@ -362,7 +364,7 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 	event_handler* chn = sc->synch->next;
 
 	// end first
-	sc->synch->thehandler->input.end(sc->synch->handler_data,c,u);
+	sc->synch->thehandler->input.end(sc->synch,c,u);
 
 	// replay data on sync-chain
 	sc->input = ptr_list_reverse(sc->input);
@@ -372,18 +374,18 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 
 		_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 
-		chn->thehandler->input.start(chn->handler_data);
+		chn->thehandler->input.start(chn);
 		while(now != 0 && sc->failed == 0)
 		{
-			chn->thehandler->input.submit(chn->handler_data,&now->pt);
-			chn->thehandler->input.next(chn->handler_data);
+			chn->thehandler->input.submit(chn,&now->pt);
+			chn->thehandler->input.next(chn);
 			now = now->link;
 		}
 
 		if(sc->failed != 0)
 			return;
 
-		chn->thehandler->input.end(chn->handler_data,c,u);
+		chn->thehandler->input.end(chn,c,u);
 
 		chn = chn->next;
 	}
@@ -732,7 +734,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 
 void cle_next(_ipt* ipt)
 {
-	if(ipt == 0 || ipt->sys.error != 0)
+	if(ipt == 0)
 		return;
 
 	if(ipt->depth != 0)
@@ -744,26 +746,21 @@ void cle_next(_ipt* ipt)
 
 void cle_end(_ipt* ipt, cdat code, uint length)
 {
-	// only handle one end-event
-	if(ipt == 0 || ipt->sys.error != 0)
+	if(ipt == 0)
 		return;
 
-	// reporting an error
-	if(code != 0 && length != 0)
+	if(length == 0 && ipt->depth != 0)
 	{
-		ipt->sys.error = code;
-		ipt->sys.errlength = length;
+		code = input_incomplete;
+		length = sizeof(input_incomplete);
 	}
-	else
-		// signal end of input
-		ipt->sys.error = "";
 
 	cle_notify_end(ipt->event_chain_begin,code,length);
 }
 
 void cle_pop(_ipt* ipt)
 {
-	if(ipt == 0 || ipt->sys.error != 0)
+	if(ipt == 0)
 		return;
 
 	if(ipt->depth == 0)
@@ -778,7 +775,7 @@ void cle_pop(_ipt* ipt)
 
 void cle_push(_ipt* ipt)
 {
-	if(ipt == 0 || ipt->sys.error != 0)
+	if(ipt == 0)
 		return;
 
 	_pa_push(ipt->event_chain_begin);
@@ -788,7 +785,7 @@ void cle_push(_ipt* ipt)
 
 void cle_data(_ipt* ipt, cdat data, uint length)
 {
-	if(ipt == 0 || ipt->sys.error != 0)
+	if(ipt == 0)
 		return;
 
 	_pa_data(ipt->event_chain_begin,data,length);
