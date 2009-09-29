@@ -625,6 +625,8 @@ int heapstatus = _heapchk();
 
 int main(int argc, char* argv[])
 {
+	test_compile_c();
+
 	test_struct_c();
 
 	test_st_trace();

@@ -1043,8 +1043,6 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 			_cmp_emit0(cst,OP_NEXT);
 			_cmp_stack(cst,-1);
 		}
-		else if(*cst->lastop == OP_OUT)
-			*cst->lastop = OP_NEXT;
 		if(exittype == ';')
 			_cmp_nextc(cst);
 		else break;
@@ -1364,9 +1362,13 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 							_cmp_fwd_loop(cst,loop_coff,nest,(until)? OP_BNZ : OP_BZ);
 						else if(ret == 'e')	// do .. while expr end
 						{
-							// TODO: OP_NZLOOP / until = OP_ZLOOP
-							_cmp_emitIs(cst,(until)? OP_LOOP : OP_LOOP,cst->code_next - skips->home + 1 + sizeof(ushort));
-							_cmp_stack(cst,-1);
+							if(skips == 0) err(__LINE__)
+							else
+							{
+								// TODO: OP_NZLOOP / until = OP_ZLOOP
+								_cmp_emitIs(cst,(until)? OP_ZLOOP : OP_NZLOOP,cst->code_next - skips->home + 1 + sizeof(ushort));
+								_cmp_stack(cst,-1);
+							}
 							return 'e';
 						}
 						else err(__LINE__)

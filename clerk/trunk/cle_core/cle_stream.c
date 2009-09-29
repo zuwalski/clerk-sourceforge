@@ -301,6 +301,8 @@ struct _sync_chain
 {
 	event_handler* synch;
 	ptr_list*      input;
+	cle_pipe*      real_out;
+	void*          real_out_data;
 	char           create_object;
 	char           started;
 	char           failed;
@@ -311,7 +313,7 @@ static void _sync_start_rs(struct _sync_chain* hdl)
 	if(hdl->started == 0)
 	{
 		hdl->started = 1;
-		hdl->synch->response->start(hdl->synch->respdata);
+		hdl->real_out->start(hdl->real_out_data);
 	}
 }
 
@@ -320,15 +322,15 @@ static void _sync_end_rs(struct _sync_chain* hdl,cdat c,uint u)
 	if(u > 0)
 	{
 		hdl->failed = 1;
-		hdl->synch->response->end(hdl->synch->respdata,c,u);
+		hdl->real_out->end(hdl->real_out_data,c,u);
 	}
 }
 
-static void _sync_next_rs(struct _sync_chain* hdl) {hdl->synch->response->next(hdl->synch->respdata);}
-static void _sync_pop_rs(struct _sync_chain* hdl) {hdl->synch->response->pop(hdl->synch->respdata);}
-static void _sync_push_rs(struct _sync_chain* hdl) {hdl->synch->response->push(hdl->synch->respdata);}
-static uint _sync_data_rs(struct _sync_chain* hdl,cdat c,uint u) {return hdl->synch->response->data(hdl->synch->respdata,c,u);}
-static void _sync_submit_rs(struct _sync_chain* hdl,st_ptr* s) {hdl->synch->response->submit(hdl->synch->respdata,s);}
+static void _sync_next_rs(struct _sync_chain* hdl) {hdl->real_out->next(hdl->real_out_data);}
+static void _sync_pop_rs(struct _sync_chain* hdl) {hdl->real_out->pop(hdl->real_out_data);}
+static void _sync_push_rs(struct _sync_chain* hdl) {hdl->real_out->push(hdl->real_out_data);}
+static uint _sync_data_rs(struct _sync_chain* hdl,cdat c,uint u) {return hdl->real_out->data(hdl->real_out_data,c,u);}
+static void _sync_submit_rs(struct _sync_chain* hdl,st_ptr* s) {hdl->real_out->submit(hdl->real_out_data,s);}
 
 static cle_pipe _sync_response = {_sync_start_rs,_sync_next_rs,_sync_end_rs,_sync_pop_rs,_sync_push_rs,_sync_data_rs,_sync_submit_rs};
 
@@ -336,6 +338,9 @@ static cle_pipe _sync_response = {_sync_start_rs,_sync_next_rs,_sync_end_rs,_syn
 static void _sync_start(event_handler* hdl)
 {
 	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+
+	sc->real_out = hdl->response;
+	sc->real_out_data = hdl->respdata;
 
 	_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 	// start first handler
@@ -372,7 +377,7 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 	{
 		ptr_list* now = sc->input;
 
-		_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
+		_ready_handler(chn,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
 
 		chn->thehandler->input.start(chn);
 		while(now != 0 && sc->failed == 0)

@@ -151,6 +151,9 @@ static char mixed[] =
 " if 0 do {a,b,c} v end a b c "
 ;
 
+static char loops[] = 
+") var :ipt = read(); 'Resp start> ' while :ipt do do :ipt ' <next >' end :ipt = read(); end ' <resp end'";
+
 static void _do_test(task* t, char* test, int length)
 {
 	st_ptr dest,src,tmp;
@@ -191,7 +194,8 @@ void test_compile_c()
 	//CMPTEST(out);
 	//CMPTEST(trouble);
 	//CMPTEST(assign);
-	CMPTEST(mixed);
+	//CMPTEST(mixed);
+	CMPTEST(loops);
 
 	tk_drop_task(t);
 }

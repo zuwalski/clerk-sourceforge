@@ -640,6 +640,24 @@ static void _rt_run(struct _rt_invocation* inv)
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc -= tmp + sizeof(ushort);
 			break;
+		case OP_ZLOOP:
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc += sizeof(ushort);
+			if((sp[0].type == STACK_NULL) ||
+				(sp[0].type == STACK_NUM && sp[0].num == 0) ||
+				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr)))
+				inv->top->pc -= tmp;
+			sp++;
+			break;
+		case OP_NZLOOP:
+			tmp = *((ushort*)inv->top->pc);
+			inv->top->pc += sizeof(ushort);
+			if((sp[0].type != STACK_NULL) && (
+				(sp[0].type == STACK_NUM && sp[0].num != 0) ||
+				((sp[0].type == STACK_PTR || sp[0].type == STACK_RO_PTR) && st_is_empty(&sp[0].single_ptr) == 0)))
+				inv->top->pc -= tmp;
+			sp++;
+			break;
 
 		case OP_FREE:
 			// emit Ic2 (byte,byte)
@@ -938,8 +956,19 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			break;
 		case OP_END:
+			tmp = inv->top->code->body.maxparams;
+			while(tmp-- > 0)
+			{
+				inv->top->vars[tmp].type = STACK_NULL;
+			}
 			if(inv->top->parent == 0)
 			{
+				// unfinished output? -> next
+				if(inv->hdl->top->pt.offset != inv->hdl->root.offset ||
+					inv->hdl->top->pt.key != inv->hdl->root.key ||
+					inv->hdl->top->pt.pg != inv->hdl->root.pg)
+					inv->hdl->response->next(inv->hdl->respdata);
+
 				cle_stream_end(inv->hdl);
 				return;
 			}
@@ -1049,13 +1078,19 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 {
 	struct _rt_invocation* inv = (struct _rt_invocation*)hdl->handler_data;
 	
-	if(hdl->error == 0)
+	if(hdl->error == 0 && length == 0)
 	{
-		if(length == 0 && inv->params_before_run != 0)
-			_rt_run(inv);
-		else
-			// blocked on get() -> raise exception
-			cle_stream_fail(hdl,"runtime:get",12);
+		// blocked on read() -> send null
+		if(inv->params_before_run == 0)
+		{
+			inv->top->sp--;
+			inv->top->sp->type = STACK_NULL;
+		}
+
+		_rt_run(inv);
+
+		if(hdl->error != 0)
+			cle_stream_fail(hdl,"runtime:end",12);
 	}
 }
 

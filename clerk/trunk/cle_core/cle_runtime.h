@@ -44,8 +44,6 @@ enum cle_opcode
 	OP_DMVW,
 	OP_MVW,
 	OP_OUT,
-	OP_OUTL,	// del
-	OP_OUTLT,	// del
 	OP_RIDX,
 	OP_RVAR,
 	OP_MV,
@@ -68,6 +66,8 @@ enum cle_opcode
 	OP_LT,
 	OP_EQ,
 	OP_LOOP,
+	OP_ZLOOP,
+	OP_NZLOOP,
 	OP_CAV,
 	OP_NULL,
 	OP_SET,

@@ -384,10 +384,6 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_MVW";
 	case OP_OUT:
 		return "OP_OUT";
-	case OP_OUTL:
-		return "OP_OUTL";
-	case OP_OUTLT:
-		return "OP_OUTLT";
 	case OP_RIDX:
 		return "OP_RIDX";
 	case OP_RVAR:
@@ -448,6 +444,10 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_EQ";
 	case OP_LOOP:
 		return "OP_LOOP";
+	case OP_ZLOOP:
+		return "OP_ZLOOP";
+	case OP_NZLOOP:
+		return "OP_NZLOOP";
 	case OP_CAV:
 		return "OP_CAV";
 	case OP_NULL:
@@ -562,8 +562,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_POPW:
 		case OP_WIDX:
 		case OP_OUT:
-		case OP_OUTL:
-		case OP_OUTLT:
 		case OP_RIDX:
 		case OP_ADD:
 		case OP_SUB:
@@ -582,7 +580,6 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_NOT:
 		case OP_END:
 		case OP_CALL:
-		case OP_RECV:
 		case OP_OBJ:
 		case OP_MERGE:
 		case OP_NEG:
@@ -611,6 +608,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 			len -= tmpushort + sizeof(ushort);
 			break;
 
+		case OP_RECV:
 		case OP_SETP:
 		case OP_WVAR0:
 		case OP_WVAR:
@@ -677,6 +675,8 @@ void _rt_dump_function(task* t, st_ptr* root)
 			break;
 
 		case OP_LOOP:
+		case OP_ZLOOP:
+		case OP_NZLOOP:
 		case OP_CAV:
 			// emit Is (branch back)
 			tmpushort = *((ushort*)bptr);

@@ -42,7 +42,7 @@ start
 dk.event
 <!
 !>
-() var :ipt; "Resp start> " do :ipt = read() " <next> " while :ipt end " <resp end"
+() var :ipt = read(); 'Resp start> ' while :ipt do do :ipt ' <next >' end :ipt = read(); end ' <resp end'
 <!
 dk.event
 !>
