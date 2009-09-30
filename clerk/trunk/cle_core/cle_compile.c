@@ -127,7 +127,7 @@ struct _cmp_var
 static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","open",
 	"var","new","each","break","and","or","not",
-	"handle","raise","switch","case","default","this","super","goto",0
+	"handle","raise","switch","case","default","this","super","goto","then",0
 };
 
 #define KW_MAX_LEN 7
@@ -156,7 +156,8 @@ enum cmp_keywords {
 	KW_DEFAULT,
 	KW_THIS,
 	KW_SUPER,
-	KW_GOTO
+	KW_GOTO,
+	KW_THEN
 };
 
 struct _cmp_buildin
@@ -1045,7 +1046,8 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 		}
 		if(exittype == ';')
 			_cmp_nextc(cst);
-		else break;
+		else if(exittype != 't')
+			break;
 	}
 	return exittype;
 }
@@ -1492,6 +1494,15 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_stack(cst,1);
 					state = ST_ALPHA;
 					continue;
+				case KW_THEN:
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+					_cmp_op_clear(cst,&otop);
+					if(cst->s_top != stack)
+					{
+						_cmp_emit0(cst,OP_OUT);
+						_cmp_stack(cst,-1);
+					}
+					return 't';
 				case KW_GOTO:	// goto state-name [if expr]
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()

@@ -152,7 +152,7 @@ static char mixed[] =
 ;
 
 static char loops[] = 
-") var :ipt = read(); 'Resp start> ' while :ipt do do :ipt ' <next >' end :ipt = read(); end ' <resp end'";
+") var :ipt = read(); 'Resp start> ' while :ipt do :ipt ' <next >' then :ipt = read(); end ' <resp end'";
 
 static void _do_test(task* t, char* test, int length)
 {

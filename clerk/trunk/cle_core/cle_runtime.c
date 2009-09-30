@@ -232,6 +232,11 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 			return;
 		(*sp)->prop_obj = top.obj;
 		(*sp)->type = STACK_PROP;
+		break;
+	case 'N':
+		if(st_get(inv->t,&(*sp)->single_ptr,(char*)&(*sp)->num,sizeof(rt_number)) != -1)
+			return;
+		(*sp)->type = STACK_NUM;
 	}
 }
 
@@ -372,6 +377,7 @@ static uint _rt_string_out(struct _rt_invocation* inv, struct _rt_stack* to, str
 			to->out->start(to->outdata);
 			inv->response_started = 1;
 		}
+		else inv->response_started = 2;
 		return st_map(inv->t,&from->single_ptr,to->out->data,to->outdata);
 	case STACK_PTR:
 		return st_insert_st(inv->t,&to->single_ptr_w,&from->single_ptr);
@@ -392,6 +398,7 @@ static void _rt_num_out(struct _rt_invocation* inv, struct _rt_stack* to, rt_num
 			to->out->start(to->outdata);
 			inv->response_started = 1;
 		}
+		else inv->response_started = 2;
 		to->out->data(to->outdata,buffer,len);
 		break;
 	case STACK_PTR:
@@ -406,6 +413,8 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 	case STACK_PROP:
 		if(_rt_find_prop_value(inv,from))
 			return 1;
+		_rt_get(inv,&from);
+		return _rt_out(inv,sp,to,from);
 	case STACK_RO_PTR:
 	case STACK_PTR:
 		return _rt_string_out(inv,to,from);
@@ -638,7 +647,7 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_LOOP:	// JIT-HOOK 
 			// emit Is (branch back)
 			tmp = *((ushort*)inv->top->pc);
-			inv->top->pc -= tmp + sizeof(ushort);
+			inv->top->pc -= tmp - sizeof(ushort);
 			break;
 		case OP_ZLOOP:
 			tmp = *((ushort*)inv->top->pc);
@@ -786,6 +795,7 @@ static void _rt_run(struct _rt_invocation* inv)
 					sp->out->start(sp->outdata);
 					inv->response_started = 1;
 				}
+				else inv->response_started = 2;
 				sp->out->push(sp->outdata);
 				sp->out->data(sp->outdata,inv->top->pc,tmp);
 			}
@@ -805,6 +815,7 @@ static void _rt_run(struct _rt_invocation* inv)
 					sp->out->start(sp->outdata);
 					inv->response_started = 1;
 				}
+				else inv->response_started = 2;
 				sp->out->data(sp->outdata,inv->top->pc,tmp);
 			}
 			inv->top->pc += tmp;
@@ -817,7 +828,8 @@ static void _rt_run(struct _rt_invocation* inv)
 
 		// receive input
 		case OP_RECV:
-			*inv->top->pc++;
+			sp += *inv->top->pc++;
+			inv->top->sp = sp;
 			return;
 
 		case OP_SET:
@@ -924,7 +936,10 @@ static void _rt_run(struct _rt_invocation* inv)
 					_rt_error(inv,__LINE__);
 				sp++;
 				if(sp->type == STACK_OUTPUT)
+				{
+					inv->response_started = 1;
 					sp->out->next(sp->outdata);
+				}
 			}
 			break;
 		case OP_OUT:	// stream out string
@@ -964,9 +979,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			if(inv->top->parent == 0)
 			{
 				// unfinished output? -> next
-				if(inv->hdl->top->pt.offset != inv->hdl->root.offset ||
-					inv->hdl->top->pt.key != inv->hdl->root.key ||
-					inv->hdl->top->pt.pg != inv->hdl->root.pg)
+				if(inv->response_started == 2)
 					inv->hdl->response->next(inv->hdl->respdata);
 
 				cle_stream_end(inv->hdl);
@@ -1089,7 +1102,7 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 
 		_rt_run(inv);
 
-		if(hdl->error != 0)
+		if(hdl->error == 0)
 			cle_stream_fail(hdl,"runtime:end",12);
 	}
 }

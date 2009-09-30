@@ -960,7 +960,7 @@ ptr_list* ptr_list_reverse(ptr_list* e)
 		e = prev;
 	}
 	while(e != 0);
-	return e;
+	return link;
 }
 
 /*
