@@ -93,7 +93,7 @@ void st_prt_page(st_ptr* pt)
 {
 	f = stdout;
 	fprintf(f,"%p(%d/%d)\n",pt->pg->pg->id,pt->pg->pg->used,pt->pg->pg->waste);
-	print_struct(pt->pg,GOKEY(pt->pg,pt->key),0);
+	print_struct(pt->pg,GOOFF(pt->pg,pt->key),0);
 }
 
 int _tk_validate(page* pg, uint* kcount, ushort koff)

@@ -359,6 +359,7 @@ static void _sync_next(event_handler* hdl)
 		elm->link = sc->input;
 		sc->input = elm;
 		// next first handler
+		sc->synch->root = hdl->root;
 		sc->synch->thehandler->input.next(sc->synch);
 	}
 }

@@ -47,7 +47,7 @@ dk.event
 	'Resp start> '
 
 	while :ipt do
-		:ipt ' <next >' then :ipt = read();
+		' ( ' :ipt ' ) ' then :ipt = read();
 	end
 
 	' <resp end'

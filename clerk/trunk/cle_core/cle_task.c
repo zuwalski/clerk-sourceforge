@@ -284,7 +284,7 @@ static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 {
 	while(off)
 	{
-		key* k = GOKEY(pg,off);
+		key* k = GOOFF(pg,off);
 		if(k->length == 0)
 		{
 			ptr* pt = (ptr*)k;

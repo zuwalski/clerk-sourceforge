@@ -285,7 +285,7 @@ uint st_empty(task* t, st_ptr* pt)
 
 uint st_is_empty(st_ptr* pt)
 {
-	key* k = GOKEY(pt->pg,pt->key);
+	key* k = GOOFF(pt->pg,pt->key);
 	if(k->length == 1 && k->sub == 0) return 1;
 	if(pt->offset != k->length) return 0;
 	if(k->sub == 0) return 1;
@@ -301,7 +301,7 @@ uint st_exsist(task* t, st_ptr* pt, cdat path, uint length)
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
-	rt.sub    = GOKEY(pt->pg,pt->key);
+	rt.sub    = GOOFF(pt->pg,pt->key);
 	rt.diff   = pt->offset;
 
 	return _st_lookup(&rt);
@@ -314,7 +314,7 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length)
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
-	rt.sub    = GOKEY(pt->pg,pt->key);
+	rt.sub    = GOOFF(pt->pg,pt->key);
 	rt.diff   = pt->offset;
 
 	if(_st_lookup(&rt))
@@ -333,7 +333,7 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
-	rt.sub    = GOKEY(pt->pg,pt->key);
+	rt.sub    = GOOFF(pt->pg,pt->key);
 	rt.diff   = pt->offset;
 
 	if(!_st_lookup(&rt))
@@ -359,7 +359,7 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 
 	rt->pg = pt->pg;
 	rt->diff = pt->offset;
-	rt->sub  = GOKEY(pt->pg,pt->key);
+	rt->sub  = GOOFF(pt->pg,pt->key);
 	rt->prev = 0;
 	rt->t    = t;
 
@@ -433,7 +433,7 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
 	struct _st_lkup_res rt;
 	rt.pg   = pt->pg;
 	rt.diff = pt->offset;
-	rt.sub  = GOKEY(pt->pg,pt->key);
+	rt.sub  = GOOFF(pt->pg,pt->key);
 	rt.prev = 0;
 	rt.t    = t;
 
@@ -508,7 +508,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	rt.path   = path;
 	rt.length = length << 3;
 	rt.pg     = pt->pg;
-	rt.sub    = GOKEY(pt->pg,pt->key);
+	rt.sub    = GOOFF(pt->pg,pt->key);
 	rt.diff   = rt.sub->length;
 	rt.prev   = 0;
 
@@ -545,7 +545,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 static key* _trace_nxt(st_ptr* pt)
 {
 	key* nxt;
-	key* me = GOKEY(pt->pg,pt->key);
+	key* me = GOOFF(pt->pg,pt->key);
 	// deal with offset
 	if(me->sub == 0)
 		return 0;
@@ -564,7 +564,7 @@ static key* _trace_nxt(st_ptr* pt)
 int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;
-	key* me      = GOKEY(pt->pg,pt->key);
+	key* me      = GOOFF(pt->pg,pt->key);
 	key* nxt;
 	cdat ckey    = KDATA(me) + (pt->offset >> 3);
 	uint offset  = pt->offset;
@@ -647,7 +647,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 uint st_offset(task* t, st_ptr* pt, uint offset)
 {
 	page_wrap* pg = pt->pg;
-	key* me       = GOKEY(pt->pg,pt->key);
+	key* me       = GOOFF(pt->pg,pt->key);
 	key* nxt;
 	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint klen;
@@ -757,7 +757,7 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 	struct _st_lkup_res rt;
 	rt.t      = t;
 	rt.pg     = mv->pg;
-	rt.sub    = GOKEY(mv->pg,mv->key);
+	rt.sub    = GOOFF(mv->pg,mv->key);
 	rt.diff   = mv->offset;
 
 	if(ret = st_map_st(t,str,_mv_st,_dont_use,_dont_use,&rt))
@@ -793,7 +793,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
 	uint ret;
 	sins.rt.t      = t;
 	sins.rt.pg     = to->pg;
-	sins.rt.sub    = GOKEY(to->pg,to->key);
+	sins.rt.sub    = GOOFF(to->pg,to->key);
 	sins.rt.diff   = to->offset;
 	sins.no_lookup = 0;
 
@@ -811,7 +811,7 @@ int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
 	struct _st_lkup_res rt;
 	rt.t      = t;
 	rt.pg     = p1->pg;
-	rt.sub    = GOKEY(p1->pg,p1->key);
+	rt.sub    = GOOFF(p1->pg,p1->key);
 	rt.diff   = p1->offset;
 
 	return st_map_st(t,p2,_mv_st,_dont_use,_dont_use,&rt);
@@ -914,7 +914,7 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 	work.push = push;
 	work.t = t;
 
-	return _st_map_worker(&work,from->pg,GOKEY(from->pg,from->key),_trace_nxt(from),from->offset);
+	return _st_map_worker(&work,from->pg,GOOFF(from->pg,from->key),_trace_nxt(from),from->offset);
 }
 
 struct _cmp_ctx

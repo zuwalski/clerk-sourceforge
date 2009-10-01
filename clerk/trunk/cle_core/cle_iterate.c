@@ -181,13 +181,13 @@ static void _it_get_prev(struct _st_lkup_it_res* rt)
 {
 	if(rt->diff && rt->sub->sub)
 	{
-		key* nxt = GOKEY(rt->pg,rt->sub->sub);
+		key* nxt = GOOFF(rt->pg,rt->sub->sub);
 		while(nxt->offset < rt->diff)
 		{
 			rt->prev = nxt;
 			if(nxt->next == 0)
 				break;
-			nxt = GOKEY(rt->pg,nxt->next);
+			nxt = GOOFF(rt->pg,nxt->next);
 		}
 	}
 }
@@ -277,7 +277,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
-	rt.sub    = GOKEY(it->pg,it->key);
+	rt.sub    = GOOFF(it->pg,it->key);
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
@@ -326,7 +326,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
-	rt.sub    = GOKEY(it->pg,it->key);
+	rt.sub    = GOOFF(it->pg,it->key);
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
@@ -381,7 +381,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
-	rt.sub    = GOKEY(it->pg,it->key);
+	rt.sub    = GOOFF(it->pg,it->key);
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
@@ -430,7 +430,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	rt.path   = it->kdata;
 	rt.length = it->kused << 3;
 	rt.pg     = it->pg;
-	rt.sub    = GOKEY(it->pg,it->key);
+	rt.sub    = GOOFF(it->pg,it->key);
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
@@ -526,7 +526,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 	rt.path   = it->kdata;
 	rt.length = 0;
 	rt.pg     = it->pg;
-	rt.sub    = GOKEY(it->pg,it->key);
+	rt.sub    = GOOFF(it->pg,it->key);
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 	it->kused = 0;
@@ -586,8 +586,8 @@ static uint _st_splice_key(page_wrap* rm_pg, ushort remove)
 {
 	if(remove)
 	{
-		key* tmp = GOKEY(rm_pg,remove);
-		key* nxt = (tmp->next)?GOKEY(rm_pg,tmp->next):0;
+		key* tmp = GOOFF(rm_pg,remove);
+		key* nxt = (tmp->next)?GOOFF(rm_pg,tmp->next):0;
 		tmp->next = 0;
 		if(nxt)
 			return (char*)nxt - (char*)rm_pg;
@@ -621,7 +621,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 
 	rt.t      = t;
 	rt.pg     = pt->pg;
-	rt.sub    = GOKEY(pt->pg,pt->key);
+	rt.sub    = GOOFF(pt->pg,pt->key);
 	rt.diff   = pt->offset;
 
 	if(length > 0)

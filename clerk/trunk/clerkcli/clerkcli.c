@@ -177,28 +177,66 @@ int main(int argc, char* argv[])
 			int state = 0, data = 0;
 			char buffer[1024];
 			failed = 0;
-			/*
+/*
 			while(feof(sfile) == 0 && ferror(sfile) == 0)
 			{
+				int from = 0;
 				size_t rd = fread(buffer,1,sizeof(buffer),sfile);
 
 				for(i = 0; i < rd; i++)
 				{
 					switch(buffer[i])
 					{
+					case '#':
+						break;
 					case '<':
+						if(state == x)
+							break;
 					case '>':
+						break;
 					case '!':
-					case ' ':
-					case '\t':
-						if(state == 1)
+						if(state == 3)
+							state = 4;
 						break;
 					case '\n':
 					case '\r':
+						if(state == 2 || state == 3)
+						{
+							cle_end(ipt,0,0);
+							state = 0;
+							break;
+						}
+					case ' ':
+					case '\t':
+						if(state == 1)
+						{
+							ipt = cle_start(config_root,buffer + from,i - from, 0, 0, 0,&_pipe_stdout,&failed,t);
+							if(ipt == 0)
+								return -1;
+
+							state = 2;
+						}
+						else if(state == 2)
+						{
+							state = 3;
+						}
+						else if(state = 3)
+						{
+							cle_data(ipt,buffer + from,i - from);
+						}
+						break;
 					default:
+						if(state == 0)
+						{
+							from = i;
+							state == 1;
+						}
+						else if(state == 4)
+							state = 3;
 					}
 				}
 			}
+
 			*/
 
 
