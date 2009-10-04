@@ -105,6 +105,78 @@ static int _print_usage(const char* toolname)
 	return -1;
 }
 
+static int _parse_element(char** begin, char* from)
+{
+	while(1)
+		switch(*from++)
+		{
+		case 0:
+		case '#':
+		case '\r':
+		case '\n':
+			return 0;
+		case ' ':
+		case '\t':
+			break;
+		default:
+			*begin = from - 1;
+
+			while(1)
+				switch(*from++)
+				{
+				case 0:
+				case '#':
+				case '\r':
+				case '\n':
+				case ' ':
+				case '\t':
+					return (int)(from - *begin - 1);
+				}
+		}
+}
+
+static char* _read_block(_ipt* ipt, FILE* sfile, char* buffer, int buffer_length, char* begin)
+{
+	char* from = begin = begin + 2;
+
+	while(1)
+	{
+		while(begin[0] != 0 && !(begin[0] == '<' && begin[1] == '!'))
+			begin++;
+
+		cle_data(ipt,from,begin - from);
+
+		if(begin[0] != 0)
+			return begin + 2;
+
+		if(fgets(buffer,buffer_length,sfile) == 0)
+			return 0;
+
+		from = begin = buffer;
+	}
+}
+
+static int _read_file(_ipt* ipt, char* filename)
+{
+	FILE* pfile = fopen(filename,"r");
+	if(pfile == 0)
+		return -1;
+
+	while(feof(pfile) == 0 && ferror(pfile) == 0)
+	{
+		char buffer[1024];
+		size_t rd = fread(buffer,1,sizeof(buffer),pfile);
+
+		if(rd > 0)
+			cle_data(ipt,buffer,(uint)rd);
+	}
+
+	if(ferror(pfile) != 0)
+		return -1;
+
+	return fclose(pfile);
+}
+
 int main(int argc, char* argv[])
 {
 	char* db_file = "cle.cle";
@@ -201,118 +273,57 @@ int main(int argc, char* argv[])
 			fprintf(stderr,"failed to open script: %s\n",script);
 		else
 		{
-			int state = 0, data = 0;
 			char buffer[1024];
 			failed = 0;
-/*
-			while(feof(sfile) == 0 && ferror(sfile) == 0)
-			{
-				int from = 0;
-				size_t rd = fread(buffer,1,sizeof(buffer),sfile);
-
-				for(i = 0; i < rd; i++)
-				{
-					switch(buffer[i])
-					{
-					case '#':
-						break;
-					case '<':
-						if(state == x)
-							break;
-					case '>':
-						break;
-					case '!':
-						if(state == 3)
-							state = 4;
-						break;
-					case '\n':
-					case '\r':
-						if(state == 2 || state == 3)
-						{
-							cle_end(ipt,0,0);
-							state = 0;
-							break;
-						}
-					case ' ':
-					case '\t':
-						if(state == 1)
-						{
-							ipt = cle_start(config_root,buffer + from,i - from, 0, 0, 0,&_pipe_stdout,&failed,t);
-							if(ipt == 0)
-								return -1;
-
-							state = 2;
-						}
-						else if(state == 2)
-						{
-							state = 3;
-						}
-						else if(state = 3)
-						{
-							cle_data(ipt,buffer + from,i - from);
-						}
-						break;
-					default:
-						if(state == 0)
-						{
-							from = i;
-							state == 1;
-						}
-						else if(state == 4)
-							state = 3;
-					}
-				}
-			}
-
-			*/
-
+			ipt = 0;
 
 			while(failed == 0 && fgets(buffer,sizeof(buffer),sfile))
 			{
-				if(strcmp(buffer,"!>\n") == 0)
-				{
-					if(state & 6)
-						state = 1;
-					else
-					{
-						failed = 1;
-						break;
-					}
-				}
-				else if(strcmp(buffer,"<!\n") == 0)
-				{
-					if(state != 1)
-					{
-						failed = 1;
-						break;
-					}
-					cle_next(ipt);
-					state = 2;
-				}
-				else
-				{
-					if(state == 1)
-					{
-						cle_data(ipt,buffer,(uint)strnlen(buffer,sizeof(buffer)));
-					}
-					else
-					{
-						if(state != 0)
-							cle_end(ipt,0,0);
+				char* begin;
+				int length;
+				
+				// event-name
+				length = _parse_element(&begin,buffer);
+				if(length == 0) continue;
 
-						ipt = cle_start(config_root,buffer,(uint)strnlen(buffer,sizeof(buffer)), 0, 0, 0,&_pipe_stdout,&failed,t);
-						if(ipt == 0)
-						{
-							failed = 1;
+				if(ipt != 0)
+					cle_end(ipt,0,0);
+
+				//printf("event: %.*s\n",length,begin);
+
+				// start event
+				ipt = cle_start(config_root,begin,length, 0, 0, 0,&_pipe_stdout,&failed,t);
+				if(ipt == 0) {failed = 1; break;}
+
+				// parameters
+				do
+				{
+					length = _parse_element(&begin,begin + length);
+					if(length == 0) break;
+
+					// !> ... <!
+					if(begin[0] == '!' && begin[1] == '>')
+					{
+						begin = _read_block(ipt,sfile,buffer,sizeof(buffer),begin);
+						if(begin == 0)
 							break;
-						}
-						state = 4;
-					}
-				}
-			}
 
-			if((state & 6) == 0)
-				failed = 1;
+						length = 0;
+					}
+					// [filename]
+					else if(begin[0] == '[' && begin[length - 1] == ']')
+					{
+						begin[length - 1] = '\0'; 
+						failed = _read_file(ipt,begin + 1);
+					}
+					// simple param
+					else
+						cle_data(ipt,begin,length);
+
+					cle_next(ipt);
+				}
+				while(failed == 0);
+			}
 
 			cle_end(ipt,0,0);
 
