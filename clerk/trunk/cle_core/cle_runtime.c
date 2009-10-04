@@ -935,7 +935,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				if(_rt_out(inv,&sp,sp + 1,sp))
 					_rt_error(inv,__LINE__);
 				sp++;
-				if(sp->type == STACK_OUTPUT)
+				if(inv->response_started == 2 && sp->type == STACK_OUTPUT)
 				{
 					inv->response_started = 1;
 					sp->out->next(sp->outdata);
@@ -1085,6 +1085,8 @@ static void _rt_next(event_handler* hdl)
 	}
 
 	_rt_run(inv);
+
+	cle_standard_next_done(hdl);
 }
 
 static void _rt_end(event_handler* hdl, cdat code, uint length)

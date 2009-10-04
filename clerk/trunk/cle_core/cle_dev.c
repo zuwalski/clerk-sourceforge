@@ -99,6 +99,7 @@ static void _set_expr_next(event_handler* hdl)
 		state = (struct _dev_set*)hdl->handler_data;
 
 		state->p1 = hdl->root;
+		cle_standard_next_done(hdl);
 	}
 	else
 	{
@@ -123,12 +124,14 @@ static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_
 
 		state->p1 = hdl->root;
 		state->hit = 0;
+		cle_standard_next_done(hdl);
 	}
 	// 2. hit
 	else if(state->hit == 0)
 	{
 		state->p2 = hdl->root;
 		state->hit = 1;
+		cle_standard_next_done(hdl);
 	}
 	// 3. hit
 	else

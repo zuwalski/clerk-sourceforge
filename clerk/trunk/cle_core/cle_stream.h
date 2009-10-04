@@ -107,6 +107,7 @@ void cle_stream_end(event_handler* hdl);
 void cle_stream_leave(event_handler* hdl);
 
 // convenience-functions for implementing the cle_pipe-interface
+void cle_standard_next_done(event_handler* hdl);
 void cle_standard_pop(event_handler* hdl);
 void cle_standard_push(event_handler* hdl);
 uint cle_standard_data(event_handler* hdl, cdat data, uint length);

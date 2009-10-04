@@ -29,6 +29,33 @@ void unimplm()
 	exit(-1);
 }
 
+void cle_notify_start(event_handler* handler)
+{
+	while(handler != 0)
+	{
+		handler->thehandler->input.start(handler);
+		handler = handler->next;
+	}
+}
+
+void cle_notify_next(event_handler* handler)
+{
+	while(handler != 0)
+	{
+		handler->thehandler->input.next(handler);
+		handler = handler->next;
+	}
+}
+
+void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
+{
+	while(handler != 0)
+	{
+		handler->thehandler->input.end(handler,msg,msglength);
+		handler = handler->next;
+	}
+}
+
 // defs
 static void _start(void* v)
 {
@@ -266,7 +293,7 @@ int main(int argc, char* argv[])
 				{
 					if(state == 1)
 					{
-						cle_data(ipt,buffer,strnlen(buffer,sizeof(buffer)));
+						cle_data(ipt,buffer,(uint)strnlen(buffer,sizeof(buffer)));
 					}
 					else
 					{
@@ -284,7 +311,7 @@ int main(int argc, char* argv[])
 				}
 			}
 
-			if(state & 6 == 0)
+			if((state & 6) == 0)
 				failed = 1;
 
 			cle_end(ipt,0,0);

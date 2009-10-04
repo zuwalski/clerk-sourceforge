@@ -35,52 +35,6 @@ static char input_underflow[] = "stream:input underflow";
 static char input_incomplete[] = "stream:input incomplete";
 static char event_not_allowed[] = "stream:event not allowed";
 
-#ifdef CLERK_SINGLE_THREAD
-
-void cle_notify_start(event_handler* handler)
-{
-	while(handler != 0)
-	{
-		handler->thehandler->input.start(handler);
-		handler = handler->next;
-	}
-}
-
-void cle_notify_next(event_handler* handler)
-{
-	while(handler != 0)
-	{
-		// TODO: implement these checks elsewhere...
-		if(handler->top->link != 0)
-			cle_stream_fail(handler,input_underflow,sizeof(input_underflow));
-		else
-		{
-			handler->thehandler->input.next(handler);
-
-			if(handler->error == 0)
-			{
-				// done processing .. clear and ready for next input-stream
-				st_empty(handler->instance_tk,&handler->top->pt);
-				handler->root = handler->top->pt;
-			}
-		}
-
-		handler = handler->next;
-	}
-}
-
-// TODO: make sure end is called on all handlers - and the message gets to the caller
-void cle_notify_end(event_handler* handler, cdat msg, uint msglength)
-{
-	while(handler != 0)
-	{
-		handler->thehandler->input.end(handler,msg,msglength);
-		handler = handler->next;
-	}
-}
-
-#endif
-
 // structs
 struct _ipt_internal
 {
@@ -161,6 +115,16 @@ void cle_standard_submit(event_handler* hdl, st_ptr* from)
 		hdl->root = hdl->top->pt = *from;	// subst
 	else
 		st_link(hdl->instance_tk,&hdl->top->pt,from);
+}
+
+void cle_standard_next_done(event_handler* hdl)
+{
+	if(hdl->error == 0)
+	{
+		// done processing .. clear and ready for next input-stream
+		st_empty(hdl->instance_tk,&hdl->top->pt);
+		hdl->root = hdl->top->pt;
+	}
 }
 
 // pipeline activate All handlers
