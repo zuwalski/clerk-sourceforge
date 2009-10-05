@@ -412,9 +412,9 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 	{
 	case STACK_PROP:
 		if(_rt_find_prop_value(inv,from))
-			return 1;
-		_rt_get(inv,&from);
-		return _rt_out(inv,sp,to,from);
+			break;
+//		_rt_get(inv,&from);
+//		return _rt_out(inv,sp,to,from);
 	case STACK_RO_PTR:
 	case STACK_PTR:
 		return _rt_string_out(inv,to,from);
@@ -851,20 +851,20 @@ static void _rt_run(struct _rt_invocation* inv)
 					break;
 				case STACK_RO_PTR:
 					// link
-					st_link(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
+					st_link(inv->t,&sp[1].prop_obj,&sp->single_ptr);
 					break;
 				case STACK_PTR:
 					// copy 
-					st_copy_st(inv->t,&sp[1].single_ptr_w,&sp->single_ptr);
+					st_copy_st(inv->t,&sp[1].prop_obj,&sp->single_ptr);
 					break;
 				case STACK_NUM:
 					// bin-num
-					st_insert(inv->t,&sp[1].single_ptr_w,HEAD_NUM,HEAD_SIZE);
-					st_insert(inv->t,&sp[1].single_ptr_w,(cdat)&sp->num,sizeof(rt_number));
+					st_insert(inv->t,&sp[1].prop_obj,HEAD_NUM,HEAD_SIZE);
+					st_insert(inv->t,&sp[1].prop_obj,(cdat)&sp->num,sizeof(rt_number));
 					break;
 				case STACK_OBJ:
 					// obj-ref
-					st_insert(inv->t,&sp[1].single_ptr_w,HEAD_REF,HEAD_SIZE);
+					st_insert(inv->t,&sp[1].prop_obj,HEAD_REF,HEAD_SIZE);
 					break;
 				case STACK_CODE:
 					// write out path/event to method/handler
@@ -872,6 +872,7 @@ static void _rt_run(struct _rt_invocation* inv)
 						_rt_string_out(inv,sp + 1,sp);
 				}
 			}
+			sp += 2;
 			break;
 		case OP_MERGE:
 			switch(sp->type)

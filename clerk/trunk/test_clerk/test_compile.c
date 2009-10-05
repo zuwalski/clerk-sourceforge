@@ -154,6 +154,9 @@ static char mixed[] =
 static char loops[] = 
 ") var :ipt = read(); 'Resp start> ' while :ipt do :ipt ' <next >' then :ipt = read(); end ' <resp end'";
 
+static char props[] = 
+":newval) 'prop1 was: ' prop1 ' set to ' :newval then prop1 = :newval;  ' read prop1 ' prop1";
+
 static void _do_test(task* t, char* test, int length)
 {
 	st_ptr dest,src,tmp;
@@ -196,6 +199,7 @@ void test_compile_c()
 	//CMPTEST(assign);
 	//CMPTEST(mixed);
 	CMPTEST(loops);
+	CMPTEST(props);
 
 	tk_drop_task(t);
 }

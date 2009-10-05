@@ -492,15 +492,15 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 		_error(event_not_allowed);
 		return 0;
 	}
-	event_len = i;
 
 	object.pg = 0;
-	if(eventid[i] == '#' && cle_get_target(app_instance,instance,&object,ievent + i + 1,event_len - i))
+	if(eventid[i - 1] == '#' && cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
 	{
 		// target not found
 		_error(event_not_allowed);
 		return 0;
 	}
+	event_len = i;
 
 	// ipt setup - internal task
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
