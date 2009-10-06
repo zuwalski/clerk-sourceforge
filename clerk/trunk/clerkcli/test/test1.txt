@@ -7,6 +7,6 @@ dev.set.handler.sync.dk.lsz.test1 start testprop !>
 	(:newval) "prop1 was: " prop1 " set to " :newval then prop1 = :newval; " read prop1 " prop1
 <!
 
-testprop#aab val1
+testprop@abab val1
 
-testprop#aab val2
+testprop@abab val2

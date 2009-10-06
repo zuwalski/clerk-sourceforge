@@ -540,6 +540,11 @@ static int _rt_compare(struct _rt_invocation* inv, struct _rt_stack* op1, struct
 	return op1->num - op2->num;
 }
 
+static void _rt_free(struct _rt_invocation* inv, struct _rt_stack* var)
+{
+	var->type = STACK_NULL;
+}
+
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
@@ -672,9 +677,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			// emit Ic2 (byte,byte)
 			tmp = *inv->top->pc++;
 			while(tmp-- > 0)
-			{
-				inv->top->vars[tmp + *inv->top->pc].type = STACK_NULL;
-			}
+				_rt_free(inv,&inv->top->vars[tmp + *inv->top->pc]);
 			inv->top->pc++;
 			break;
 
@@ -974,9 +977,8 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_END:
 			tmp = inv->top->code->body.maxparams;
 			while(tmp-- > 0)
-			{
-				inv->top->vars[tmp].type = STACK_NULL;
-			}
+				_rt_free(inv,&inv->top->vars[tmp]);
+
 			if(inv->top->parent == 0)
 			{
 				// unfinished output? -> next

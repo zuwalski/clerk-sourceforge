@@ -664,9 +664,15 @@ int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_
 	i /= 2;
 	buffer[i++] = 0;
 
+	if(i != buffer[0] + 2)
+		return 0;
+
 	// lookup target object
 	*object = root;
-	return st_move(app_instance,object,buffer,i) ? 0 : i;
+	if(st_move(app_instance,object,buffer,i))
+		return 0;
+
+	return (st_exsist(app_instance,object,HEAD_OID,HEAD_SIZE) == 0)? 0 : i;
 }
 
 int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)

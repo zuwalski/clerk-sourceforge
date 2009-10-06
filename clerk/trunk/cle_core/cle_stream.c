@@ -384,7 +384,7 @@ static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 			ievent[to++] = 0;
 			state = 2;
 			break;
-		case '#':
+		case '!':
 		case '@':
 			if(state != 1)
 				return -1;
@@ -494,7 +494,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	}
 
 	object.pg = 0;
-	if(eventid[i - 1] == '#' && cle_get_target(app_instance,instance,&object,eventid + i,event_len - i))
+	if(eventid[i - 1] == '@' && cle_get_target(app_instance,instance,&object,eventid + i,event_len - i) == 0)
 	{
 		// target not found
 		_error(event_not_allowed);
