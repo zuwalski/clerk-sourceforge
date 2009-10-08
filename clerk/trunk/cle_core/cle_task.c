@@ -793,7 +793,7 @@ static ushort _tk_make_page(struct _tk_create* map, page_wrap* pw, key* sub, key
 /*
 	trace tree depth first.
 	find cut-point for half-page-sized subtrees and copy
-	of if root-relation is "continue" then proceed towards fullsize-page-copy
+	if root-relation is "continue" then proceed towards fullsize page-copy
 	final return gets copied to root page
 */
 static uint _tk_measure(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
@@ -867,6 +867,41 @@ ms_tailcall:
 	}
 
 	return size;
+}
+
+static uint _tk_measure2(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
+{
+	uint subsize,upsize = (k->next == 0)? 0 : _tk_measure2(map,pw,parent,GOOFF(pw,k->next));
+
+	// test upper-cut
+	if(parent != 0)
+	{
+		upsize + parent->length - k->offset + (sizeof(key)*8);
+	}
+
+	if(k->length == 0)
+	{
+		ptr* pt = (ptr*)k;
+		if(pt->koffset != 0)
+			subsize = _tk_measure2(map,(page_wrap*)pt->pg,parent,GOOFF((page_wrap*)pt->pg,pt->koffset));
+		else if(map->id == pt->pg)
+			subsize = _tk_measure2(map,map->pg,0,GOKEY(map->pg,sizeof(page)));
+		else
+			subsize = (sizeof(ptr)*8);
+	}
+	else
+	{
+		subsize = (k->sub == 0)? 0 : _tk_measure2(map,pw,k,GOOFF(pw,k->sub));
+
+		subsize += k->length + (sizeof(key)*8);
+	}
+
+	// test sub-cut
+	if(parent != 0)
+	{
+	}
+
+	return subsize + upsize;
 }
 
 int tk_commit_task(task* t)

@@ -49,6 +49,7 @@ struct _ipt_internal
 static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
 static uint _nil2x(void* v,cdat c,uint u){return 0;}
+static uint _nil2y(void* v,cdat c,uint u){return 1;}
 static void _nil3(void* v,st_ptr* st){}
 static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3};
 
@@ -189,7 +190,7 @@ void cle_stream_leave(event_handler* hdl)
 	hdl->thehandler = &_copy_handler;
 }
 
-static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3},0};
+static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2y,_nil3},0};
 
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {

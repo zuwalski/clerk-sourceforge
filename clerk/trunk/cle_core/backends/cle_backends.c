@@ -203,6 +203,9 @@ static void file_write_page(cle_psrc_data pd, cle_pageid pid, page* pg)
 	if(pid == ROOT_ID)
 	{
 		pg->id = ROOT_ID;
+		if(fd->header.pagecount == 0)
+			fd->header.pagecount = 1;
+
 		pid = (cle_pageid)sizeof(struct _file_pager_header);
 	}
 
