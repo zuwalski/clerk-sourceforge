@@ -869,39 +869,44 @@ ms_tailcall:
 	return size;
 }
 
+/////////////////////////////// v2 /////////////////////////////////
+
+static uint _tk_cut2(struct _tk_create* map, page_wrap* pw, key* copy, key* from, uint maxsize)
+{
+	return (sizeof(ptr)*8);
+}
+
 static uint _tk_measure2(struct _tk_create* map, page_wrap* pw, key* parent, key* k)
 {
-	uint subsize,upsize = (k->next == 0)? 0 : _tk_measure2(map,pw,parent,GOOFF(pw,k->next));
+	uint size = (k->next == 0)? 0 : _tk_measure2(map,pw,parent,GOOFF(pw,k->next));
 
-	// test upper-cut
 	if(parent != 0)
 	{
-		upsize + parent->length - k->offset + (sizeof(key)*8);
+		uint maxsize = size + parent->length - k->offset + (sizeof(key)*8);
+		if(maxsize > map->halfsize)
+			size = _tk_cut2(map,pw,parent,k,maxsize);	// upper-cut
 	}
 
 	if(k->length == 0)
 	{
 		ptr* pt = (ptr*)k;
 		if(pt->koffset != 0)
-			subsize = _tk_measure2(map,(page_wrap*)pt->pg,parent,GOOFF((page_wrap*)pt->pg,pt->koffset));
+			size += _tk_measure2(map,(page_wrap*)pt->pg,parent,GOKEY((page_wrap*)pt->pg,pt->koffset));
 		else if(map->id == pt->pg)
-			subsize = _tk_measure2(map,map->pg,0,GOKEY(map->pg,sizeof(page)));
+			size += _tk_measure2(map,map->pg,0,GOKEY(map->pg,sizeof(page)));
 		else
-			subsize = (sizeof(ptr)*8);
+			size += (sizeof(ptr)*8);
 	}
 	else
 	{
-		subsize = (k->sub == 0)? 0 : _tk_measure2(map,pw,k,GOOFF(pw,k->sub));
+		uint subsize = (k->sub == 0)? 0 : _tk_measure2(map,pw,k,GOOFF(pw,k->sub));
 
 		subsize += k->length + (sizeof(key)*8);
+
+		size += (subsize > map->halfsize)? _tk_cut2(map,pw,k,0,subsize) : subsize; // sub-cut
 	}
 
-	// test sub-cut
-	if(parent != 0)
-	{
-	}
-
-	return subsize + upsize;
+	return size;
 }
 
 int tk_commit_task(task* t)

@@ -650,8 +650,128 @@ int heapstatus = _heapchk();
 //*/
 }
 
+/////////////////////////////// v2 /////////////////////////////////
+#include <memory.h>
+struct _tk_setup
+{
+	void* id;
+	page_wrap* pg;
+
+	page* dest;
+	task* t;
+
+	uint halfsize;
+	uint fullsize;
+};
+
+static ushort _tk_dp_cpy2(struct _tk_setup* setup, page_wrap* pw, ushort key)
+{
+	return 0;
+}
+
+static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* prev, uint offset)
+{
+	ptr* pt; key* first;
+	// copy first/root key
+	setup->dest->used += setup->dest->used & 1;
+	first = (key*)((char*)setup->dest + setup->dest->used);
+
+	first->offset = first->next = 0;
+	first->length = copy->length - (offset & 0xFFF8);
+
+	memcpy(KDATA(first),KDATA(copy) + (offset >> 3),(first->length + 7) >> 3);
+
+	// cut 'copy'
+	copy->length = (offset == 0)? 1 : offset;
+
+	// start deep-copy
+	first->sub = _tk_dp_cpy2(setup,pw,(prev == 0)? copy->sub : prev->next);
+	
+	// create a pointer to new page
+	pt = 0;
+
+	pt->zero = pt->koffset = 0;
+	pt->offset = offset;
+	// pager: create new page
+	pt->pg = setup->t->ps->new_page(setup->t->psrc_data,setup->dest);
+	// wire pointer
+	if(prev != 0)
+	{
+		pt->next = prev->next;
+		prev->next = 0;	// to pointer
+	}
+	else
+	{
+		pt->next = copy->sub;
+		copy->sub = 0;	// to pointer
+	}
+	return (sizeof(ptr)*8);
+}
+
+static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, key* k)
+{
+	uint size = (k->next == 0)? 0 : _tk_measure2(setup,pw,parent,GOOFF(pw,k->next));
+
+	if(parent != 0)
+	{
+		uint maxsize = size + parent->length - k->offset + (sizeof(key)*8);
+		if(maxsize > setup->halfsize)	// upper-cut
+			size = _tk_cut2(setup,pw,parent,k,maxsize - setup->halfsize + k->offset);
+	}
+
+	if(k->length == 0)
+	{
+		ptr* pt = (ptr*)k;
+		if(pt->koffset != 0)
+			size += _tk_measure2(setup,(page_wrap*)pt->pg,0,GOKEY((page_wrap*)pt->pg,pt->koffset));
+		else if(setup->id == pt->pg)
+			size += _tk_measure2(setup,setup->pg,0,GOKEY(setup->pg,sizeof(page)));
+		else
+			size += (sizeof(ptr)*8);
+	}
+	else
+	{
+		uint subsize = (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,GOOFF(pw,k->sub));
+
+		subsize += k->length + (sizeof(key)*8);
+		// sub-cut
+		size += (subsize > setup->halfsize)? _tk_cut2(setup,pw,k,0,subsize - setup->halfsize) : subsize;
+		// TODO: continue-key
+	}
+
+	return size;
+}
+
+void test_measure2()
+{
+	st_ptr pt,tmp;
+	struct _tk_setup setup;
+	task* t = tk_create_task(0,0);
+
+	setup.t = t;
+	setup.fullsize = PAGE_SIZE*8;
+	setup.halfsize = setup.fullsize/2;
+
+	st_empty(t,&pt);
+
+	ASSERT(_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key)) == 65);
+
+	tmp = pt;
+	st_insert(t,&tmp,"aac",3);
+	tmp = pt;
+	st_insert(t,&tmp,"bb",2);
+	tmp = pt;
+	st_insert(t,&tmp,"aabb",4);
+
+	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
+
+	tk_drop_task(t);
+}
+
 int main(int argc, char* argv[])
 {
+	test_measure2();
+
 	test_compile_c();
 
 	test_struct_c();
