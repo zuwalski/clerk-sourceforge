@@ -88,6 +88,7 @@ struct task
 #define GOPTR(pag,off) ((key*)(((char*)(pag)->ovf) + (((off) ^ 0x8000)<<4)))
 #define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((char*)k + sizeof(key))
+#define CEILBYTE(l)(((l) + 7) >> 3)
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
 void _tk_stack_new(task* t);
