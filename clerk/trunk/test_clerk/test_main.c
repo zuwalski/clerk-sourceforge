@@ -651,7 +651,7 @@ int heapstatus = _heapchk();
 }
 
 /////////////////////////////// v2 /////////////////////////////////
-#include <memory.h>
+#include <string.h>
 struct _tk_setup
 {
 	void* id;
@@ -706,13 +706,13 @@ static void _tk_new_pointer(struct _tk_setup* setup, page_wrap* pw)
 	}
 }
 
-static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* root, ushort* rsub, ushort next, int adjoffset)
+static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent, ushort* rsub, ushort next, int adjoffset)
 {
 	while(next != 0)
 	{
 		key* k = GOOFF(pw,next);
 		// trace to end-of-next's
-		if(k->next != 0) _tk_compact_copy(setup,pw,root,rsub,k->next,adjoffset);
+		if(k->next != 0) _tk_compact_copy(setup,pw,parent,rsub,k->next,adjoffset);
 
 		if(k->length == 0)	// pointer
 		{
@@ -739,33 +739,33 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* root, 
 			}
 		}
 
-		if(root != 0 && k->offset == root->length)	// append on latest key?
+		if((parent != 0) && (k->offset + adjoffset == parent->length))	// append to parent key?
 		{
-			adjoffset = root->length & 0xFFF8; 
+			adjoffset = parent->length & 0xFFF8; 
 			if(k->length > 1)	// skip empty keys
 			{
-				root->length = adjoffset;
-				memcpy(KDATA(root) + (root->length >> 3),KDATA(k),CEILBYTE(k->length));
-				root->length += k->length;
-				setup->dest->used = (ushort)(KDATA(root) + CEILBYTE(root->length) - (char*)setup->dest);
+				parent->length = adjoffset;
+				memcpy(KDATA(parent) + (parent->length >> 3),KDATA(k),CEILBYTE(k->length));
+				parent->length += k->length;
+				setup->dest->used = (ushort)(KDATA(parent) + CEILBYTE(parent->length) - (char*)setup->dest);
 			}
 		}
 		else
 		{
 			if(k->length == 1)		// empty key?
-				root = 0;
+				parent = 0;
 			else					// key w/data
 			{
 				ushort prev = *rsub;
 				setup->dest->used += setup->dest->used & 1;
 				*rsub = setup->dest->used;
-				root = (key*)((char*)setup->dest + setup->dest->used);
-				root->offset = k->offset + adjoffset;
-				root->length = k->length;
-				root->next = prev;
-				root->sub = 0;
-				rsub = &root->sub;
-				memcpy(KDATA(root),KDATA(k),CEILBYTE(k->length));
+				parent = (key*)((char*)setup->dest + setup->dest->used);
+				parent->offset = k->offset + adjoffset;
+				parent->length = k->length;
+				parent->next = prev;
+				parent->sub = 0;
+				rsub = &parent->sub;
+				memcpy(KDATA(parent),KDATA(k),CEILBYTE(k->length));
 				setup->dest->used += sizeof(key) + CEILBYTE(k->length);
 			}
 			adjoffset = 0;
@@ -786,7 +786,7 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	root->length = copy->length - (offset & 0xFFF8);
 
 	memcpy(KDATA(root),KDATA(copy) + (offset >> 3),CEILBYTE(root->length));
-	setup->dest->used += CEILBYTE(root->length);
+	setup->dest->used += sizeof(key) + CEILBYTE(root->length);
 
 	// cut 'copy'
 	copy->length = (offset == 0)? 1 : offset;
@@ -819,7 +819,7 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 
 	if(parent != 0)
 	{
-		uint maxsize = size + parent->length - k->offset + (sizeof(key)*8);
+		uint maxsize = size + parent->length - k->offset + (sizeof(key)*8) + 7;
 		if(maxsize > setup->halfsize)	// upper-cut
 			size = _tk_cut2(setup,pw,parent,k,maxsize - setup->halfsize + k->offset);
 	}
@@ -836,42 +836,85 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 	}
 	else
 	{
-		uint subsize = (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,GOOFF(pw,k->sub));
+		uint subsize = k->length + (sizeof(key)*8) + 7;
 
-		subsize += k->length + (sizeof(key)*8);
+		if(k->sub != 0)
+		{
+			key* sub = GOOFF(pw,k->sub);
+
+			subsize += _tk_measure2(setup,pw,k,sub);
+			// single-key-continue-sub-cut
+			if((parent == 0) || (sub->offset == parent->length))
+				return size + ((subsize > setup->fullsize)? _tk_cut2(setup,pw,k,0,subsize - setup->fullsize) : subsize);
+		}
 		// sub-cut
 		size += (subsize > setup->halfsize)? _tk_cut2(setup,pw,k,0,subsize - setup->halfsize) : subsize;
-		// TODO: continue-key
 	}
 
 	return size;
 }
 
+static char* _ms_tests[] = {
+	"aac",
+	"bb",
+	"aabb",
+	"bbxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+	"bbxxxxxxxxxxxxxxxxxyxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+	"bbxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy",
+	0};
+
 void test_measure2()
 {
-	st_ptr pt,tmp;
+	st_ptr pt;
 	struct _tk_setup setup;
-	task* t = tk_create_task(0,0);
+	task* t = tk_create_task(&util_memory_pager,util_create_mempager());
+	char** chr;
+	ushort sub;
+	struct
+	{
+		page head;
+		char data[1000];
+	}dest;
+
+	dest.head.id = 0;
+	dest.head.size = 100;
+	dest.head.used = 0;
+	dest.head.waste = 0;
 
 	setup.t = t;
-	setup.fullsize = PAGE_SIZE*8;
+	setup.fullsize = 40*8;
 	setup.halfsize = setup.fullsize/2;
+	setup.dest = &dest.head;
+	setup.id = 0;
+	setup.pg = 0;
 
 	st_empty(t,&pt);
 
-	ASSERT(_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key)) == 65);
+	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
-	tmp = pt;
-	st_insert(t,&tmp,"aac",3);
-	tmp = pt;
-	st_insert(t,&tmp,"bb",2);
-	tmp = pt;
-	st_insert(t,&tmp,"aabb",4);
+	chr = _ms_tests;
+	while(*chr != 0)
+	{
+		size_t len = strlen(*chr);
+		st_ptr tmp = pt;
+		st_insert(t,&tmp,*chr,(uint)len);
+		chr++;
+	}
 
 	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
-	//key* k = GOKEY(pt.pg,pt.key);
-	//_tk_compact_copy(...);
+	sub = 0;
+	_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
+
+	tk_root_ptr(t,&pt);
+
+	chr = _ms_tests;
+	while(*chr != 0)
+	{
+		size_t len = strlen(*chr);
+		ASSERT(st_exsist(t,&pt,*chr,(uint)len));
+		chr++;
+	}
 
 	tk_drop_task(t);
 }
