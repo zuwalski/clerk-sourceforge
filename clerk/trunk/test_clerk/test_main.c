@@ -651,6 +651,12 @@ int heapstatus = _heapchk();
 }
 
 /////////////////////////////// v2 /////////////////////////////////
+#ifdef _DEBUG
+#define CHECK(e) if((e) == 0) {fprintf(stderr,"failed: %s : %d\n",__FILE__,__LINE__);}
+#else
+#define CHECK(e)
+#endif
+
 #include <string.h>
 struct _tk_setup
 {
@@ -779,6 +785,9 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 {
 	// copy first/root key
 	key* root;
+
+	CHECK(offset <= copy->length)
+
 	setup->dest->used = sizeof(page);
 	root = (key*)((char*)setup->dest + sizeof(page));
 
@@ -795,21 +804,15 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-offset);
 
 	_tk_new_pointer(setup,pw);
-	setup->pt->zero = setup->pt->koffset = 0;
+	setup->pt->zero = setup->pt->koffset = setup->pt->next = 0;
 	setup->pt->offset = copy->length;
 	// pager: create new page
 	setup->pt->pg = setup->t->ps->new_page(setup->t->psrc_data,setup->dest);
 	// wire pointer
 	if(prev != 0)
-	{
-		setup->pt->next = prev->next;
 		prev->next = setup->pt_off;
-	}
 	else
-	{
-		setup->pt->next = copy->sub;
 		copy->sub = setup->pt_off;
-	}
 	return (sizeof(ptr)*8);
 }
 
@@ -817,12 +820,15 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 {
 	uint size = (k->next == 0)? 0 : _tk_measure2(setup,pw,parent,GOOFF(pw,k->next));
 
+	// parent over k->offset
 	if(parent != 0)
-	{
-		uint maxsize = size + parent->length - k->offset + (sizeof(key)*8) + 7;
-		if(maxsize > setup->halfsize)	// upper-cut
+		while(1)
+		{
+			uint maxsize = size + parent->length - k->offset + (sizeof(key)*8);
+			if(maxsize <= setup->halfsize)	// upper-cut
+				break;
 			size = _tk_cut2(setup,pw,parent,k,maxsize - setup->halfsize + k->offset);
-	}
+		}
 
 	if(k->length == 0)
 	{
@@ -836,22 +842,18 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 	}
 	else
 	{
-		uint subsize = k->length + (sizeof(key)*8) + 7;
+		size += (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,GOOFF(pw,k->sub));
 
-		if(k->sub != 0)
+		while(1)
 		{
-			key* sub = GOOFF(pw,k->sub);
-
-			subsize += _tk_measure2(setup,pw,k,sub);
-			// single-key-continue-sub-cut
-			if((parent == 0) || (sub->offset == parent->length))
-				return size + ((subsize > setup->fullsize)? _tk_cut2(setup,pw,k,0,subsize - setup->fullsize) : subsize);
+			uint maxsize = size + k->length + (sizeof(key)*8);
+			if(maxsize <= setup->halfsize)	// upper-cut
+				break;
+			size = _tk_cut2(setup,pw,k,0,maxsize - setup->halfsize);
 		}
-		// sub-cut
-		size += (subsize > setup->halfsize)? _tk_cut2(setup,pw,k,0,subsize - setup->halfsize) : subsize;
 	}
 
-	return size;
+	return size + k->length + (sizeof(key)*8);
 }
 
 static char* _ms_tests[] = {
@@ -882,7 +884,7 @@ void test_measure2()
 	dest.head.waste = 0;
 
 	setup.t = t;
-	setup.fullsize = 40*8;
+	setup.fullsize = 50*8;
 	setup.halfsize = setup.fullsize/2;
 	setup.dest = &dest.head;
 	setup.id = 0;
@@ -900,6 +902,8 @@ void test_measure2()
 		st_insert(t,&tmp,*chr,(uint)len);
 		chr++;
 	}
+
+	st_prt_page(&pt);
 
 	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
