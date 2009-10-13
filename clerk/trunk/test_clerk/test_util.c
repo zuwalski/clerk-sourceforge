@@ -65,6 +65,11 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 			//printf("%s",path);
 			for(i = 0; i < (l + 7) >> 3; i++)
 			{
+				if(i > 5)
+				{
+					printf("...");
+					break;
+				}
 				printf(" %x",path[i]);
 			}
 
