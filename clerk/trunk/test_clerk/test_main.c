@@ -735,11 +735,14 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 			}
 			else
 			{
-				pt->next = *rsub;
-				pt->offset += adjoffset;
+				ptr* newptr;
 				setup->dest->used += setup->dest->used & 1;
+				newptr = (ptr*)((char*)setup->dest + setup->dest->used);
+				newptr->koffset = newptr->zero = 0;
+				newptr->offset = pt->offset + adjoffset;
+				newptr->next = *rsub;
+				newptr->pg = pt->pg;
 				*rsub = setup->dest->used;
-				memcpy((char*)setup->dest + setup->dest->used,pt,sizeof(ptr));
 				setup->dest->used += sizeof(ptr);
 				break;
 			}
@@ -750,10 +753,9 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 			adjoffset = parent->length & 0xFFF8; 
 			if(k->length > 1)	// skip empty keys
 			{
-				parent->length = adjoffset;
-				memcpy(KDATA(parent) + (parent->length >> 3),KDATA(k),CEILBYTE(k->length));
-				parent->length += k->length;
-				setup->dest->used = (ushort)(KDATA(parent) + CEILBYTE(parent->length) - (char*)setup->dest);
+				memcpy(KDATA(parent) + (adjoffset >> 3),KDATA(k),CEILBYTE(k->length));
+				parent->length = k->length + adjoffset;
+				setup->dest->used += CEILBYTE(k->length);
 			}
 		}
 		else
@@ -762,21 +764,19 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 				parent = 0;
 			else					// key w/data
 			{
-				ushort prev = *rsub;
 				setup->dest->used += setup->dest->used & 1;
-				*rsub = setup->dest->used;
 				parent = (key*)((char*)setup->dest + setup->dest->used);
 				parent->offset = k->offset + adjoffset;
 				parent->length = k->length;
-				parent->next = prev;
+				parent->next = *rsub;
 				parent->sub = 0;
-				rsub = &parent->sub;
 				memcpy(KDATA(parent),KDATA(k),CEILBYTE(k->length));
+				*rsub = setup->dest->used;
+				rsub = &parent->sub;
 				setup->dest->used += sizeof(key) + CEILBYTE(k->length);
 			}
 			adjoffset = 0;
 		}
-
 		next = k->sub;
 	}
 }
@@ -797,11 +797,11 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	memcpy(KDATA(root),KDATA(copy) + (offset >> 3),CEILBYTE(root->length));
 	setup->dest->used += sizeof(key) + CEILBYTE(root->length);
 
-	// cut 'copy'
-	copy->length = (offset == 0)? 1 : offset;
-
 	// start compact-copy
 	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-offset);
+
+	// cut 'copy'
+	copy->length = (offset == 0)? 1 : offset;
 
 	_tk_new_pointer(setup,pw);
 	setup->pt->zero = setup->pt->koffset = setup->pt->next = 0;
@@ -842,7 +842,7 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 	}
 	else	// cut k below limit (length | sub->offset)
 	{
-		uint limit, subsize;
+		int limit; uint subsize;
 		if(k->sub == 0)
 		{
 			limit = k->length;
@@ -898,7 +898,7 @@ void test_measure2()
 	setup.pg = 0;
 
 	dest.head.id = 0;
-	dest.head.size = setup.fullsize/8 + sizeof(page);
+	dest.head.size = sizeof(page) + setup.fullsize/8;
 	dest.head.used = 0;
 	dest.head.waste = 0;
 
@@ -917,11 +917,16 @@ void test_measure2()
 
 	st_prt_page(&pt);
 
+	heap_check();
 	sub = 0;
-	setup.dest->used = sizeof(page);
+	dest.head.used = sizeof(page);
+	dest.head.size = sizeof(page) + 1000; 
 	_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
+	heap_check();
 	t->ps->write_page(t->psrc_data,ROOT_ID,setup.dest);
+	heap_check();
 
+	dest.head.size = sizeof(page) + setup.fullsize/8;
 	tk_root_ptr(t,&pt2);
 
 	puts("----");
@@ -935,7 +940,6 @@ void test_measure2()
 		chr++;
 	}
 
-	heap_check();
 	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
 	sub = 0;
