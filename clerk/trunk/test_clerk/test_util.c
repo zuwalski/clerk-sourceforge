@@ -46,8 +46,13 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 
 			if(pt->koffset == 0)
 			{
+				page_wrap wrap;
 				fprintf(f,"(%s%d)(EXT) page:%p (%d - n:%d) >>\n",(*path & (0x80 >> (o & 7)))?"+":"-",
 					pt->offset,pt->pg,meoff,pt->next);
+
+				wrap.ext_pageid = pt->pg;
+				wrap.pg = pt->pg;
+//				print_struct(&wrap,GOKEY(&wrap,sizeof(page)),ind + 2);
 			}
 			else
 			{

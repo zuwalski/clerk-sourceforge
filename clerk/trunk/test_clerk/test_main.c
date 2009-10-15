@@ -798,7 +798,7 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	setup->dest->used += sizeof(key) + CEILBYTE(root->length);
 
 	// start compact-copy
-	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-offset);
+	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-(offset & 0xFFF8));
 
 	// cut 'copy'
 	copy->length = (offset == 0)? 1 : offset;
@@ -877,12 +877,32 @@ static char* _ms_tests[] = {
 	"bbxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy",
 	0};
 
+static key* _trace_nxt(st_ptr* pt)
+{
+	key* nxt;
+	key* me = GOOFF(pt->pg,pt->key);
+	// deal with offset
+	if(me->sub == 0)
+		return 0;
+
+	nxt = GOOFF(pt->pg,me->sub);
+	while(nxt->offset < pt->offset)
+	{
+		if(nxt->next == 0)
+			return 0;
+
+		nxt = GOOFF(pt->pg,nxt->next);
+	}
+	return nxt;
+}
+
 void test_measure2()
 {
 	st_ptr pt,pt2;
 	struct _tk_setup setup;
 	task* t = tk_create_task(&util_memory_pager,util_create_mempager());
 	char** chr;
+	key* k;
 	ushort sub;
 	struct
 	{
@@ -917,6 +937,12 @@ void test_measure2()
 
 	st_prt_page(&pt);
 
+	pt2 = pt;
+	st_move(t,&pt2,"bbxxxxxxxxxxxxx",15);
+
+	k = _trace_nxt(&pt2);
+	_tk_cut2(&setup,pt2.pg,(key*)((char*)pt2.pg->pg + pt2.key),k,150);
+
 	heap_check();
 	sub = 0;
 	dest.head.used = sizeof(page);
@@ -940,6 +966,9 @@ void test_measure2()
 		chr++;
 	}
 
+	setup.fullsize = 80*8;
+	setup.halfsize = setup.fullsize/2;
+	dest.head.size = sizeof(page) + setup.fullsize/8;
 	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
 	sub = 0;
