@@ -675,7 +675,7 @@ struct _tk_setup
 	uint fullsize;
 };
 
-static void _tk_new_pointer(struct _tk_setup* setup, page_wrap* pw)
+static void _tk_new_pointer(struct _tk_setup* setup, page_wrap* pw, ushort offset)
 {
 	if(pw->pg->used + sizeof(ptr) + 1 > pw->pg->size)
 	{
@@ -710,6 +710,10 @@ static void _tk_new_pointer(struct _tk_setup* setup, page_wrap* pw)
 		setup->pt = (ptr*)((char*)pw->pg + setup->pt_off);
 		pw->pg->used += sizeof(ptr);
 	}
+
+	setup->pt->ptr_id = PTR_ID;
+	setup->pt->koffset = setup->pt->next = 0;
+	setup->pt->offset = offset;
 }
 
 static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent, ushort* rsub, ushort next, int adjoffset)
@@ -754,7 +758,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		if((parent != 0) && (k->offset + adjoffset == parent->length))	// append to parent key?
 		{
 			adjoffset = parent->length & 0xFFF8; 
-			if(k->length > 0)	// skip empty keys
+			if(k->length != 0)	// skip empty keys
 			{
 				memcpy(KDATA(parent) + (adjoffset >> 3),KDATA(k),CEILBYTE(k->length));
 				parent->length = k->length + adjoffset;
@@ -763,31 +767,28 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 					k = k;
 			}
 		}
-		else
+		else if(k->length == 0)	// empty key?
 		{
-			if(k->length == 0)		// empty key?
-			{
-				if(parent != 0)
-					adjoffset += k->offset;
-				parent = 0;
-			}
-			else					// key w/data
-			{
-				setup->dest->used += setup->dest->used & 1;
-				parent = (key*)((char*)setup->dest + setup->dest->used);
-				parent->offset = k->offset + adjoffset;
-				parent->length = k->length;
-				parent->next = *rsub;
-				parent->sub = 0;
-				memcpy(KDATA(parent),KDATA(k),CEILBYTE(k->length));
-				*rsub = setup->dest->used;
-				rsub = &parent->sub;
-				setup->dest->used += sizeof(key) + CEILBYTE(k->length);
-				if(setup->dest->used >= setup->dest->size)
-					k = k;
+			if(parent != 0)
+				adjoffset += k->offset;
+			parent = 0;
+		}
+		else					// key w/data
+		{
+			setup->dest->used += setup->dest->used & 1;
+			parent = (key*)((char*)setup->dest + setup->dest->used);
+			parent->offset = k->offset + adjoffset;
+			parent->length = k->length;
+			parent->next = *rsub;
+			parent->sub = 0;
+			memcpy(KDATA(parent),KDATA(k),CEILBYTE(k->length));
+			*rsub = setup->dest->used;
+			rsub = &parent->sub;
+			setup->dest->used += sizeof(key) + CEILBYTE(k->length);
+			if(setup->dest->used >= setup->dest->size)
+				k = k;
 
-				adjoffset = 0;
-			}
+			adjoffset = 0;
 		}
 		next = k->sub;
 	}
@@ -823,7 +824,7 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, ushort p
 	// cut 'copy'
 	copy->length = offset;
 
-	_tk_new_pointer(setup,pw);
+	_tk_new_pointer(setup,pw,offset);
 	// start compact-copy
 	if(prev_offset != 0)
 	{
@@ -837,9 +838,6 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, ushort p
 		copy->sub = setup->pt_off;
 	}
 
-	setup->pt->ptr_id = PTR_ID;
-	setup->pt->koffset = setup->pt->next = 0;
-	setup->pt->offset = offset;	// copy->length;
 	// pager: create new page
 	setup->pt->pg = setup->t->ps->new_page(setup->t->psrc_data,setup->dest);
 
