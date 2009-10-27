@@ -18,10 +18,10 @@
 #ifndef __CLE_PAGESOURCE_H__
 #define __CLE_PAGESOURCE_H__
 
-#define ROOT_ID ((cle_pageid)1)
-
 typedef void* cle_pageid;
 typedef void* cle_psrc_data;
+
+#define ROOT_ID ((cle_pageid)1)
 
 typedef struct page
 {
@@ -34,15 +34,15 @@ typedef struct page
 
 typedef struct cle_pagesource
 {
-	cle_pageid (*new_page)(cle_psrc_data, page*);
-	page* (*read_page)(cle_psrc_data, cle_pageid);
-	void (*write_page)(cle_psrc_data, cle_pageid, page*);
-	void (*remove_page)(cle_psrc_data, cle_pageid);
-	void (*unref_page)(cle_psrc_data, page*);
-	int (*pager_error)(cle_psrc_data);
-	int (*pager_commit)(cle_psrc_data);
-	int (*pager_rollback)(cle_psrc_data);
-	int (*pager_close)(cle_psrc_data);
+	cle_pageid    (*new_page)(cle_psrc_data, page*);
+	page*         (*read_page)(cle_psrc_data, cle_pageid);
+	void          (*write_page)(cle_psrc_data, cle_pageid, page*);
+	void          (*remove_page)(cle_psrc_data, cle_pageid);
+	void          (*unref_page)(cle_psrc_data, page*);
+	int           (*pager_error)(cle_psrc_data);
+	int           (*pager_commit)(cle_psrc_data);
+	int           (*pager_rollback)(cle_psrc_data);
+	int           (*pager_close)(cle_psrc_data);
 	cle_psrc_data (*pager_clone)(cle_psrc_data);
 }
 cle_pagesource;

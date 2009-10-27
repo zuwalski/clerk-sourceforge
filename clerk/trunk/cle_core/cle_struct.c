@@ -92,7 +92,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 		if(me->offset != rt->diff)
 			break;
 
-		if(me->length == 0)
+		if(ISPTR(me))
 			me = _tk_get_ptr(rt->t,&rt->pg,me);
 		ckey = KDATA(me);
 		rt->diff = 0;
@@ -158,12 +158,11 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 	pt->pg = rt->t->stack;
 	pt->koffset = rt->t->stack->pg->used + (rt->t->stack->pg->used & 1);
 	pt->offset = rt->diff;
-	pt->zero = 0;
+	pt->ptr_id = PTR_ID;
 
 	/* reset values */
 	rt->pg = rt->t->stack;
 	rt->prev = rt->sub = 0;
-//	rt->diff = 0;			// goes into "offset" - still relates to parent (?)
 	
 	rt->pg->refcount++;
 	return pt;	// for update to manipulate pointer
@@ -195,7 +194,7 @@ static void _st_write(struct _st_lkup_res* rt)
 		_st_make_writable(rt);
 
 	/* continue/append (last)key? */
-	if((rt->sub->length == 1 || rt->diff == rt->sub->length) && IS_LAST_KEY(rt->sub,rt->pg->pg))
+	if((rt->sub->length == 0 || rt->diff == rt->sub->length) && IS_LAST_KEY(rt->sub,rt->pg->pg))
 	{
 		uint length = (rt->pg->pg->used + size > rt->pg->pg->size)? rt->pg->pg->size - rt->pg->pg->used : size;
 
@@ -279,14 +278,13 @@ uint st_empty(task* t, st_ptr* pt)
 	pt->offset = 0;
 
 	memset(nk,0,sizeof(key) + 2);
-	nk->length = 1;
 	return 0;
 }
 
 uint st_is_empty(st_ptr* pt)
 {
 	key* k = GOOFF(pt->pg,pt->key);
-	if(k->length == 1 && k->sub == 0) return 1;
+	if(k->length == 0 && k->sub == 0) return 1;
 	if(pt->offset != k->length) return 0;
 	if(k->sub == 0) return 1;
 	k = GOOFF(pt->pg,k->sub);
@@ -388,7 +386,7 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 	}
 
 	pu.waste = rt->sub->length - rt->diff;
-	rt->diff = rt->sub->length = (rt->diff > 0)? rt->diff : 1;
+	rt->sub->length = rt->diff;
 
 	return pu;
 }
@@ -405,7 +403,7 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 		if(pu.waste >= length)
 		{
 			memcpy(KDATA(rt.sub)+(rt.diff >> 3),path,length >> 3);
-			rt.diff = rt.sub->length = length + (rt.diff > 1? rt.diff : 0);
+			rt.diff = rt.sub->length = length + rt.diff;
 			pu.waste -= length;
 		}
 		else
@@ -444,7 +442,7 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
 	{
 		uint wlen;
 
-		if(rt.sub->length == 0)
+		if(ISPTR(rt.sub))
 		{
 			rt.sub = _tk_get_ptr(t,&rt.pg,rt.sub);
 			if(rt.pg->pg->id)
@@ -523,7 +521,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 			if(nxt->offset != rt.sub->length)
 				return 1;
 
-			rt.sub  = (nxt->length == 0)?_tk_get_ptr(t,&rt.pg,nxt):nxt;
+			rt.sub  = (ISPTR(nxt))?_tk_get_ptr(t,&rt.pg,nxt):nxt;
 			if(rt.sub->sub == 0)
 			{
 				rt.diff = rt.sub->length;
@@ -594,14 +592,14 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 		if(length > 0)
 		{
 			// no next key! or trying to read past split?
-			if(nxt == 0 || (nxt->offset < me->length && me->length != 1))
+			if(nxt == 0 || (nxt->offset < me->length && me->length != 0))
 			{
 				pt->offset = max + (offset & 0xFFF8);
 				break;
 			}
 
 			offset = 0;
-			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+			me = (ISPTR(nxt))?_tk_get_ptr(t,&pg,nxt):nxt;
 			ckey = KDATA(me);
 			if(me->sub)
 			{
@@ -624,7 +622,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 			else if(nxt && nxt->offset == me->length)	// continuing key?
 			{
 				pt->offset = 0;
-				me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+				me = (ISPTR(nxt))?_tk_get_ptr(t,&pg,nxt):nxt;
 			}
 			else
 			{
@@ -666,7 +664,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 		// move to next key for more data?
 		if(offset > 0 && nxt && nxt->offset == me->length)
 		{
-			me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+			me = (ISPTR(nxt))?_tk_get_ptr(t,&pg,nxt):nxt;
 			ckey = KDATA(me);
 			if(me->sub)
 			{
@@ -687,7 +685,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 			else if(nxt)
 			{
 				pt->offset = 0;
-				me = (nxt->length == 0)?_tk_get_ptr(t,&pg,nxt):nxt;
+				me = (ISPTR(nxt))?_tk_get_ptr(t,&pg,nxt):nxt;
 			}
 			else
 				pt->offset = me->length;
@@ -729,7 +727,7 @@ int st_scan(task* t, st_ptr* pt)
 			k = GOOFF(pt->pg,k->next);
 		}
 		
-		if(k->length == 0)
+		if(ISPTR(k))
 			k = _tk_get_ptr(t,&pt->pg,k);
 
 		pt->offset = 0;
@@ -849,7 +847,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, ke
 	uint ret = 0,idx = 0;
 	while(1)
 	{
-		uint klen = (nxt != 0)? (nxt->offset + 6): (me->length + 6);
+		uint klen = (nxt != 0)? (nxt->offset + 7): (me->length + 7);
 		klen >>= 3;
 		klen -= offset >> 3;
 		if(klen != 0)
@@ -875,14 +873,14 @@ _map_pop:
 		else
 		{
 			// TODO callback on pointers
-			if(nxt->offset < me->length && me->length != 1)
+			if(nxt->offset < me->length && me->length != 0)
 			{
 				if(ret = work->push(work->ctx))
 					break;
 
 				if(idx & 0xF0)
 				{
-					me = (nxt->length == 0)?_tk_get_ptr(work->t,&pg,nxt) : nxt;
+					me = (ISPTR(nxt))?_tk_get_ptr(work->t,&pg,nxt) : nxt;
 					nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 
 					if(ret = _st_map_worker(work,pg,me,nxt,0))
@@ -896,7 +894,7 @@ _map_pop:
 				idx++;
 			}
 
-			me = (nxt->length == 0)?_tk_get_ptr(work->t,&pg,nxt) : nxt;
+			me = (ISPTR(nxt))?_tk_get_ptr(work->t,&pg,nxt) : nxt;
 			nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 			offset = 0;
 		}

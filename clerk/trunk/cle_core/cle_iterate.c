@@ -159,7 +159,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 			break;
 
 		// if this is a pointer - resolve it
-		if(me->length == 0)
+		if(ISPTR(me))
 			me = _tk_get_ptr(rt->t,&rt->pg,me);
 
 		ckey = KDATA(me);
@@ -205,7 +205,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 		cdat ckey;
 		uint clen;
 
-		if(sub->length == 0)	// ptr-key?
+		if(ISPTR(sub))	// ptr-key?
 			sub = _tk_get_ptr(rt->t,&rt->pg,sub);
 
 		rt->sub = sub;
@@ -640,7 +640,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 			remove = rt.prev->next;
 			rm_pg  = rt.pg;
 
-			rt.sub->length = (rt.diff > 0)? rt.diff : 1;
+			rt.sub->length = rt.diff;
 			rt.prev->next = 0;
 		}
 		else
@@ -666,7 +666,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 			else
 			{
 				waste = rt.sub->length - rt.diff;
-				rt.sub->length = (rt.diff > 0)? rt.diff : 1;
+				rt.sub->length = rt.diff;
 				rm_pg = rt.pg;
 			}
 		}
@@ -674,7 +674,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 	else
 	{
 		waste = rt.sub->length - rt.diff;
-		rt.sub->length = (rt.diff > 0)? rt.diff : 1;
+		rt.sub->length = rt.diff;
 		rm_pg = rt.pg;
 
 		if(rt.sub->sub)

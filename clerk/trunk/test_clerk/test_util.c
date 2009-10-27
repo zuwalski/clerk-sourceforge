@@ -27,7 +27,7 @@
 #include "../cle_core/cle_runtime.h"
 
 static FILE* f;
-static void print_struct(page_wrap* pg, const key* me, int ind)
+static void print_struct(page_wrap* pg, const key* me, int ind, int meoff)
 {
 	while(1){
 		int i;
@@ -35,7 +35,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 		const char* path = KDATA(me);
   		int l = me->length;
   		int o = me->offset;
-		int meoff = (int)((char*)me - (char*)pg->pg);
+		//int meoff = (int)((char*)me - (char*)pg->pg);
 
 		for(i = 0; i < ind; i++)
 			fputs("..",f);
@@ -47,17 +47,23 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 			if(pt->koffset == 0)
 			{
 				page_wrap wrap;
-				fprintf(f,"(%s%d)(EXT) page:%p (%d - n:%d) >>\n",(*path & (0x80 >> (o & 7)))?"+":"-",
+				fprintf(f,"(%s%d)(EXT) page:%p (%d - n:%d) ",(*path & (0x80 >> (o & 7)))?"+":"-",
 					pt->offset,pt->pg,meoff,pt->next);
 
-				wrap.ext_pageid = pt->pg;
-				wrap.pg = pt->pg;
-//				print_struct(&wrap,GOKEY(&wrap,sizeof(page)),ind + 2);
+				if(ind < 3)
+				{
+					wrap.ext_pageid = pt->pg;
+					wrap.pg = pt->pg;
+					printf(" (%d)>>\n",wrap.pg->used);
+					print_struct(&wrap,GOKEY(&wrap,sizeof(page)),ind + 2,sizeof(page));
+				} else puts(">>");
 			}
 			else
 			{
 				fprintf(f,"(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n",(*path & (0x80 >> (o & 7)))?"+":"-",
 					pt->offset,pt->pg,pt->koffset,meoff,pt->next);
+
+				print_struct((page_wrap*)pt->pg,GOKEY((page_wrap*)pt->pg,pt->koffset),ind + 2,pt->koffset);
 			}
     	}
   		else
@@ -81,7 +87,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 			
 	  		if(me->sub){
 	  			fputs("] ->\n",f);
-				print_struct(pg,GOOFF(pg,me->sub),ind+1);
+				print_struct(pg,GOOFF(pg,me->sub),ind+1,me->sub);
 			}
 			else
 	  			fputs("]\n",f);
@@ -95,6 +101,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 		//	l = l;
 		//}
 
+		meoff = me->next;
 		me = GOOFF(pg,me->next);
 	}
 }
@@ -103,7 +110,7 @@ void st_prt_page(st_ptr* pt)
 {
 	f = stdout;
 	fprintf(f,"%p(%d/%d)\n",pt->pg->pg->id,pt->pg->pg->used,pt->pg->pg->waste);
-	print_struct(pt->pg,GOOFF(pt->pg,pt->key),0);
+	print_struct(pt->pg,GOOFF(pt->pg,pt->key),0,pt->key);
 }
 
 int _tk_validate(page* pg, uint* kcount, ushort koff)
@@ -118,7 +125,7 @@ int _tk_validate(page* pg, uint* kcount, ushort koff)
 		}
 		*kcount += 1;
 
-		if(k->length == 0)
+		if(ISPTR(k))
 		{
 		}
 		else if(_tk_validate(pg,kcount,k->sub) != 0)
@@ -140,7 +147,7 @@ void _tk_print(page* pg)
 	{
 		key* k = (key*)((char*)pg + koff);
 
-		if(k->length == 0)
+		if(ISPTR(k))
 		{
 			ptr* pt = (ptr*)k;
 			if(pt->koffset == 0)
@@ -185,7 +192,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 //			printf("oops");
 		}
 
-		if(me->length == 1)
+		if(me->length == 0)
 		{
 			empty_keys++;
 		}
@@ -200,8 +207,10 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 			printf("oops");
 		}
 
-		if(me->length == 0)
+		if(ISPTR(me))
   		{
+			//if(me->sub != 0)
+			{
 			ptr* pt = (ptr*)me;
 			//st_ptr tmp;
 			page_wrap* pw = pg;
@@ -227,6 +236,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 			//st_prt_page(&tmp);
 
 			calc_dist(pw,root,0,level + 1);
+			}
     	}
   		else
 		{
@@ -295,7 +305,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 				ovf_free += pw->ovf->size - pw->ovf->used;
 				if(pw->ovf->size > OVERFLOW_GROW)
 				{
-					printf("OVF size: %d used: %d\n",pw->ovf->size,pw->ovf->used);
+//					printf("OVF size: %d used: %d\n",pw->ovf->size,pw->ovf->used);
 				}
 			}
 

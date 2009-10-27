@@ -174,9 +174,16 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 
 void tk_root_ptr(task* t, st_ptr* pt)
 {
+	key* k;
 	pt->pg = _tk_load_page(t,0,ROOT_ID);
 	pt->key = sizeof(page);
 	pt->offset = 0;
+	k = GOOFF(pt->pg,pt->key);
+	if(ISPTR(k))
+	{
+		k = _tk_get_ptr(t,&pt->pg,k);
+		pt->key = (ushort)((char*)k - (char*)pt->pg->pg);
+	}
 }
 
 void tk_dup_ptr(st_ptr* to, st_ptr* from)
@@ -285,7 +292,7 @@ static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
 	while(off)
 	{
 		key* k = GOOFF(pg,off);
-		if(k->length == 0)
+		if(ISPTR(k))
 		{
 			ptr* pt = (ptr*)k;
 			if(pt->koffset == 0)	// real page
@@ -343,7 +350,6 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 
 	k = (key*)((char*)p + p->used);
 	memset(k,0,sizeof(key) + 2);
-	k->length = 1;
 
 	p->used += sizeof(key) + 2;
 
@@ -451,7 +457,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		// trace to end-of-next's
 		if(k->next != 0) _tk_compact_copy(setup,pw,parent,rsub,k->next,adjoffset);
 
-		if(k->length == 0)	// pointer
+		if(ISPTR(k))	// pointer
 		{
 			ptr* pt = (ptr*)k;
 			if(pt->koffset != 0)
@@ -469,7 +475,8 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 				ptr* newptr;
 				setup->dest->used += setup->dest->used & 1;
 				newptr = (ptr*)((char*)setup->dest + setup->dest->used);
-				newptr->koffset = newptr->zero = 0;
+				newptr->koffset = 0;
+				newptr->ptr_id = PTR_ID;
 				newptr->offset = pt->offset + adjoffset;
 				newptr->next = *rsub;
 				newptr->pg = pt->pg;
@@ -482,7 +489,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		if((parent != 0) && (k->offset + adjoffset == parent->length))	// append to parent key?
 		{
 			adjoffset = parent->length & 0xFFF8; 
-			if(k->length > 1)	// skip empty keys
+			if(k->length > 0)	// skip empty keys
 			{
 				memcpy(KDATA(parent) + (adjoffset >> 3),KDATA(k),CEILBYTE(k->length));
 				parent->length = k->length + adjoffset;
@@ -491,7 +498,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		}
 		else
 		{
-			if(k->length == 1)		// empty key?
+			if(k->length == 0)		// empty key?
 				parent = 0;
 			else					// key w/data
 			{
@@ -515,18 +522,25 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* prev, int offset)
 {
 	// copy first/root key
-	key* root; int limit = copy->length;
+	key* root; int limit = copy->length; uint adj = 0;
 	//CHECK(offset <= copy->length)
 	if(prev != 0)
 	{
 		if(prev->next != 0)
-			limit = GOOFF(pw,prev->next)->offset;
+		{
+			limit = GOOFF(pw,prev->next)->offset - 1;
+			adj++;
+		}
 	}
 	else if(copy->sub != 0)
-		limit = GOOFF(pw,copy->sub)->offset;
+	{
+		limit = GOOFF(pw,copy->sub)->offset - 1;
+		adj++;
+	}
 
 	if(offset > limit)
 		offset = limit;
+	else adj = 0;
 
 	setup->dest->used = sizeof(page);
 	root = (key*)((char*)setup->dest + sizeof(page));
@@ -541,10 +555,12 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-(offset & 0xFFF8));
 
 	// cut 'copy'
-	copy->length = (offset == 0)? 1 : offset;
+	offset += adj;
+	copy->length = offset;
 
 	_tk_new_pointer(setup,pw);
-	setup->pt->zero = setup->pt->koffset = setup->pt->next = 0;
+	setup->pt->ptr_id = PTR_ID;
+	setup->pt->koffset = setup->pt->next = 0;
 	setup->pt->offset = copy->length;
 	// pager: create new page
 	setup->pt->pg = setup->t->ps->new_page(setup->t->psrc_data,setup->dest);
@@ -570,7 +586,7 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 			size = _tk_cut2(setup,pw,parent,k,offset + k->offset);
 		}
 
-	if(k->length == 0)
+	if(ISPTR(k))
 	{
 		ptr* pt = (ptr*)k;
 		if(pt->koffset != 0)
@@ -623,8 +639,8 @@ int tk_commit_task(task* t)
 				setup.dest->size = pg->size;
 				setup.dest->waste = 0;
 
-				setup.halfsize = pg->size << 2;
-				setup.fullsize = pg->size << 3;
+				setup.fullsize = (pg->size - sizeof(page)) << 3;
+				setup.halfsize = setup.fullsize >> 1;
 
 				setup.t = t;
 
@@ -650,7 +666,7 @@ int tk_commit_task(task* t)
 
 				t->ps->write_page(t->psrc_data,pgw->ext_pageid,setup.dest);
 
-				// release old (now rebuild) page (if we found parent)
+				// release old (now rebuilded) page (if we found parent)
 				if(setup.id != 0)
 					t->ps->remove_page(t->psrc_data,setup.id);
 

@@ -32,6 +32,8 @@
 
 #define PID_CACHE_SIZE 8
 
+#define PTR_ID 0xFFFF
+
 /* Defs */
 typedef struct overflow
 {
@@ -60,7 +62,7 @@ typedef struct key
 typedef struct ptr
 {
 	ushort offset;
-	ushort zero;
+	ushort ptr_id;
 	ushort next;
 	ushort koffset;
 	void*  pg;
@@ -89,6 +91,7 @@ struct task
 #define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((char*)k + sizeof(key))
 #define CEILBYTE(l)(((l) + 7) >> 3)
+#define ISPTR(k) ((k)->length == PTR_ID)
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
 void _tk_stack_new(task* t);

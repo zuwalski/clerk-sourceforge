@@ -27,9 +27,34 @@
 #include <errno.h>
 #include "test.h"
 
+void heap_check()
+{
+///*
+int heapstatus = _heapchk();
+   switch( heapstatus )
+   {
+   case _HEAPOK:
+      printf(" OK - heap is fine\n" );
+      break;
+   case _HEAPEMPTY:
+      printf(" OK - heap is empty\n" );
+      break;
+   case _HEAPBADBEGIN:
+      printf( "ERROR - bad start of heap\n" );
+      break;
+   case _HEAPBADNODE:
+      printf( "ERROR - bad node in heap\n" );
+      break;
+   default:
+      printf( "ERROR - other\n" );
+   }
+//*/
+}
+
 void unimplm()
 {
 	puts("failed in unimpl in test_main.c");
+	heap_check();
 	getchar();
 	exit(-1);
 }
@@ -547,6 +572,7 @@ void test_task_c_filepager()
 	while(it_next(t,&tmp,&it))
 	{
 		i++;
+		ASSERT(i <= HIGH_ITERATION_COUNT);
 	}
 	stop = clock();
 
@@ -626,37 +652,13 @@ void test_st_trace()
 	tk_drop_task(t);
 }
 
-void heap_check()
-{
-///*
-int heapstatus = _heapchk();
-   switch( heapstatus )
-   {
-   case _HEAPOK:
-      printf(" OK - heap is fine\n" );
-      break;
-   case _HEAPEMPTY:
-      printf(" OK - heap is empty\n" );
-      break;
-   case _HEAPBADBEGIN:
-      printf( "ERROR - bad start of heap\n" );
-      break;
-   case _HEAPBADNODE:
-      printf( "ERROR - bad node in heap\n" );
-      break;
-   default:
-      printf( "ERROR - other\n" );
-   }
-//*/
-}
-
 /////////////////////////////// v2 /////////////////////////////////
 #ifdef _DEBUG
 #define CHECK(e) if((e) == 0) {fprintf(stderr,"failed: %s : %d\n",__FILE__,__LINE__);}
 #else
 #define CHECK(e)
 #endif
-
+static void* _ptr_validate = 0;
 #include <string.h>
 struct _tk_setup
 {
@@ -698,17 +700,15 @@ static void _tk_new_pointer(struct _tk_setup* setup, page_wrap* pw)
 		}
 
 		setup->pt = (ptr*)((char*)ovf + ovf->used);
-
-		setup->pt_off = ovf->used >> 4;
+		setup->pt_off = (ovf->used >> 4) | 0x8000;
 		ovf->used += 16;
-		setup->pt_off |= 0x8000;
 	}
 	else
 	{
 		pw->pg->used += pw->pg->used & 1;
 		setup->pt_off = pw->pg->used;
-		pw->pg->used += sizeof(ptr);
 		setup->pt = (ptr*)((char*)pw->pg + setup->pt_off);
+		pw->pg->used += sizeof(ptr);
 	}
 }
 
@@ -720,7 +720,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		// trace to end-of-next's
 		if(k->next != 0) _tk_compact_copy(setup,pw,parent,rsub,k->next,adjoffset);
 
-		if(k->length == 0)	// pointer
+		if(ISPTR(k))	// pointer
 		{
 			ptr* pt = (ptr*)k;
 			if(pt->koffset != 0)
@@ -738,12 +738,15 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 				ptr* newptr;
 				setup->dest->used += setup->dest->used & 1;
 				newptr = (ptr*)((char*)setup->dest + setup->dest->used);
-				newptr->koffset = newptr->zero = 0;
+				newptr->koffset = 0;
+				newptr->ptr_id = PTR_ID;
 				newptr->offset = pt->offset + adjoffset;
 				newptr->next = *rsub;
 				newptr->pg = pt->pg;
 				*rsub = setup->dest->used;
 				setup->dest->used += sizeof(ptr);
+				if(setup->dest->used >= setup->dest->size)
+					k = k;
 				break;
 			}
 		}
@@ -751,17 +754,23 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 		if((parent != 0) && (k->offset + adjoffset == parent->length))	// append to parent key?
 		{
 			adjoffset = parent->length & 0xFFF8; 
-			if(k->length > 1)	// skip empty keys
+			if(k->length > 0)	// skip empty keys
 			{
 				memcpy(KDATA(parent) + (adjoffset >> 3),KDATA(k),CEILBYTE(k->length));
 				parent->length = k->length + adjoffset;
 				setup->dest->used += CEILBYTE(k->length);
+				if(setup->dest->used >= setup->dest->size)
+					k = k;
 			}
 		}
 		else
 		{
-			if(k->length == 1)		// empty key?
+			if(k->length == 0)		// empty key?
+			{
+				if(parent != 0)
+					adjoffset += k->offset;
 				parent = 0;
+			}
 			else					// key w/data
 			{
 				setup->dest->used += setup->dest->used & 1;
@@ -774,19 +783,33 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 				*rsub = setup->dest->used;
 				rsub = &parent->sub;
 				setup->dest->used += sizeof(key) + CEILBYTE(k->length);
+				if(setup->dest->used >= setup->dest->size)
+					k = k;
+
+				adjoffset = 0;
 			}
-			adjoffset = 0;
 		}
 		next = k->sub;
 	}
 }
 
-static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* prev, int offset)
+static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, ushort prev_offset, int offset)
 {
 	// copy first/root key
-	key* root;
+	key* root,*prev; int limit = copy->length;
+	//CHECK(offset <= copy->length)
 
-	CHECK(offset <= copy->length)
+	if(prev_offset != 0)
+	{
+		prev = GOOFF(pw,prev_offset);
+		if(prev->next != 0)
+			limit = GOOFF(pw,prev->next)->offset;// - 1;
+	}
+	else if(copy->sub != 0)
+		limit = (GOOFF(pw,copy->sub)->offset) & 0xFFF8;// - 1;
+
+	if(offset > limit)
+		offset = limit;
 
 	setup->dest->used = sizeof(page);
 	root = (key*)((char*)setup->dest + sizeof(page));
@@ -797,75 +820,81 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 	memcpy(KDATA(root),KDATA(copy) + (offset >> 3),CEILBYTE(root->length));
 	setup->dest->used += sizeof(key) + CEILBYTE(root->length);
 
-	// start compact-copy
-	_tk_compact_copy(setup,pw,root,&root->sub,(prev == 0)? copy->sub : prev->next,-(offset & 0xFFF8));
-
 	// cut 'copy'
-	copy->length = (offset == 0)? 1 : offset;
+	copy->length = offset;
 
 	_tk_new_pointer(setup,pw);
-	setup->pt->zero = setup->pt->koffset = setup->pt->next = 0;
-	setup->pt->offset = copy->length;
+	// start compact-copy
+	if(prev_offset != 0)
+	{
+		prev = GOOFF(pw,prev_offset);
+		_tk_compact_copy(setup,pw,root,&root->sub,prev->next,-(offset & 0xFFF8));
+		prev->next = setup->pt_off;
+	}
+	else
+	{
+		_tk_compact_copy(setup,pw,root,&root->sub,copy->sub,-(offset & 0xFFF8));
+		copy->sub = setup->pt_off;
+	}
+
+	setup->pt->ptr_id = PTR_ID;
+	setup->pt->koffset = setup->pt->next = 0;
+	setup->pt->offset = offset;	// copy->length;
 	// pager: create new page
 	setup->pt->pg = setup->t->ps->new_page(setup->t->psrc_data,setup->dest);
-	// wire pointer
-	if(prev != 0)
-		prev->next = setup->pt_off;
-	else
-		copy->sub = setup->pt_off;
+
 	return (sizeof(ptr)*8);
 }
 
-static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, key* k)
+static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ushort koff)
 {
-	uint size = (k->next == 0)? 0 : _tk_measure2(setup,pw,parent,GOOFF(pw,k->next));
+	key* k = GOOFF(pw,koff);
+	uint size = 0;
+	if(k->next != 0)
+	{
+		size = _tk_measure2(setup,pw,parent,k->next);
+		k = GOOFF(pw,koff);	// might have changed due to realloc
+	}
 
 	// parent over k->offset
 	if(parent != 0)
 		while(1)
 		{
-			int offset = size + parent->length - k->offset + (sizeof(key)*8) - setup->halfsize;
+			int offset = size + parent->length - k->offset + ((sizeof(key)+1)*8) - setup->halfsize;
 			if(offset <= 0)	// upper-cut
 				break;
-			size = _tk_cut2(setup,pw,parent,k,offset + k->offset);
+			size = _tk_cut2(setup,pw,parent,koff,offset + k->offset);
+			k = GOOFF(pw,koff);	// might have changed due to realloc
 		}
 
-	if(k->length == 0)
+	if(ISPTR(k))
 	{
 		ptr* pt = (ptr*)k;
 		if(pt->koffset != 0)
-			size += _tk_measure2(setup,(page_wrap*)pt->pg,0,GOKEY((page_wrap*)pt->pg,pt->koffset));
+			size += _tk_measure2(setup,(page_wrap*)pt->pg,0,pt->koffset);
 		else if(setup->id == pt->pg)
-			size += _tk_measure2(setup,setup->pg,0,GOKEY(setup->pg,sizeof(page)));
+			size += _tk_measure2(setup,setup->pg,0,sizeof(page));
 		else
-			size += (sizeof(ptr)*8);
+			size += ((sizeof(ptr)+1)*8);
+
+		return size;
 	}
 	else	// cut k below limit (length | sub->offset)
 	{
-		int limit; uint subsize;
-		if(k->sub == 0)
-		{
-			limit = k->length;
-			subsize = 0;
-		}
-		else
-		{
-			key* sub = GOOFF(pw,k->sub);
-			subsize = _tk_measure2(setup,pw,k,sub);
-			limit = sub->offset;
-		}
+		uint subsize = (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,k->sub);
 
-		while(1)
+		do
 		{
-			int offset = subsize + k->length + (sizeof(key)*8) - setup->halfsize;
+			int offset = size + subsize + k->length + ((sizeof(key)+1)*8) - setup->halfsize;
 			if(offset < 0)
 				break;
-			subsize = _tk_cut2(setup,pw,k,0,(offset > limit)? limit : offset);
+			subsize = _tk_cut2(setup,pw,k,0,offset);
 		}
+		while(subsize + k->length + ((sizeof(key)+1)*8) > setup->halfsize);
 		size += subsize;
 	}
 
-	return size + k->length + (sizeof(key)*8);
+	return size + k->length + ((sizeof(key)+1)*8);
 }
 
 static char* _ms_tests[] = {
@@ -896,18 +925,23 @@ static key* _trace_nxt(st_ptr* pt)
 	return nxt;
 }
 
+#define COMMIT_ITERATION_COUNT 1000000
 void test_measure2()
 {
+		it_ptr it;
 	st_ptr pt,pt2;
 	struct _tk_setup setup;
-	task* t = tk_create_task(&util_memory_pager,util_create_mempager());
+	cle_psrc_data psrc_data = util_create_mempager();
+	task* t = tk_create_task(&util_memory_pager,psrc_data);
 	char** chr;
 	key* k;
+	int i;
 	ushort sub;
+	uint a = 0x80;
 	struct
 	{
 		page head;
-		char data[1000];
+		char data[10000];
 	}dest;
 
 	setup.t = t;
@@ -922,9 +956,48 @@ void test_measure2()
 	dest.head.used = 0;
 	dest.head.waste = 0;
 
-	st_empty(t,&pt);
+	_ptr_validate = setup.dest;
 
-	//_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
+	//st_empty(t,&pt);
+
+	////_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
+
+	//chr = _ms_tests;
+	//while(*chr != 0)
+	//{
+	//	size_t len = strlen(*chr);
+	//	st_ptr tmp = pt;
+	//	st_insert(t,&tmp,*chr,(uint)len);
+	//	chr++;
+	//}
+
+	//pt2 = pt;
+	//st_move(t,&pt2,"bbxxxxxxxxxxxxx",15);
+
+	//k = _trace_nxt(&pt2);
+	//_tk_cut2(&setup,pt2.pg,(key*)((char*)pt2.pg->pg + pt2.key),k,150);
+
+	//heap_check();
+	//sub = 0;
+	//dest.head.used = sizeof(page);
+	//dest.head.size = sizeof(page) + 1000; 
+	//_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
+	//heap_check();
+	//t->ps->write_page(t->psrc_data,ROOT_ID,setup.dest);
+	//heap_check();
+
+	//dest.head.size = sizeof(page) + setup.fullsize/8;
+	//tk_root_ptr(t,&pt2);
+
+	//chr = _ms_tests;
+	//while(*chr != 0)
+	//{
+	//	size_t len = strlen(*chr);
+	//	ASSERT(st_exsist(t,&pt2,*chr,(uint)len));
+	//	chr++;
+	//}
+/*
+	st_empty(t,&pt);
 
 	chr = _ms_tests;
 	while(*chr != 0)
@@ -937,51 +1010,22 @@ void test_measure2()
 
 	st_prt_page(&pt);
 
-	pt2 = pt;
-	st_move(t,&pt2,"bbxxxxxxxxxxxxx",15);
-
-	k = _trace_nxt(&pt2);
-	_tk_cut2(&setup,pt2.pg,(key*)((char*)pt2.pg->pg + pt2.key),k,150);
-
-	heap_check();
-	sub = 0;
-	dest.head.used = sizeof(page);
-	dest.head.size = sizeof(page) + 1000; 
-	_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
-	heap_check();
-	t->ps->write_page(t->psrc_data,ROOT_ID,setup.dest);
-	heap_check();
-
-	dest.head.size = sizeof(page) + setup.fullsize/8;
-	tk_root_ptr(t,&pt2);
-
-	puts("----");
-	st_prt_page(&pt2);
-
-	chr = _ms_tests;
-	while(*chr != 0)
-	{
-		size_t len = strlen(*chr);
-		ASSERT(st_exsist(t,&pt2,*chr,(uint)len));
-		chr++;
-	}
-
 	setup.fullsize = 80*8;
 	setup.halfsize = setup.fullsize/2;
 	dest.head.size = sizeof(page) + setup.fullsize/8;
+
 	_tk_measure2(&setup,pt.pg,0,GOKEY(pt.pg,pt.key));
 
 	sub = 0;
 	setup.dest->used = sizeof(page);
 	_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
+	setup.dest->size = 1024;
 	t->ps->write_page(t->psrc_data,ROOT_ID,setup.dest);
 
 	tk_root_ptr(t,&pt);
 
 	puts("----");
 	st_prt_page(&pt);
-	puts("----");
-	st_prt_distribution(&pt,t);
 
 	chr = _ms_tests;
 	while(*chr != 0)
@@ -990,6 +1034,83 @@ void test_measure2()
 		ASSERT(st_exsist(t,&pt,*chr,(uint)len));
 		chr++;
 	}
+*/
+	//////////////////////////////////
+	st_empty(t,&pt);
+	// create
+//	it_create(t,&it,&pt);
+
+	// insert data
+	for(i = 0; i < COMMIT_ITERATION_COUNT; i++)
+	{
+		pt2 = pt;
+		st_insert(t,&pt2,(char*)&i,sizeof(uint));
+//		if(it_new(t,&it,&pt2))
+//			break;
+	}
+
+	for(i = 0; i < COMMIT_ITERATION_COUNT; i++)
+	{
+		ASSERT(st_exsist(t,&pt,(char*)&i,sizeof(uint)));
+	}
+
+	st_prt_distribution(&pt,t);
+
+	// destroy
+	//it_dispose(t,&it);
+
+	// commit!
+	setup.fullsize = 1000*8;
+	setup.halfsize = setup.fullsize/2;
+	dest.head.size = sizeof(page) + setup.fullsize/8;
+
+	heap_check();
+	_tk_measure2(&setup,pt.pg,0,pt.key);
+
+	heap_check();
+	sub = 0;
+	setup.dest->used = sizeof(page);
+	_tk_compact_copy(&setup,pt.pg,0,&sub,pt.key,0);
+	heap_check();
+	t->ps->write_page(t->psrc_data,ROOT_ID,setup.dest);
+
+	tk_drop_task(t);
+	t = tk_create_task(&util_memory_pager,psrc_data);
+
+	heap_check();
+	puts("----");
+	// set pagesource-root
+	tk_root_ptr(t,&pt);
+
+	st_prt_distribution(&pt,t);
+
+	// read back collection
+//	it_create(t,&it,&pt);
+	for(i = 0; i < COMMIT_ITERATION_COUNT; i++)
+	{
+		if(st_exsist(t,&pt,(char*)&i,sizeof(uint)) == 0)
+			break;
+	}
+
+//	i = 0;
+//	while(it_next(t,0,&it))
+//	{
+		//int j;
+//		i++;
+
+		//for(j = 0; j < it.kused; j++)
+		//{
+		//	printf("%d ",it.kdata[j]);
+		//}
+		//printf(" %p\n",tmp.pg->pg->id);
+//		ASSERT(i <= HIGH_ITERATION_COUNT);
+//	}
+
+	// should have same count
+	ASSERT(i == COMMIT_ITERATION_COUNT);
+
+	// destroy
+//	it_dispose(t,&it);
 
 	tk_drop_task(t);
 }
@@ -997,6 +1118,16 @@ void test_measure2()
 int main(int argc, char* argv[])
 {
 	test_measure2();
+
+	heap_check();
+
+	test_task_c();
+
+	heap_check();
+
+	test_task_c_filepager();
+
+	heap_check();
 
 	test_compile_c();
 
@@ -1011,16 +1142,6 @@ int main(int argc, char* argv[])
 	//heap_check();
 
 	test_iterate_c();
-
-	//heap_check();
-
-	test_task_c();
-
-	//heap_check();
-
-	test_task_c_filepager();
-
-	//heap_check();
 
 	test_stream_c();
 
