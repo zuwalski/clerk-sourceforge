@@ -327,6 +327,40 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 	}
 }
 
+uint sim_new(uchar kdata[], uint ksize)
+{
+	if(kdata[0] == 0)	// init 1.index
+	{
+		kdata[0] = kdata[1] = 1;
+		kdata[2] = 0;
+	}
+	else
+	{				// incr. index
+		uint idx = kdata[0];
+		
+		while(idx != 0 && kdata[idx] == 0xFF)
+		{
+			kdata[idx] = 1;
+			idx--;
+		}
+
+		if(idx == 0)
+		{
+			// index max-size!
+			if(kdata[0] == 0xFF || kdata[0] + 2 >= ksize)
+				return 0;
+
+			kdata[kdata[0] + 1] = 1;
+			kdata[kdata[0] + 2] = 0;
+			kdata[0]++;
+		}
+		else
+			kdata[idx]++;
+	}
+
+	return kdata[0] + 2;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // DUMP CODE
 

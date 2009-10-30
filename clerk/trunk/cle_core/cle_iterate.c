@@ -56,42 +56,37 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 	while(1)
 	{
-		uint max = (rt->length + rt->diff < me->length) ? rt->length + rt->diff : me->length;
+		uint max = (rt->length < me->length - rt->diff) ? rt->length : me->length - rt->diff;
 
-		if(rt->diff < max)
+		while(max > 0)
 		{
-			while(1)
+			uint a = *(rt->path) ^ *ckey;	// compare bytes
+
+			if(a)
 			{
-				uint a = *(rt->path) ^ *ckey;	// compare bytes
+				// fold 1's after msb
+				a |= (a >> 1);
+				a |= (a >> 2);
+				a |= (a >> 4);
+				// lzc(a)
+				a -= ((a >> 1) & 0x55);
+				a = (((a >> 2) & 0x33) + (a & 0x33));
+				a = (((a >> 4) + a) & 0x0f);
 
-				if(a)
-				{
-					// fold 1's after msb
-					a |= (a >> 1);
-					a |= (a >> 2);
-					a |= (a >> 4);
-					// lzc(a)
-					a -= ((a >> 1) & 0x55);
-					a = (((a >> 2) & 0x33) + (a & 0x33));
-					a = (((a >> 4) + a) & 0x0f);
-
-					rt->diff += 8 - a;
-					if(rt->diff > max)
-						rt->diff = max;
-					break;
-				}
-
-				rt->diff += 8;
-				if(rt->diff > max)
-				{
-					rt->diff = max;
-					break;
-				}
-				rt->path++;ckey++;
-				rt->length -= 8;
+				a = 8 - a;
+				if(a < max) max = a;
+				break;
 			}
+			else if(max < 8)
+				break;
+
+			rt->path++;ckey++;
+			rt->length -= 8;
+			rt->diff += 8;
+			max -= 8;
 		}
 
+		rt->diff += max;
 		rt->sub  = me;
 		rt->prev = 0;
 

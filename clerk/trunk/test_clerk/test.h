@@ -38,6 +38,8 @@ int rt_do_read(task* t, st_ptr root);
 
 void _rt_dump_function(task* t, st_ptr* root);
 
+uint sim_new(uchar kdata[], uint ksize);
+
 void test_stream_c();
 
 void test_compile_c();
