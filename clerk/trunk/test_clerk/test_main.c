@@ -461,6 +461,21 @@ void test_task_c()
 	// read back collection
 	it_create(t,&it,&root);
 
+	keystore[0] = 0;
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		uint klen = sim_new(keystore,sizeof(keystore));
+		if(st_exsist(t,&root,keystore,klen) == 0)
+			break;
+	}
+	stop = clock();
+
+	// should have same count
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	printf("(commit)st_exsist. Time %d\n",stop - start);
+
 	i = 0;
 	keystore[0] = 0;
 	start = clock();
@@ -471,6 +486,7 @@ void test_task_c()
 		if(i > HIGH_ITERATION_COUNT || memcmp(keystore,it.kdata,klen) != 0)
 		{
 			st_exsist(t,&root,keystore,klen);
+			st_exsist(t,&root,it.kdata,it.kused);
 			break;
 		}
 		if(i == 892)
@@ -499,6 +515,7 @@ void test_task_c_filepager()
 	it_ptr it;
 	task* t;
 	int i;
+	uchar keystore[100];
 
 	cle_pagesource* psource = &util_file_pager;
 	cle_psrc_data pdata;
@@ -568,6 +585,21 @@ void test_task_c_filepager()
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
+
+	keystore[0] = 0;
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		uint klen = sim_new(keystore,sizeof(keystore));
+		if(st_exsist(t,&root,keystore,klen) == 0)
+			break;
+	}
+	stop = clock();
+
+	// should have same count
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	printf("(commit)st_exsist. Time %d\n",stop - start);
 
 	// read back collection
 	it_create(t,&it,&root);
