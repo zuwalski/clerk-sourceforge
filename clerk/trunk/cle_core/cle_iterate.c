@@ -56,7 +56,8 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 	while(1)
 	{
-		uint max = (rt->length < me->length - rt->diff) ? rt->length : me->length - rt->diff;
+		uint max = me->length - rt->diff;
+		if(rt->length < max) max = rt->length;
 
 		while(max > 0)
 		{
@@ -101,7 +102,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 			{
 				rt->prev = me;
 
-				if(me->offset > offset)
+				if(me->offset >= offset)
 				{
 					if(*(ckey + (me->offset>>3)) & (0x80 >> (me->offset & 7)))
 					{
@@ -130,7 +131,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 		if(rt->diff != rt->sub->length)
 		{
-			key* k = (me != 0 && me->offset > offset)? me : 0;
+			key* k = (me != 0 && me->offset >= offset)? me : 0;
 
 			if(*rt->path & (0x80 >> (rt->diff & 7)))
 			{
@@ -193,7 +194,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 	key* prev   = rt->prev;
 	uint offset = rt->diff & 0xFFF8;
 
-	it->kused = (char*)rt->path - (char*)it->kdata;
+	it->kused = (uchar*)rt->path - (uchar*)it->kdata;
 
 	do
 	{

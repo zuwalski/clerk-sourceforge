@@ -25,6 +25,7 @@
 #include <time.h>
 #include <malloc.h>
 #include <errno.h>
+#include <string.h>
 #include "test.h"
 
 void heap_check()
@@ -486,7 +487,8 @@ void test_task_c()
 		if(i > HIGH_ITERATION_COUNT || memcmp(keystore,it.kdata,klen) != 0)
 		{
 			st_exsist(t,&root,keystore,klen);
-			st_exsist(t,&root,it.kdata,it.kused);
+			memcpy(keystore,it.kdata,it.kused);
+			st_exsist(t,&root,keystore,klen);
 			break;
 		}
 		if(i == 892)

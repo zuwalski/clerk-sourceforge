@@ -36,7 +36,8 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 
 	while(1)
 	{
-		uint max = (rt->length < me->length - rt->diff) ? rt->length : me->length - rt->diff;
+		uint max = me->length - rt->diff;
+		if(rt->length < max) max = rt->length;
 
 		while(max > 0)
 		{
