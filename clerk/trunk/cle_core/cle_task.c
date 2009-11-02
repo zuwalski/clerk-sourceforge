@@ -412,38 +412,38 @@ struct _tk_setup
 
 static void _tk_extptr(struct _tk_setup* setup, page_wrap* pw)
 {
+	// use exsisting key?
+	key* k = (key*)setup->pt;
+	setup->pt_off = (ushort)((char*)k - (char*)pw->pg);
+
+	if(((CEILBYTE(k->length) + 1) & 0xFFFE) + sizeof(key) >= sizeof(ptr))
+		return;
+
 	// room for ptr in page?
 	if(pw->pg->used + sizeof(ptr) <= pw->pg->size)
 	{
 		setup->pt_off = pw->pg->used;
 		setup->pt = (ptr*)((char*)pw->pg + pw->pg->used);
 		pw->pg->used += sizeof(ptr);
+		return;
 	}
-	else
+
+	// create new ovf-ptr
+	if(pw->ovf == 0)
 	{
-		// use exsisting key?
-		key* k = (key*)setup->pt;
-		setup->pt_off = (ushort)((char*)k - (char*)pw->pg);
+		pw->ovf = (overflow*)tk_malloc(setup->t,OVERFLOW_GROW);
 
-		if(((CEILBYTE(k->length) + 1) & 0xFFFE) + sizeof(key) >= sizeof(ptr))
-			return;
-
-		if(pw->ovf == 0)
-		{
-			pw->ovf = (overflow*)tk_malloc(setup->t,OVERFLOW_GROW);
-
-			pw->ovf->size = OVERFLOW_GROW;
-			pw->ovf->used = 16;
-		}
-		else if(pw->ovf->used == pw->ovf->size)
-		{
-			unimplm();
-		}
-
-		setup->pt_off = (pw->ovf->used >> 4) | 0x8000;
-		setup->pt = (ptr*)((char*)pw->ovf + pw->ovf->used);
-		pw->ovf->used += 16;
+		pw->ovf->size = OVERFLOW_GROW;
+		pw->ovf->used = 16;
 	}
+	else if(pw->ovf->used == pw->ovf->size)
+	{
+		unimplm();
+	}
+
+	setup->pt_off = (pw->ovf->used >> 4) | 0x8000;
+	setup->pt = (ptr*)((char*)pw->ovf + pw->ovf->used);
+	pw->ovf->used += 16;
 }
 
 static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent, ushort* rsub, ushort next, int adjoffset)

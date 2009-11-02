@@ -172,7 +172,7 @@ void test_stream_c()
 	t = tk_create_task(psource,pdata);
 
 	// format
-	cle_format_instance(t);
+	//cle_format_instance(t);
 
 	// build config 
 	st_empty(t,&config_root);

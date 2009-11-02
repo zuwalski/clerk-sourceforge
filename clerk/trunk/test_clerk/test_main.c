@@ -485,14 +485,7 @@ void test_task_c()
 		uint klen = sim_new(keystore,sizeof(keystore));
 		i++;
 		if(i > HIGH_ITERATION_COUNT || memcmp(keystore,it.kdata,klen) != 0)
-		{
-			st_exsist(t,&root,keystore,klen);
-			memcpy(keystore,it.kdata,it.kused);
-			st_exsist(t,&root,keystore,klen);
 			break;
-		}
-		if(i == 892)
-			i = i;
 	}
 	stop = clock();
 

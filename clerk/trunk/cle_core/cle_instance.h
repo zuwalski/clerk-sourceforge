@@ -55,8 +55,27 @@ typedef struct objectheader
 }
 objectheader;
 
-/* create blank instance (destroys any content) */
-void cle_format_instance(task* app_instance);
+typedef struct oid
+{
+	uchar _low[4];
+	uchar _high[4];
+} oid;
+
+typedef struct objectheader_v2
+{
+	ulong state;
+	oid   id;
+	oid   ext;
+}
+objectheader_v2;
+
+typedef struct devobject
+{
+	ushort level;
+	ushort next_state_id;
+	ushort next_property_id;
+}
+devobject;
 
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);

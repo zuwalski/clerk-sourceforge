@@ -31,26 +31,37 @@ static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), vo
 		do
 		{
 			int c = st_scan(t,from);
-			if(c < 0)
+			switch(c)
 			{
+			case 0:
 				if(state != 0)
-					return (state == 2)? -2 : -1;
-				buffer[i++] = 0;
-				return fun(ctx,buffer,i);
-			}
-
-			if(c == 0 || c == '.')
-			{
+					return -4;
+				state = 3;
+				break;
+			case '.':
 				if(state != 0)
-					return -1;
+					return -3;
 				state = 1;
 				c = 0;
-			}
-			else if(c == ' ' || c == '\t' || c == '\n' || c == '\r')
+				break;
+			case ' ':
+			case '\t':
+			case '\n':
+			case '\r':
 				continue;
-			else
+			default:
+				if(c < 0)
+				{
+					if(state != 3)
+					{
+						if(state != 0)
+							return (state == 2)? -2 : -1;
+						buffer[i++] = 0;
+					}
+					return fun(ctx,buffer,i);
+				}
 				state = 0;
-
+			}
 			buffer[i++] = c;
 		}
 		while(i < sizeof(buffer));
@@ -128,25 +139,6 @@ static int _cmp_validate(task* t, st_ptr from, const char* str, uint len)
 /****************************************************
 	implementations
 */
-
-void cle_format_instance(task* app_instance)
-{
-	st_ptr root,tmp;
-	tk_root_ptr(app_instance,&root);
-
-	// all clear
-	st_delete(app_instance,&root,0,0);
-
-	// insert event-hook
-	tmp = root;
-	st_insert(app_instance,&tmp,HEAD_EVENT,HEAD_SIZE);
-
-	tmp = root;
-	st_insert(app_instance,&tmp,HEAD_OID,HEAD_SIZE);
-
-	tmp = root;
-	st_insert(app_instance,&tmp,HEAD_NAMES,HEAD_SIZE);
-}
 
 /* system event-handler setup */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
@@ -329,7 +321,7 @@ int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint obj
 		return 1;
 
 	// reserved state-name
-	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) != 0)
+	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) == 0)
 		return 1;
 
 	if(cle_goto_object(app_instance,&root,object_name,object_length))

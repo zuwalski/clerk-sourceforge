@@ -101,7 +101,7 @@ void test_runtime_c()
 	t = tk_create_task(psource,pdata);
 
 	// format
-	cle_format_instance(t);
+	//cle_format_instance(t);
 
 	// build config 
 	st_empty(t,&config_root);
@@ -120,7 +120,7 @@ void test_runtime_c()
 	pt = name;
 	st_update(t,&pt,prop,sizeof(prop));
 
-	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name,name) == 0);
+	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name) == 0);
 
 	pt = name;
 	st_update(t,&pt,start_state,sizeof(start_state));
