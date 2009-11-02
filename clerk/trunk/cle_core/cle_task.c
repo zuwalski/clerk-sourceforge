@@ -593,31 +593,36 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 	if(ISPTR(k))
 	{
 		ptr* pt = (ptr*)k;
+		uint subsize;
 		if(pt->koffset != 0)
-			size += _tk_measure2(setup,(page_wrap*)pt->pg,0,GOOFF((page_wrap*)pt->pg,pt->koffset));
+			subsize = _tk_measure2(setup,(page_wrap*)pt->pg,0,GOOFF((page_wrap*)pt->pg,pt->koffset));
 		else if(setup->id == pt->pg)
-			size += _tk_measure2(setup,setup->pg,0,GOOFF(setup->pg,sizeof(page)));
+			subsize = _tk_measure2(setup,setup->pg,0,GOOFF(setup->pg,sizeof(page)));
 		else
-			size += ((sizeof(ptr)+1)*8);
+			subsize = (sizeof(ptr)*8);
 
-		return size;
+		if(size + subsize > setup->halfsize)
+			size = size;
+		return size + subsize;
 	}
 	else	// cut k below limit (length | sub->offset)
 	{
 		uint subsize = (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,GOOFF(pw,k->sub));
 
-		do
+		//do
+		while(1)
 		{
-			int offset = size + subsize + k->length + ((sizeof(key)+1)*8) - setup->halfsize;
+			//int offset = size + subsize + k->length + (sizeof(key)*8) - setup->halfsize;
+			int offset = subsize + k->length + (sizeof(key)*8) - setup->halfsize;
 			if(offset < 0)
 				break;
 			subsize = _tk_cut2(setup,pw,k,0,offset);
 		}
-		while(subsize + k->length + ((sizeof(key)+1)*8) > setup->halfsize);
+		//while(subsize + k->length + (sizeof(key)*8) > setup->halfsize);
 		size += subsize;
 	}
 
-	return size + k->length + ((sizeof(key)+1)*8);
+	return size + k->length + (sizeof(key)*8);
 }
 
 int tk_commit_task(task* t)

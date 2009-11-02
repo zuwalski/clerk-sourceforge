@@ -168,6 +168,7 @@ void _tk_print(page* pg)
 }
 
 static int levels[100];
+static int filling[8];
 static task* t;
 static int empty_keys;
 static int offset_zero;
@@ -217,6 +218,8 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 			key* root = _tk_get_ptr(t, &pw, me);
 			levels[level] += 1;
 			ptr_count++;
+
+			filling[(int)(((float)pw->pg->used / (float)pw->pg->size) * 8.0)]++;
 
 			//printf("%p\n",pw);
 
@@ -268,6 +271,9 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 	for(i = 0; i < 100; i++)
 		levels[i] = 0;
 
+	for(i = 0; i < 8; i++)
+		filling[i] = 0;
+
 	empty_keys = 0;
 	offset_zero = 0;
 	key_count = 0;
@@ -281,6 +287,9 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 
 	for(i = 0; i < 100 && levels[i] != 0; i++)
 		printf("L:%d -> %d\n",i + 1,levels[i]);
+
+	for(i = 0; i < 8; i++)
+		printf("fill %d%% => %d\n",(int)((float)i*100.0/8.0),filling[i]);
 
 	printf("empty keys: %d\n",empty_keys);
 	printf("zero offset: %d\n",offset_zero);
