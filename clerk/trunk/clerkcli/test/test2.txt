@@ -18,7 +18,7 @@ dev.set.handler.resp.dk.lsz.test start dk.event !>
 	'Resp start> '
 
 	while :ipt do
-		' ( ' :ipt ' ) ' then :ipt = read();
+		' ( ' :ipt ' ) '; :ipt = read();
 	end
 
 	' <resp end'

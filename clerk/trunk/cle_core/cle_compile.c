@@ -127,7 +127,7 @@ struct _cmp_var
 static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","open",
 	"var","new","each","break","and","or","not",
-	"handle","raise","switch","case","default","this","super","goto","then",0
+	"handle","raise","switch","case","default","this","super","goto","yield",0
 };
 
 #define KW_MAX_LEN 7
@@ -157,7 +157,7 @@ enum cmp_keywords {
 	KW_THIS,
 	KW_SUPER,
 	KW_GOTO,
-	KW_THEN
+	KW_YIELD
 };
 
 struct _cmp_buildin
@@ -1041,12 +1041,12 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 		exittype = _cmp_expr(cst,skips,nest);
 		if((stack != cst->s_top) && (nest != NEST_EXPR))
 		{
-			_cmp_emit0(cst,OP_NEXT);
+			_cmp_emit0(cst,OP_OUT);
 			_cmp_stack(cst,-1);
 		}
 		if(exittype == ';')
 			_cmp_nextc(cst);
-		else if(exittype != 't')
+		else
 			break;
 	}
 	return exittype;
@@ -1240,7 +1240,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 		case ',':
 			chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 			_cmp_op_clear(cst,&otop);
-			if(stack == cst->s_top) {_cmp_emit0(cst,OP_NULL);_cmp_stack(cst,1);}
+			if(stack == cst->s_top && nest == NEST_EXPR) {_cmp_emit0(cst,OP_NULL);_cmp_stack(cst,1);}
 			return cst->c;
 		case '.':
 			chk_state(ST_ALPHA|ST_VAR)
@@ -1494,15 +1494,15 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_stack(cst,1);
 					state = ST_ALPHA;
 					continue;
-				case KW_THEN:
-					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+				case KW_YIELD:
+					chk_state(ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
+					if(otop != 0 && otop->opc == OP_OUT)
+						_cmp_op_pop(cst,&otop);
 					_cmp_op_clear(cst,&otop);
-					if(cst->s_top != stack)
-					{
-						_cmp_emit0(cst,OP_OUT);
-						_cmp_stack(cst,-1);
-					}
-					return 't';
+					_cmp_emit0(cst,OP_NEXT);
+					_cmp_stack(cst,-1);
+					state = ST_0;
+					continue;
 				case KW_GOTO:	// goto state-name [if expr]
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
