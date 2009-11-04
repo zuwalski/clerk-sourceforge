@@ -296,6 +296,14 @@ int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 	return 0;
 }
 
+int cle_delete_object(task* t, st_ptr* root, cdat name, uint name_length)
+{
+	if(cle_goto_object(t,root,name,name_length))
+		return 1;
+
+	return 0;
+}
+
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 {
 	st_ptr pt = *root;

@@ -40,7 +40,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff)
 		for(i = 0; i < ind; i++)
 			fputs("..",f);
 
-		if(l == 0)
+		if(ISPTR(me))
   		{
 			ptr* pt = (ptr*)me;
 

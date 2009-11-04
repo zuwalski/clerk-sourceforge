@@ -466,11 +466,13 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 			{
 				pw = (page_wrap*)pt->pg;
 				k = GOKEY(pw,pt->koffset);
+				k->offset = pt->offset;
 			}
 			else if(setup->id == pt->pg)
 			{
 				pw = setup->pg;
 				k = GOKEY(pw,sizeof(page));
+				k->offset = pt->offset;
 			}
 			else
 			{
@@ -490,7 +492,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 
 		if((parent != 0) && (k->offset + adjoffset == parent->length))	// append to parent key?
 		{
-			adjoffset = parent->length & 0xFFF8; 
+			adjoffset = parent->length & 0xFFF8;
 			if(k->length != 0)	// skip empty keys
 			{
 				memcpy(KDATA(parent) + (adjoffset >> 3),KDATA(k),CEILBYTE(k->length));
@@ -601,8 +603,6 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 		else
 			subsize = (sizeof(ptr)*8);
 
-		if(size + subsize > setup->halfsize)
-			size = size;
 		return size + subsize;
 	}
 	else	// cut k below limit (length | sub->offset)

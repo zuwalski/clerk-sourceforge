@@ -1,12 +1,12 @@
 
-dev.new.object dk.lsz.test1
+#dev.new.object dk.lsz.test1
 
-dev.set.property.dk.lsz.test1 prop1
+#dev.set.property.dk.lsz.test1 prop1
 
-dev.set.handler.sync.dk.lsz.test1 start testprop !>
-	(:newval) "prop1 was: " prop1 " set to " :newval then prop1 = :newval; " read prop1 " prop1
-<!
+#dev.set.handler.sync.dk.lsz.test1 start testprop !>
+#	(:newval) "prop1 was: " prop1 " set to " :newval then prop1 = :newval; " read prop1 " prop1
+#<!
 
-testprop@abab val1
+testprop@abab val3
 
-testprop@abab val2
+testprop@abab val4

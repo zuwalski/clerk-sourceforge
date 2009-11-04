@@ -55,25 +55,27 @@ typedef struct objectheader
 }
 objectheader;
 
-typedef struct oid
+typedef struct
 {
 	uchar _low[4];
 	uchar _high[4];
 } oid;
 
-typedef struct objectheader_v2
+typedef struct
 {
 	ulong state;
 	oid   id;
 	oid   ext;
+	// followed by object-content
 }
 objectheader_v2;
 
-typedef struct devobject
+typedef struct
 {
 	ushort level;
 	ushort next_state_id;
 	ushort next_property_id;
+	// ... followed by optional name
 }
 devobject;
 
