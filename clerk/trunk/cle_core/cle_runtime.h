@@ -44,6 +44,7 @@ enum cle_opcode
 	OP_DMVW,
 	OP_MVW,
 	OP_OUT,
+	OP_OUTL,
 	OP_RIDX,
 	OP_RVAR,
 	OP_MV,
@@ -87,6 +88,8 @@ enum cle_opcode
 	OP_2STR,
 	OP_NEG,
 	OP_NEXT,
+	OP_OPEN,
+	OP_OPEN_POP,
 
 	OP_OP_MAX
 };

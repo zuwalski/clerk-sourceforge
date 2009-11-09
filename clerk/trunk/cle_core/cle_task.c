@@ -46,29 +46,6 @@ void tk_mfree(task* t, void* mem)
 	free(mem);
 }
 
-static void _tk_release_page(page_wrap* wp)
-{
-	/* unref linked pages */
-	if(wp->ovf != 0)
-	{
-		int off;
-		for(off = 16; off < wp->ovf->used; off += 16)
-		{
-			ptr* pt = (ptr*)((char*)wp->ovf + off);
-			page_wrap* wpt = (page_wrap*)pt->pg;
-
-			if(--(wpt->refcount) == 0)
-				_tk_release_page(wpt);
-		}
-
-		/* release ovf */
-		tk_mfree(0,wp->ovf);
-	}
-
-	/* release page */
-	tk_mfree(0,wp->pg);
-}
-
 static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid)
 {
 	cle_pageid firstpid = pid;
@@ -145,22 +122,75 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	return pw;
 }
 
+static void _tk_release_page(page_wrap* wp)
+{
+	/* unref linked pages */
+	if(wp->ovf != 0)
+	{
+		int off;
+		for(off = 16; off < wp->ovf->used; off += 16)
+		{
+			ptr* pt = (ptr*)((char*)wp->ovf + off);
+			page_wrap* wpt = (page_wrap*)pt->pg;
+
+			if(--(wpt->refcount) == 0)
+				_tk_release_page(wpt);
+		}
+
+		/* release ovf */
+		tk_mfree(0,wp->ovf);
+	}
+
+	/* release page */
+	tk_mfree(0,wp->pg);
+}
+
+void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
+{
+	while(off)
+	{
+		key* k = GOOFF(pg,off);
+		if(ISPTR(k))
+		{
+			ptr* pt = (ptr*)k;
+			if(pt->koffset == 0)	// external page
+			{
+				// queue dead page -> search to childpages to remove them
+				pt->pg;
+			}
+			else
+			{
+				page_wrap* pw = (page_wrap*)pt->pg;
+
+				//_tk_remove_tree(t,pw,pt->koffset);
+				
+				pw->refcount--;
+				if(pw->refcount == 0)
+					_tk_release_page(pw);
+			}
+
+			pg->pg->waste += sizeof(ptr);
+		}
+		else
+		{
+			pg->pg->waste += CEILBYTE(k->length) + sizeof(key);
+			_tk_remove_tree(t,pg,k->sub);
+		}
+
+		off = k->next;
+	}
+}
+
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 {
+	page_wrap* oldpage = *pg;
 	ptr* pt = (ptr*)me;
 	if(pt->koffset != 0)
 	{
-		page_wrap* oldpage = *pg;
-
 		*pg = (page_wrap*)pt->pg;
 		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
 
 		(*pg)->refcount++;
-
-		if(--(oldpage->refcount) == 0)
-			/* dead page */
-			//_tk_release_page(t,oldpage);
-			;
 	}
 	else
 	{
@@ -169,7 +199,28 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 		me = GOKEY(*pg,sizeof(page));
 	}
 
+	if(oldpage->ext_pageid == 0 && --(oldpage->refcount) == 0)
+		/* dead page */
+		//_tk_release_page(t,oldpage);
+		;
 	return me;
+}
+
+void tk_free_ptr(st_ptr* ptr)
+{
+	tk_unref(0,ptr->pg);
+}
+
+void tk_unref(task* t, page_wrap* pg)
+{
+	if(pg->ext_pageid == 0)
+	{
+		pg->refcount--;
+
+		/* internal dead page ? */
+		if(pg->refcount == 0)
+			_tk_release_page(pg);
+	}
 }
 
 void tk_root_ptr(task* t, st_ptr* pt)
@@ -190,20 +241,6 @@ void tk_dup_ptr(st_ptr* to, st_ptr* from)
 {
 	*to = *from;
 	to->pg->refcount++;
-}
-
-void tk_free_ptr(st_ptr* ptr)
-{
-	tk_unref(0,ptr->pg);
-}
-
-void tk_unref(task* t, page_wrap* pg)
-{
-	pg->refcount--;
-
-	/* internal dead page ? */
-	if(pg->refcount == 0 && pg->pg->id == 0)
-		_tk_release_page(pg);
 }
 
 void _tk_write_copy(task* t, page_wrap* pg)
@@ -284,44 +321,6 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 	if(pgref != 0)
 		*pgref = t->stack;
 	return (void*)((char*)pg + offset);
-}
-
-/* internal */
-static void _tk_clear_tree(task* t, page_wrap* pg, ushort off)
-{
-	while(off)
-	{
-		key* k = GOOFF(pg,off);
-		if(ISPTR(k))
-		{
-			ptr* pt = (ptr*)k;
-			if(pt->koffset == 0)	// real page
-			{
-				// que 
-				pt->pg;
-			}
-			pg->pg->waste += sizeof(ptr);
-		}
-		else
-		{
-			pg->pg->waste += ((k->length + 7) >> 3) + sizeof(key);
-			_tk_clear_tree(t,pg,k->sub);
-		}
-
-		off = k->next;
-	}
-}
-
-void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
-{
-	// clear tree before clean_page
-	_tk_clear_tree(t,pg,off);
-
-	// clean_page
-	if(pg->pg->waste > pg->pg->size/2)
-	{
-		// que this + parent
-	}
 }
 
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)

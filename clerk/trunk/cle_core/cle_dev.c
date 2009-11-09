@@ -20,14 +20,13 @@
 	Dev-functions:
 	dev.new.<extend-objectname> , objectname (if objectname == 'object' -> new root object)
 	dev.eval.<objectname> , expr
-	dev.make.expr.<objectname> , path.path , expr/method/ref
+	dev.make.expr.<objectname> , path.path , expr/method/ref/collection
 	dev.make.property.<objectname> , path.path 
 	dev.make.state.<objectname> , state [, entry-validation expr]
 	dev.make.handler.sync.<objectname> , state, event, method/expr (handler)
 	dev.make.handler.asyn.<objectname> , state, event, method/expr (handler)
 	dev.make.handler.resp.<objectname> , state, event, method/expr (handler)
 	dev.make.handler.reqs.<objectname> , state, event, method/expr (handler)
-	dev.make.collection.<objectname> , path.path
 
 */
 #include "cle_instance.h"
@@ -40,7 +39,6 @@ static const char _set_handler_name_sync[] = "dev\0set\0handler\0sync";
 static const char _set_handler_name_asyn[] = "dev\0set\0handler\0asyn";
 static const char _set_handler_name_resp[] = "dev\0set\0handler\0resp";
 static const char _set_handler_name_reqs[] = "dev\0set\0handler\0reqs";
-static const char _create_collection_name[] = "dev\0create\0collection";
 
 static cle_syshandler _new_extends;
 static cle_syshandler _set_expr;

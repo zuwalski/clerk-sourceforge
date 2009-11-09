@@ -868,7 +868,6 @@ _map_pop:
 		}
 		else
 		{
-			// TODO callback on pointers
 			if(nxt->offset < me->length && me->length != 0)
 			{
 				if(ret = work->push(work->ctx))

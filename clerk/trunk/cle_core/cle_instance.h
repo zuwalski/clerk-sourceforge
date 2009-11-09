@@ -41,7 +41,7 @@
 #define HEAD_EXPR "\0E"
 #define HEAD_NUM "\0N"
 #define HEAD_REF "\0R"
-#define HEAD_CONST "\0C"
+#define HEAD_COLLECTION "\0C"
 
 #define PROPERTY_SIZE 4
 
@@ -118,5 +118,7 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length);
 
 int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize);
+
+int cle_make_collection(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path);
 
 #endif

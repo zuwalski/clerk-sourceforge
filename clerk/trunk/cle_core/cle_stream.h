@@ -36,7 +36,7 @@ typedef struct cle_pipe
 	void (*pop)(void*);
 	void (*push)(void*);
 	uint (*data)(void*,cdat,uint);
-	void (*submit)(void*,st_ptr*);
+	void (*submit)(void*,task*,st_ptr*);
 } cle_pipe;
 
 /* pipe interface end */
@@ -65,6 +65,7 @@ enum handler_type
 
 typedef struct sys_handler_data
 {
+	st_ptr config;
 	cdat eventid;
 	uint event_len;
 	cdat userid;

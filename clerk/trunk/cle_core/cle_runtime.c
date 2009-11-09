@@ -46,7 +46,8 @@ enum {
 	STACK_PTR,
 	// readonly ptr
 	STACK_RO_PTR,
-	STACK_PROP
+	STACK_PROP,
+	STACK_COLLECTION
 };
 
 struct _rt_stack
@@ -223,6 +224,14 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 			return;
 		(*sp)->ptr = (*sp)->obj;
 		(*sp)->type = STACK_OBJ;
+		break;
+	case 'C':	// collection
+		// geting from within objectcontext or external?
+		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+			return;
+		(*sp)->obj = top.obj;
+		(*sp)->ptr = top.ptr;
+		(*sp)->type = STACK_COLLECTION;
 		break;
 	case 'y':	// property
 		// geting from within objectcontext or external?
@@ -451,6 +460,57 @@ static uint _rt_ref_out(struct _rt_invocation* inv, struct _rt_stack** sp, struc
 	to->var->single_ptr_w = to->var->single_ptr = pt;
 	to->var->type = STACK_PTR;
 	*to = *to->var;
+	return 0;
+}
+
+static void _open_start(void* ipt) {}
+static void _open_end(void* ipt, cdat c, uint u) {}
+static void _open_submit(void* ipt, task* t, st_ptr* pt) {st_map_st(t,pt,cle_data,cle_push,cle_pop,ipt);}
+
+static cle_pipe _rt_open_pipe = {_open_start,(void(*)(void*))cle_next,_open_end,(void(*)(void*))cle_pop,(void(*)(void*))cle_push,(uint(*)(void*,cdat,uint))cle_data,(void(*)(void*,task*,st_ptr*))_open_submit};
+
+static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
+{
+	cle_pipe* response;
+	void* resp_data;
+	_ipt* ipt;
+	int   ev_len;
+	uchar eventid[EVENT_MAX_LENGTH+1];	// hmmmm
+	
+	switch((*sp)[1].type)
+	{
+	case STACK_OUTPUT:
+		response  = (*sp)[1].out;
+		resp_data = (*sp)[1].outdata;
+		break;
+	case STACK_PTR:
+	default:
+		return 1;
+	}
+
+	if((*sp)->type != STACK_RO_PTR && (*sp)->type != STACK_PTR)
+		return 1;
+
+	// TODO: when cle_start changes to use st_ptr directly - delete this!!!
+	ev_len = st_get(inv->t,&(*sp)->single_ptr,eventid,sizeof(eventid));
+	if(ev_len <= 0)
+		return 1;
+	
+	ipt = cle_start(
+		inv->hdl->eventdata->config,
+		eventid,ev_len,
+		inv->hdl->eventdata->userid,inv->hdl->eventdata->userid_len,0,
+		response,resp_data,inv->t);
+
+	if(ipt == 0)
+		return 1;
+
+	if(inv->response_started == 0)
+		inv->response_started = 1;
+
+	(*sp)->outdata = ipt;
+	(*sp)->out     = &_rt_open_pipe;
+	(*sp)->type    = STACK_OUTPUT;
 	return 0;
 }
 
@@ -829,6 +889,18 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp++;
 			break;
 
+		case OP_OPEN:
+			if(_rt_do_open(inv,&sp))
+				_rt_error(inv,__LINE__);
+			break;
+		case OP_OPEN_POP:
+			// unfinished output
+			if(inv->response_started == 2)
+				sp->out->next(sp->outdata);
+			sp->out->end(sp->outdata,0,0);
+			inv->response_started = 1;
+			sp++;
+			break;
 		// receive input
 		case OP_RECV:
 			sp += *inv->top->pc++;
@@ -946,6 +1018,8 @@ static void _rt_run(struct _rt_invocation* inv)
 				}
 			}
 			break;
+		case OP_OUTL:
+			// TODO: stream out structures
 		case OP_OUT:	// stream out string
 			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp + 1))
 				_rt_error(inv,__LINE__);

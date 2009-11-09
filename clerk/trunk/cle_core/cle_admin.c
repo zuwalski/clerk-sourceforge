@@ -109,7 +109,7 @@ static void _get_next(event_handler* hdl)
 	else
 	{
 		hdl->response->start(hdl->respdata);
-		hdl->response->submit(hdl->respdata,&prop);
+		hdl->response->submit(hdl->respdata,hdl->instance_tk,&prop);
 		cle_stream_end(hdl);
 	}
 }

@@ -26,8 +26,6 @@
 
 #define OVERFLOW_GROW (16*64)
 
-#define GET_ALL_BUFFER 256
-
 #define IT_GROW_SIZE 32
 
 #define PID_CACHE_SIZE 8
@@ -45,10 +43,10 @@ typedef struct page_wrap
 {
 	struct page_wrap* next;
 	struct page_wrap* parent;
-	overflow* ovf;
-	page* pg;
-	cle_pageid ext_pageid;
-	ulong refcount;
+	overflow*         ovf;
+	page*             pg;
+	cle_pageid        ext_pageid;
+	ulong             refcount;
 }page_wrap;
 
 typedef struct key
@@ -77,12 +75,12 @@ struct pidcache
 struct task
 {
 	struct pidcache cache[PID_CACHE_SIZE];
-	page_wrap* stack;
-	page_wrap* wpages;
+	page_wrap*      stack;
+	page_wrap*      wpages;
 	cle_pagesource* ps;
-	cle_psrc_data psrc_data;
-	page_wrap* pagemap_root_wrap;
-	ushort pagemap_root_key;
+	cle_psrc_data   psrc_data;
+	page_wrap*      pagemap_root_wrap;
+	ushort          pagemap_root_key;
 };
 
 //#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))

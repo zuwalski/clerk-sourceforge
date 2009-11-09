@@ -50,7 +50,7 @@ static void _nil1(void* v){}
 static void _nil2(void* v,cdat c,uint u){}
 static uint _nil2x(void* v,cdat c,uint u){return 0;}
 static uint _nil2y(void* v,cdat c,uint u){return 1;}
-static void _nil3(void* v,st_ptr* st){}
+static void _nil3(void* v,task* t,st_ptr* st){}
 static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3};
 
 // async output-handler
@@ -109,13 +109,13 @@ uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 	return st_append(hdl->instance_tk,&hdl->top->pt,data,length);
 }
 
-void cle_standard_submit(event_handler* hdl, st_ptr* from)
+void cle_standard_submit(event_handler* hdl, task* t, st_ptr* from)
 {
 	// toplevel?
 	if(hdl->top->link == 0)
 		hdl->root = hdl->top->pt = *from;	// subst
 	else
-		st_link(hdl->instance_tk,&hdl->top->pt,from);
+		st_link(t,&hdl->top->pt,from);
 }
 
 void cle_standard_next_done(event_handler* hdl)
@@ -160,11 +160,11 @@ static uint _pa_data(event_handler* hdl, cdat data, uint length)
 	return 0;
 }
 
-static void _pa_submit(event_handler* hdl, st_ptr* st)
+static void _pa_submit(event_handler* hdl, task* t, st_ptr* st)
 {
 	do
 	{
-		cle_standard_submit(hdl,st);
+		cle_standard_submit(hdl,t,st);
 		hdl = hdl->next;
 	}
 	while(hdl != 0);
@@ -181,7 +181,7 @@ static void _cpy_end(event_handler* hdl,cdat c,uint u) {hdl->response->end(hdl->
 static void _cpy_pop(event_handler* hdl) {hdl->response->pop(hdl->respdata);}
 static void _cpy_push(event_handler* hdl) {hdl->response->push(hdl->respdata);}
 static uint _cpy_data(event_handler* hdl,cdat c,uint u) {return hdl->response->data(hdl->respdata,c,u);}
-static void _cpy_submit(event_handler* hdl,st_ptr* s) {hdl->response->submit(hdl->respdata,s);}
+static void _cpy_submit(event_handler* hdl,task* t,st_ptr* s) {hdl->response->submit(hdl->respdata,t,s);}
 
 static cle_syshandler _copy_handler = {0,{_cpy_start,_cpy_next,_cpy_end,_cpy_pop,_cpy_push,_cpy_data,_cpy_submit},0};
 
@@ -295,7 +295,7 @@ static void _sync_next_rs(struct _sync_chain* hdl) {hdl->real_out->next(hdl->rea
 static void _sync_pop_rs(struct _sync_chain* hdl) {hdl->real_out->pop(hdl->real_out_data);}
 static void _sync_push_rs(struct _sync_chain* hdl) {hdl->real_out->push(hdl->real_out_data);}
 static uint _sync_data_rs(struct _sync_chain* hdl,cdat c,uint u) {return hdl->real_out->data(hdl->real_out_data,c,u);}
-static void _sync_submit_rs(struct _sync_chain* hdl,st_ptr* s) {hdl->real_out->submit(hdl->real_out_data,s);}
+static void _sync_submit_rs(struct _sync_chain* hdl,task* t,st_ptr* s) {hdl->real_out->submit(hdl->real_out_data,t,s);}
 
 static cle_pipe _sync_response = {_sync_start_rs,_sync_next_rs,_sync_end_rs,_sync_pop_rs,_sync_push_rs,_sync_data_rs,_sync_submit_rs};
 
@@ -348,7 +348,7 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 		chn->thehandler->input.start(chn);
 		while(now != 0 && sc->failed == 0)
 		{
-			chn->thehandler->input.submit(chn,&now->pt);
+			chn->thehandler->input.submit(chn,hdl->instance_tk,&now->pt);
 			chn->thehandler->input.next(chn);
 			now = now->link;
 		}
@@ -445,6 +445,9 @@ static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 	return 0;
 }
 
+/**
+* TODO: eventid type -> st_ptr, user_roles type -> st_ptr
+*/
 _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 				cdat userid, uint userid_len, char* user_roles[],
 					cle_pipe* response, void* responsedata, task* app_instance)
@@ -508,6 +511,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 	// default null
 	memset(ipt,0,sizeof(_ipt));
 
+	ipt->sys.config = config;
 	ipt->sys.eventid = ievent;
 	ipt->sys.event_len = event_len;
 	ipt->sys.userid = userid;

@@ -885,6 +885,9 @@ int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint obj
 			_record_source_and_path(app_instance,pt,path,expr,'(');
 			// call compiler
 			return cmp_method(app_instance,&pt,&expr,response,data,0);
+		case '[':	// collection
+			st_insert(app_instance,&pt,HEAD_COLLECTION,HEAD_SIZE);
+			return 0;
 		case ' ':
 		case '\t':
 		case '\r':

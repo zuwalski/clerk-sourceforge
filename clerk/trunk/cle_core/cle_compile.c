@@ -165,32 +165,48 @@ struct _cmp_buildin
 	const char* id;
 	uint opcode;
 	uint opcode_obj;
-	uint max_param;
 	uint min_param;
+	uint max_param;
 };
 
 static const struct _cmp_buildin buildins[] = {
+	{"read",OP_RECV,0,0,1},				// recieve data-structure from event-queue (timeout-param)
+	{"list",OP_NULL,0,1,255},			// form a list from input-params
 	{"void",OP_NULL,0,1,255},			// throw away values
-	{"read",OP_RECV,0,1,0},				// recieve data-structure from event-queue
+	{"yield",OP_NULL,0,0,0},
+	{"this",OP_NULL,0,0,0},
+	{"super",OP_NULL,0,0,0},
+	{"user",OP_NULL,0,0,0},
+	{"request",OP_NULL,0,0,0},
+	{"session",OP_NULL,0,0,0},
 
 	{"id",OP_NULL,OP_NULL,0,0},			// get objectid in stringid format
-	{"get",OP_NULL,OP_NULL,0,0},		// lookup object using name og stringid
-	{"put",0,OP_NULL,1,1},
-	{"in",0,OP_NULL,1,1},
-	{"remove",0,OP_NULL,1,1},
+	{"object",OP_NULL,0,0,1},			// lookup object using name or id (no arg: create blank object)
+	{"validate",OP_NULL,OP_NULL,0,1},	// validate object (in state) (current or ref)
+	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
 
-	{"delete",0,OP_NULL,1,0},			// delete object or delete sub-tree
-	{"add",0,OP_NULL,255,1},
+	{"add",0,OP_NULL,1,255},			// collection: add object(s) to collection (refs)
+	{"remove",0,OP_NULL,1,255},			// collection: remove object(s) from collection (ids or refs)
+	{"get",0,OP_NULL,1,1},				// collection: get object from collection (id or ref) null if not in
+	{"gt",0,OP_NULL,1,1},				// collection: add greater-than criteria
+	{"gte",0,OP_NULL,1,1},				// collection: add greater-or-equal criteria
+	{"lt",0,OP_NULL,1,1},				// collection: add less-than criteria
+	{"lte",0,OP_NULL,1,1},				// collection: add less-or-equal criteria
+	{"eq",0,OP_NULL,1,1},				// collection: add equal criteria
+	{"neq",0,OP_NULL,1,1},				// collection: add not-equal criteria
+	{"filter",0,OP_NULL,1,1},			// collection: add filter-function (criteria)
+	{"sort",0,OP_NULL,1,1},				// collection: add sort-function (criteria)
+
+	{"map",0,OP_NULL,1,1},				// collection: map(k,v) function on keys,values => output
+	{"foldl",0,OP_NULL,1,2},			// collection: foldl(k,v,r) function on keys,values => val(r)
+	{"foldr",0,OP_NULL,1,2},			// collection: foldr(k,v,r) function on keys,values => val(r)
+
 	{"first",0,OP_NULL,0,0},
 	{"last",0,OP_NULL,0,0},
 	{"next",0,OP_NULL,0,0},
 	{"prev",0,OP_NULL,0,0},
-	{"gt",0,OP_NULL,1,1},
-	{"gte",0,OP_NULL,1,1},
-	{"lt",0,OP_NULL,1,1},
-	{"lte",0,OP_NULL,1,1},
 
-	{"string",OP_2STR,0,255,1},
+	{"string",OP_2STR,0,1,255},
 	{0,0,0,0,0}	// STOP
 };
 
@@ -1041,7 +1057,7 @@ static int _cmp_block_expr_nofree(struct _cmp_state* cst, struct _skip_list* ski
 		exittype = _cmp_expr(cst,skips,nest);
 		if((stack != cst->s_top) && (nest != NEST_EXPR))
 		{
-			_cmp_emit0(cst,OP_OUT);
+			_cmp_emit0(cst,OP_OUTL);
 			_cmp_stack(cst,-1);
 		}
 		if(exittype == ';')
@@ -1411,16 +1427,23 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					state = ST_0;
 					continue;
-				case KW_OPEN:	// open expr do bexpr end
+				case KW_OPEN:	// open expr [do bexpr] end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
 					chk_out()
 					if(nest) err(__LINE__)
-					if(_cmp_expr(cst,0,NEST_EXPR) != 'd') err(__LINE__)
-					_cmp_emit0(cst,OP_NULL);	// OP_SEND
-					// TODO: handle skips ...
-					if(_cmp_block_expr(cst,0,PROC_EXPR) != 'e') err(__LINE__)
-					_cmp_emit0(cst,OP_NULL);	// OP_POP_SEND
-					_cmp_stack(cst,-1);
+					{
+						int ret = _cmp_expr(cst,0,NEST_EXPR);
+						_cmp_emit0(cst,OP_OPEN);
+						//_cmp_stack(cst,1);
+						if(ret == 'd')
+						{
+							// TODO: handle skips & raises ...
+							if(_cmp_block_expr(cst,0,PROC_EXPR) != 'e') err(__LINE__)
+						}
+						else if(ret != 'e') err(__LINE__)
+						_cmp_emit0(cst,OP_OPEN_POP);
+						_cmp_stack(cst,-1);
+					}
 					state = ST_0;
 					continue;
 				case KW_VAR:

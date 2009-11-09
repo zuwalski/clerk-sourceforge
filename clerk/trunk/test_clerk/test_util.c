@@ -545,6 +545,12 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_NEG";
 	case OP_NEXT:
 		return "OP_NEXT";
+	case OP_OPEN_POP:
+		return "OP_OPEN_POP";
+	case OP_OPEN:
+		return "OP_OPEN";
+	case OP_OUTL:
+		return "OP_OUTL";
 
 	default:
 		return "OP_ILLEGAL";
@@ -625,6 +631,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_POPW:
 		case OP_WIDX:
 		case OP_OUT:
+		case OP_OUTL:
 		case OP_RIDX:
 		case OP_ADD:
 		case OP_SUB:
@@ -647,6 +654,8 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_MERGE:
 		case OP_NEG:
 		case OP_NEXT:
+		case OP_OPEN:
+		case OP_OPEN_POP:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;

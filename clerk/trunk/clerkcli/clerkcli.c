@@ -90,7 +90,7 @@ static uint _data(void* v,cdat c,uint u)
 	printf("%.*s",u,c);
 	return 0;
 }
-static void _submit(void* v,st_ptr* st)
+static void _submit(void* v,task* t,st_ptr* st)
 {
 	printf(" [submit] ");
 }
