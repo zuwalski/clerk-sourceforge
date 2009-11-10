@@ -180,14 +180,14 @@ static const struct _cmp_buildin buildins[] = {
 	{"request",OP_NULL,0,0,0},
 	{"session",OP_NULL,0,0,0},
 
-	{"id",OP_NULL,OP_NULL,0,0},			// get objectid in stringid format
-	{"object",OP_NULL,0,0,1},			// lookup object using name or id (no arg: create blank object)
+	{"id",OP_ID,OP_IDO,0,0},			// get objectid in stringid format
+	{"object",OP_FIND,0,0,1},			// lookup object using name or id (no arg: create blank object)
 	{"validate",OP_NULL,OP_NULL,0,1},	// validate object (in state) (current or ref)
 	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
 
-	{"add",0,OP_NULL,1,255},			// collection: add object(s) to collection (refs)
-	{"remove",0,OP_NULL,1,255},			// collection: remove object(s) from collection (ids or refs)
-	{"get",0,OP_NULL,1,1},				// collection: get object from collection (id or ref) null if not in
+	{"add",0,OP_CADD,1,255},			// collection: add object(s) to collection (refs)
+	{"remove",0,OP_CREMOVE,1,255},		// collection: remove object(s) from collection (ids or refs)
+	{"get",0,OP_CGET,1,1},				// collection: get object from collection (id or ref) null if not in
 	{"gt",0,OP_NULL,1,1},				// collection: add greater-than criteria
 	{"gte",0,OP_NULL,1,1},				// collection: add greater-or-equal criteria
 	{"lt",0,OP_NULL,1,1},				// collection: add less-than criteria
@@ -1467,7 +1467,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 						_cmp_stack(cst,1);
 					}
 					else if(state == ST_DOT)
-						_cmp_emit0(cst,OP_NULL);	// OP_CLONE
+						_cmp_emit0(cst,OP_CLONE);
 					else err(__LINE__)
 
 					if(cst->c != '(') err(__LINE__)

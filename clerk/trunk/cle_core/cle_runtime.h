@@ -77,6 +77,7 @@ enum cle_opcode
 	OP_NOT,
 	OP_DEBUG,
 	OP_NEW,
+	OP_CLONE,
 
 	OP_RECV,
 	OP_OBJ,
@@ -90,6 +91,13 @@ enum cle_opcode
 	OP_NEXT,
 	OP_OPEN,
 	OP_OPEN_POP,
+
+	OP_CADD,
+	OP_CGET,
+	OP_CREMOVE,
+	OP_ID,
+	OP_IDO,
+	OP_FIND,
 
 	OP_OP_MAX
 };

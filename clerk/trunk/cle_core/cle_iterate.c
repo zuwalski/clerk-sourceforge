@@ -608,6 +608,7 @@ static uint _st_remove_key(page_wrap* rm_pg, key* sub, key* prev)
 	return remove;
 }
 
+// TODO st_delete with st_ptr param
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_it_res rt;

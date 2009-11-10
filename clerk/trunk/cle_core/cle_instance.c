@@ -292,8 +292,7 @@ int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 	header.next_state_id = 1;
 
 	// write header
-	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
-	return 0;
+	return st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
 
 int cle_delete_object(task* t, st_ptr* root, cdat name, uint name_length)
@@ -618,7 +617,7 @@ int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
 	if(st_offset(app_instance,&object,sizeof(objectheader)) != 0)
 		return 1;
 
-	buffer[0] = '#';
+	buffer[0] = '@';
 	while(i < buffersize - 1)
 	{
 		int c = st_scan(app_instance,&object);

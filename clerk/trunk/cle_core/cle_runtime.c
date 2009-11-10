@@ -422,7 +422,7 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 	case STACK_PROP:
 		if(_rt_find_prop_value(inv,from))
 			break;
-//		_rt_get(inv,&from);
+//		_rt_get(inv,&from);			// TODO property is a number (other than ptr)
 //		return _rt_out(inv,sp,to,from);
 	case STACK_RO_PTR:
 	case STACK_PTR:
@@ -485,6 +485,7 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 		break;
 	case STACK_PTR:
 	default:
+		unimplm();
 		return 1;
 	}
 
@@ -514,6 +515,121 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 	return 0;
 }
 
+static uint _rt_insert_objectid(struct _rt_invocation* inv, st_ptr to, st_ptr object)
+{
+	st_ptr pt = object;
+	if(st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE))
+		return __LINE__;
+
+	if(st_offset(inv->t,&pt,sizeof(objectheader)))
+		return __LINE__;
+
+	if(st_is_empty(&pt) == 0)
+		st_insert_st(inv->t,&to,&pt);
+	else
+	{
+		// mem-obj -> make persistent
+		it_ptr it;
+		st_ptr obj = inv->hdl->instance;
+		st_insert(inv->t,&obj,HEAD_OID,HEAD_SIZE);
+
+		it_create(inv->t,&it,&obj);
+
+		it_new(inv->t,&it,&obj);
+
+		st_link(inv->t,&obj,&object);
+
+		st_insert(inv->t,&pt,it.kdata,it.kused);
+
+		st_insert(inv->t,&to,it.kdata,it.kused);
+
+		it_dispose(inv->t,&it);
+	}
+	return 0;
+}
+
+static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr* pt)
+{
+	switch(sp->type)
+	{
+	case STACK_OBJ:
+		*pt = sp->obj;
+		return 0;
+	// ref'ed by oid/name in stringform
+	case STACK_PTR:
+	case STACK_RO_PTR:
+		*pt = sp->single_ptr;
+
+		if(st_scan(inv->t,pt) == '@')	// string is an id
+		{
+			if(cle_get_target(inv->t,inv->hdl->instance,pt,*pt,100) == 0)
+				return __LINE__;
+		}
+		else							// string is an object-name
+		{
+			// goto object
+			*pt = inv->hdl->instance;
+
+			if(st_move(inv->t,pt,HEAD_NAMES,HEAD_SIZE) != 0)
+				return 1;
+			
+			if(st_move_st(inv->t,pt,&sp->single_ptr) != 0)
+				return 1;
+		}
+		return 0;
+	}
+	return 1;
+}
+
+static uint _rt_add_objects(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
+{
+	int i;
+	if(sp[params].type != STACK_COLLECTION)
+		return __LINE__;
+
+	for(i = params - 1; i >= 0; i--)
+	{
+		if(sp[i].type != STACK_OBJ || _rt_insert_objectid(inv,sp[params].ptr,sp[i].obj) != 0)
+			return __LINE__;
+	}
+	return 0;
+}
+
+static uint _rt_remove_objects(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
+{
+	int i;
+	if(sp[params].type != STACK_COLLECTION)
+		return __LINE__;
+
+	for(i = params - 1; i >= 0; i--)
+	{
+		st_ptr pt;
+
+		if(_rt_find_object(inv,sp + i,&pt))
+			continue;
+
+		if(st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE))
+			return __LINE__;
+
+		if(st_offset(inv->t,&pt,sizeof(objectheader)))
+			return __LINE__;
+
+		if(st_is_empty(&pt) == 0)
+		{
+			int len;
+			char buffer[100];
+
+			len = st_get(inv->t,&pt,buffer,sizeof(buffer));
+			if(len <= 0)
+				return __LINE__;
+
+			// TODO st_delete with st_ptr param
+			st_delete(inv->t,&sp[params].ptr,buffer,len);
+		}
+	}
+	return 0;
+}
+
 static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
 {
 	int i;
@@ -525,6 +641,7 @@ static uint _rt_call(struct _rt_invocation* inv, struct _rt_stack* sp, int param
 	if(inv->top->code->body.maxparams < params)
 		return __LINE__;
 
+	// TODO invert stack - to avoid this!!!
 	for(i = params - 1; i >= 0; i--)
 		inv->top->vars[params - 1 - i] = sp[i];
 
@@ -608,9 +725,9 @@ static void _rt_free(struct _rt_invocation* inv, struct _rt_stack* var)
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
-	int tmp;
 	while(1)
 	{
+		int tmp;
 		switch(*inv->top->pc++)
 		{
 		case OP_NOOP:
@@ -741,7 +858,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc++;
 			break;
 
-		case OP_NULL:
+		case OP_NULL:		// remove
 			sp--;
 			sp->type = STACK_NULL;
 			break;
@@ -771,6 +888,44 @@ static void _rt_run(struct _rt_invocation* inv)
 			inv->top->pc += sizeof(ushort);
 
 			inv->top->pc += tmp;
+			break;
+		case OP_CLONE:
+			break;
+		case OP_ID:
+			cle_get_oid(inv->t,inv->top->object,buffer,sizeof(buffer));
+			break;
+		case OP_IDO:
+			cle_get_oid(inv->t,sp->obj,buffer,sizeof(buffer));
+			break;
+		case OP_FIND:
+			inv->top->pc++;
+			{
+				st_ptr pt;
+				if(_rt_find_object(inv,sp,&pt))
+					sp->type = STACK_NULL;
+				else
+				{
+					sp->ptr = sp->obj = pt;
+					sp->type = STACK_OBJ;
+				}
+			}
+			break;
+		case OP_CADD:
+			tmp = *inv->top->pc++;
+			if(inv->top->is_expr || _rt_add_objects(inv,sp,tmp))
+				_rt_error(inv,__LINE__);
+			sp += tmp;
+			break;
+		case OP_CREMOVE:
+			tmp = *inv->top->pc++;
+			if(inv->top->is_expr || _rt_remove_objects(inv,sp,tmp))
+				_rt_error(inv,__LINE__);
+			sp += tmp;
+			break;
+		case OP_CGET:
+			if(sp[1].type != STACK_COLLECTION)
+				_rt_error(inv,__LINE__);
+			sp++;
 			break;
 
 		case OP_OMV:
@@ -940,6 +1095,8 @@ static void _rt_run(struct _rt_invocation* inv)
 				case STACK_OBJ:
 					// obj-ref
 					st_insert(inv->t,&sp[1].prop_obj,HEAD_REF,HEAD_SIZE);
+					if(_rt_insert_objectid(inv,sp->obj,sp[1].prop_obj))
+						_rt_error(inv,__LINE__);
 					break;
 				case STACK_CODE:
 					// write out path/event to method/handler

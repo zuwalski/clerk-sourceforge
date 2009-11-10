@@ -551,6 +551,20 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_OPEN";
 	case OP_OUTL:
 		return "OP_OUTL";
+	case OP_CADD:
+		return "OP_CADD";
+	case OP_CGET:
+		return "OP_CGET";
+	case OP_CREMOVE:
+		return "OP_CREMOVE";
+	case OP_ID:
+		return "OP_ID";
+	case OP_IDO:
+		return "OP_IDO";
+	case OP_FIND:
+		return "OP_FIND";
+	case OP_CLONE:
+		return "OP_CLONE";
 
 	default:
 		return "OP_ILLEGAL";
@@ -656,6 +670,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_NEXT:
 		case OP_OPEN:
 		case OP_OPEN_POP:
+		case OP_CLONE:
 			// emit0
 			printf("%s\n",_rt_opc_name(opc));
 			break;
@@ -699,6 +714,12 @@ void _rt_dump_function(task* t, st_ptr* root)
 
 		case OP_AVARS:
 		case OP_OVARS:
+		case OP_CADD:
+		case OP_CGET:
+		case OP_CREMOVE:
+		case OP_ID:
+		case OP_IDO:
+		case OP_FIND:
 			// emit Ic
 			tmpuchar = *bptr++;
 			printf("%-10s %d {",_rt_opc_name(opc),tmpuchar);
