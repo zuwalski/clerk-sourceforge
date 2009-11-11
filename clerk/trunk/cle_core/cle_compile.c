@@ -201,10 +201,12 @@ static const struct _cmp_buildin buildins[] = {
 	{"foldl",0,OP_NULL,1,2},			// collection: foldl(k,v,r) function on keys,values => val(r)
 	{"foldr",0,OP_NULL,1,2},			// collection: foldr(k,v,r) function on keys,values => val(r)
 
-	{"first",0,OP_NULL,0,0},
-	{"last",0,OP_NULL,0,0},
-	{"next",0,OP_NULL,0,0},
-	{"prev",0,OP_NULL,0,0},
+	// replace by language-construct
+	{"iterate",0,OP_IT,0,0},
+	{"key",0,OP_IKEY,0,0},
+	{"value",0,OP_IVAL,0,0},
+	{"next",0,OP_INEXT,0,2},
+	{"prev",0,OP_IPREV,0,2},
 
 	{"string",OP_2STR,0,1,255},
 	{0,0,0,0,0}	// STOP

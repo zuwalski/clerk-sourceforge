@@ -112,7 +112,7 @@ void cle_standard_next_done(event_handler* hdl);
 void cle_standard_pop(event_handler* hdl);
 void cle_standard_push(event_handler* hdl);
 uint cle_standard_data(event_handler* hdl, cdat data, uint length);
-void cle_standard_submit(event_handler* hdl, st_ptr* st);
+void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
 void cle_stream_submit(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt);
 

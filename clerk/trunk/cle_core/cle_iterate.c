@@ -512,6 +512,15 @@ void it_reset(it_ptr* it)
 	it->kused = 0;
 }
 
+uint it_current(task* t, it_ptr* it, st_ptr* pt)
+{
+	if(it->kused == 0) return 1;
+	pt->pg     = it->pg;
+	pt->key    = it->key;
+	pt->offset = it->offset;
+	return st_move(t,pt,it->kdata,it->kused);
+}
+
 /**
 * update/build increasing index
 */

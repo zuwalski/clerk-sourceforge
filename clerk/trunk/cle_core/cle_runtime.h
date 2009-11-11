@@ -99,6 +99,12 @@ enum cle_opcode
 	OP_IDO,
 	OP_FIND,
 
+	OP_IT,
+	OP_IKEY,
+	OP_IVAL,
+	OP_INEXT,
+	OP_IPREV,
+
 	OP_OP_MAX
 };
 

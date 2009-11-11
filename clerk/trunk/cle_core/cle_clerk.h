@@ -126,6 +126,8 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it);
 
 uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
 
+uint it_current(task* t, it_ptr* it, st_ptr* pt);
+
 /* Task functions */
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 

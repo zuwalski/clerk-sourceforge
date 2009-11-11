@@ -48,7 +48,9 @@ enum {
 	// readonly ptr
 	STACK_RO_PTR,
 	STACK_PROP,
-	STACK_COLLECTION
+	STACK_COLLECTION,
+	STACK_ITERATOR,
+	STACK_ITERATOR_COL
 };
 
 struct _rt_stack
@@ -82,6 +84,7 @@ struct _rt_stack
 			cle_pipe* out;
 			void* outdata;
 		};
+		it_ptr it;
 	};
 	uchar type;
 	uchar flags;	// JIT-flags
@@ -452,11 +455,9 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 	case STACK_NUM:
 		_rt_num_out(inv,to,from->num);
 		break;
-	case STACK_OBJ: {
-		st_ptr pt;
-		if(_rt_goto_name(inv,from->obj,&pt,to_str_expr,sizeof(to_str_expr) - 1) == 0)
-			*sp = _rt_eval_expr(inv,to,&pt);
-					}
+	case STACK_OBJ:
+		if(_rt_goto_name(inv,from->obj,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
+			*sp = _rt_eval_expr(inv,to,from);
 		break;	// no "str" expr? output nothing
 	case STACK_CODE:
 		// write out path/event to method/handler
@@ -591,15 +592,11 @@ static uint _rt_load_init(struct _rt_invocation* inv, struct _rt_stack* sp, st_p
 {
 	st_ptr pt;
 	if(_rt_goto_name(inv,*obj,&pt,init_method,sizeof(init_method)-1) != 0)
-	{
-		sp->code_obj = *obj;
 		sp->code = &_default_init;
-	}
 	else
-	{
-		sp->code_obj = *obj;
 		sp->code = _rt_load_code(inv,pt);
-	}
+
+	sp->code_obj = *obj;
 	sp->type = STACK_CODE;
 	return 0;
 }
@@ -802,6 +799,8 @@ static int _rt_compare(struct _rt_invocation* inv, struct _rt_stack* op1, struct
 
 static void _rt_free(struct _rt_invocation* inv, struct _rt_stack* var)
 {
+	if(var->type == STACK_ITERATOR)
+		it_dispose(inv->t,&var->it);
 	var->type = STACK_NULL;
 }
 
@@ -1037,6 +1036,85 @@ static void _rt_run(struct _rt_invocation* inv)
 				}
 			}
 			sp++;
+			break;
+
+		case OP_IT:
+			inv->top->pc++;
+			sp--;
+			switch(sp[1].type)
+			{
+			case STACK_COLLECTION:
+			case STACK_OBJ:
+				it_create(inv->t,&sp->it,&sp[1].ptr);
+				sp->type = STACK_ITERATOR_COL;
+				break;
+			case STACK_PTR:
+			case STACK_RO_PTR:
+				it_create(inv->t,&sp->it,&sp[1].single_ptr);
+				sp->type = STACK_ITERATOR;
+				break;
+			default:
+				_rt_error(inv,__LINE__);
+			}
+			break;
+		case OP_INEXT:
+			tmp = *inv->top->pc++;
+			if(sp->type != STACK_ITERATOR && sp->type != STACK_ITERATOR_COL)
+				_rt_error(inv,__LINE__);
+			else
+			{
+				sp->num = it_next(inv->t,0,&sp->it);
+				sp->type = STACK_NUM;
+			}
+			break;
+		case OP_IPREV:
+			tmp = *inv->top->pc++;
+			if(sp->type != STACK_ITERATOR && sp->type != STACK_ITERATOR_COL)
+				_rt_error(inv,__LINE__);
+			else
+			{
+				sp->num = it_prev(inv->t,0,&sp->it);
+				sp->type = STACK_NUM;
+			}
+			break;
+		case OP_IKEY:
+			inv->top->pc++;
+			if(sp->type != STACK_ITERATOR && sp->type != STACK_ITERATOR_COL)
+				_rt_error(inv,__LINE__);
+			else
+			{
+				st_ptr pt;
+				st_empty(inv->t,&pt);
+				st_append(inv->t,&pt,sp->it.kdata,sp->it.kused);
+				sp->single_ptr = sp->single_ptr_w = pt;
+				sp->type = STACK_PTR;
+			}
+			break;
+		case OP_IVAL:
+			inv->top->pc++;
+			sp->type = STACK_NULL;
+			if(sp->type == STACK_ITERATOR)
+			{
+				st_ptr pt;
+				if(it_current(inv->t,&sp->it,&pt) == 0)
+				{
+					sp->single_ptr = sp->single_ptr_w = pt;
+					sp->type = STACK_PTR;
+				}
+			}
+			else if(sp->type == STACK_ITERATOR_COL)
+			{
+				if(sp->it.kused > 0)
+				{
+					st_ptr pt = inv->hdl->instance;
+					st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE);
+					st_move(inv->t,&pt,sp->it.kdata,sp->it.kused);
+					sp->single_ptr = sp->single_ptr_w = pt;
+					sp->type = STACK_PTR;
+				}
+			}
+			else
+				_rt_error(inv,__LINE__);
 			break;
 
 		case OP_OMV:

@@ -565,6 +565,16 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_FIND";
 	case OP_CLONE:
 		return "OP_CLONE";
+	case OP_IT:
+		return "OP_IT";
+	case OP_IKEY:
+		return "OP_IKEY";
+	case OP_IVAL:
+		return "OP_IVAL";
+	case OP_INEXT:
+		return "OP_INEXT";
+	case OP_IPREV:
+		return "OP_IPREV";
 
 	default:
 		return "OP_ILLEGAL";
