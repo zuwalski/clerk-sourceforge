@@ -613,9 +613,9 @@ int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
 {
 	int i = 1;
 	if(st_move(app_instance,&object,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
+		return 0;
 	if(st_offset(app_instance,&object,sizeof(objectheader)) != 0)
-		return 1;
+		return 0;
 
 	buffer[0] = '@';
 	while(i < buffersize - 1)
@@ -624,16 +624,17 @@ int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
 		if(c <= 0)
 		{
 			buffer[i] = 0;
-			return 0;
+			return i;
 		}
 
 		buffer[i++] = (c >> 4) + 'a';
 		buffer[i++] = (c & 0xf) + 'a';
 	}
 
-	return 1;
+	return 0;
 }
 
+// TODO target_oid -> st_ptr
 int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length)
 {
 	int i;

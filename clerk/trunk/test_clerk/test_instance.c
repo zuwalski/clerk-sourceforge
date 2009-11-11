@@ -72,7 +72,7 @@ void test_instance_c()
 	pt = root;
 	ASSERT(cle_goto_object(t,&pt,objone,sizeof(objone)) == 0);
 
-	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
+	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) != 0);
 	ASSERT(memcmp(buffer,"#abab",6) == 0);
 
 	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 3);
@@ -80,7 +80,7 @@ void test_instance_c()
 	pt = root;
 	ASSERT(cle_goto_object(t,&pt,objtwo,sizeof(objtwo)) == 0);
 
-	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
+	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) != 0);
 	ASSERT(memcmp(buffer,"#abac",6) == 0);
 
 	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 3);
@@ -88,7 +88,7 @@ void test_instance_c()
 	pt = root;
 	ASSERT(cle_goto_object(t,&pt,objthree,sizeof(objthree)) == 0);
 
-	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) == 0);
+	ASSERT(cle_get_oid(t,pt,buffer,sizeof(buffer)) != 0);
 	ASSERT(memcmp(buffer,"#abad",6) == 0);
 
 	ASSERT(cle_get_target(t,root,&pt,buffer + 1,5) == 3);

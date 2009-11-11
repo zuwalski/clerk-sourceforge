@@ -562,7 +562,13 @@ static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st
 
 		if(st_scan(inv->t,pt) == '@')	// string is an id
 		{
-			if(cle_get_target(inv->t,inv->hdl->instance,pt,*pt,100) == 0)
+			int len;
+			char buffer[100];
+
+			len = st_get(inv->t,&pt,buffer,sizeof(buffer));
+			if(len <= 0) return __LINE__;
+
+			if(cle_get_target(inv->t,inv->hdl->instance,pt,buffer,len) == 0)
 				return __LINE__;
 		}
 		else							// string is an object-name
@@ -579,6 +585,21 @@ static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st
 		return 0;
 	}
 	return 1;
+}
+
+static uint _rt_obj_id(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr obj)
+{
+	char buffer[100];
+	int len = cle_get_oid(inv->t,obj,buffer,sizeof(buffer));
+	if(len == 0)
+		return 1;
+
+	st_empty(inv->t,&obj);
+	sp->single_ptr = sp->single_ptr_w = obj;
+	sp->type = STACK_PTR;
+
+	st_insert(inv->t,&obj,buffer,len);
+	return 0;
 }
 
 static uint _rt_add_objects(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
@@ -892,10 +913,13 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_CLONE:
 			break;
 		case OP_ID:
-			cle_get_oid(inv->t,inv->top->object,buffer,sizeof(buffer));
+			sp--;
+			if(_rt_obj_id(inv,sp,inv->top->object))
+				_rt_error(inv,__LINE__);
 			break;
 		case OP_IDO:
-			cle_get_oid(inv->t,sp->obj,buffer,sizeof(buffer));
+			if(_rt_obj_id(inv,sp,sp->obj))
+				_rt_error(inv,__LINE__);
 			break;
 		case OP_FIND:
 			inv->top->pc++;
