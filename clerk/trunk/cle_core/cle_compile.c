@@ -205,8 +205,8 @@ static const struct _cmp_buildin buildins[] = {
 	{"iterate",0,OP_IT,0,0},
 	{"key",0,OP_IKEY,0,0},
 	{"value",0,OP_IVAL,0,0},
-	{"next",0,OP_INEXT,0,2},
-	{"prev",0,OP_IPREV,0,2},
+	{"next",0,OP_INEXT,0,0},
+	{"prev",0,OP_IPREV,0,0},
 
 	{"string",OP_2STR,0,1,255},
 	{0,0,0,0,0}	// STOP
