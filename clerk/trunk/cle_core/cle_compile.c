@@ -181,7 +181,7 @@ static const struct _cmp_buildin buildins[] = {
 	{"session",OP_NULL,0,0,0},
 
 	{"id",OP_ID,OP_IDO,0,0},			// get objectid in stringid format
-	{"object",OP_FIND,0,0,1},			// lookup object using name or id (no arg: create blank object)
+	{"object",OP_FIND,0,1,1},			// lookup object using name or id
 	{"validate",OP_NULL,OP_NULL,0,1},	// validate object (in state) (current or ref)
 	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
 

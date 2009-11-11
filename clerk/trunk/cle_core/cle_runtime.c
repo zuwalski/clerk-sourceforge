@@ -548,6 +548,24 @@ static uint _rt_insert_objectid(struct _rt_invocation* inv, st_ptr to, st_ptr ob
 	return 0;
 }
 
+static uint _rt_new_object(struct _rt_invocation* inv, struct _rt_stack* sp, cdat name, uint length)
+{
+	st_ptr ext = inv->hdl->instance;
+
+	if(st_move(inv->t,&ext,HEAD_NAMES,HEAD_SIZE) != 0)
+		return 1;
+	
+	if(st_move(inv->t,&ext,name,length) != 0)
+		return 1;
+
+	if(cle_new_mem(inv->t,&sp->obj,ext))
+		return 1;
+
+	sp->type = STACK_OBJ;
+	sp->ptr = sp->obj;
+	return 0;
+}
+
 static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr* pt)
 {
 	switch(sp->type)
@@ -565,7 +583,7 @@ static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st
 			int len;
 			char buffer[100];
 
-			len = st_get(inv->t,&pt,buffer,sizeof(buffer));
+			len = st_get(inv->t,pt,buffer,sizeof(buffer));
 			if(len <= 0) return __LINE__;
 
 			if(cle_get_target(inv->t,inv->hdl->instance,pt,buffer,len) == 0)
@@ -580,6 +598,9 @@ static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st
 				return 1;
 			
 			if(st_move_st(inv->t,pt,&sp->single_ptr) != 0)
+				return 1;
+
+			if(st_exsist(inv->t,pt,HEAD_OID,HEAD_SIZE) == 0)
 				return 1;
 		}
 		return 0;
@@ -907,10 +928,15 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_NEW:
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
-
+			sp--;
+			if(_rt_new_object(inv,sp,inv->top->pc,tmp))
+				_rt_error(inv,__LINE__);
 			inv->top->pc += tmp;
 			break;
 		case OP_CLONE:
+			if(sp->type != STACK_OBJ || cle_new_mem(inv->t,&sp->obj,sp->obj))
+				_rt_error(inv,__LINE__);
+			sp->ptr = sp->obj;
 			break;
 		case OP_ID:
 			sp--;
@@ -949,6 +975,24 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_CGET:
 			if(sp[1].type != STACK_COLLECTION)
 				_rt_error(inv,__LINE__);
+			else
+			{
+				st_ptr pt;
+				// TODO dont need to resolve full object - just get oid and try
+				if(_rt_find_object(inv,sp,&pt))
+					sp[1].type = STACK_NULL;
+				else
+				{
+					sp[1].obj = sp[1].ptr = pt;
+					sp[1].type = STACK_OBJ;
+
+					if(st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE) != 0 ||
+						st_offset(inv->t,&pt,sizeof(objectheader)) ||
+							st_is_empty(&pt) != 0 ||
+								st_move_st(inv->t,&sp->ptr,&pt))
+						sp[1].type = STACK_NULL;
+				}
+			}
 			sp++;
 			break;
 
