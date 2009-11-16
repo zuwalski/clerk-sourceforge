@@ -61,23 +61,27 @@ typedef struct
 	uchar _high[4];
 } oid;
 
-typedef struct
-{
-	ulong state;
-	oid   id;
-	oid   ext;
-	// followed by object-content
-}
-objectheader_v2;
+// Bit
+// [31-22]	Level
+// [21-0]	Runningnumber
+typedef ulong identity;
+
+#define IDLEVEL(id)  ((id) >> 22)
+#define IDNUMBER(id) ((id) & 0x3FFFFF)
+#define IDMAKE(level,number) (((level) << 22) | IDNUMBER(number))
 
 typedef struct
 {
-	ushort level;
-	ushort next_state_id;
-	ushort next_property_id;
-	// ... followed by optional name
+	oid       ext;
+	oid       id;
+	identity  state;
 }
-devobject;
+objectheader_v2;
+// followed by object-content
+
+
+// DEV-hdr: (next)identity
+// ... followed by optional name
 
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);

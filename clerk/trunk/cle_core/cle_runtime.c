@@ -255,11 +255,6 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 			return;
 		(*sp)->prop_obj = top.obj;
 		(*sp)->type = STACK_PROP;
-		break;
-	case 'N':
-		if(st_get(inv->t,&(*sp)->single_ptr,(char*)&(*sp)->num,sizeof(rt_number)) != -1)
-			return;
-		(*sp)->type = STACK_NUM;
 	}
 }
 
@@ -293,7 +288,8 @@ static uint _rt_find_prop_value(struct _rt_invocation* inv, struct _rt_stack* sp
 	char name[HEAD_SIZE + PROPERTY_SIZE];
 	sp->type = STACK_RO_PTR;
 
-	memcpy(name,HEAD_PROPERTY,HEAD_SIZE);
+	name[0] = 0;
+	name[1] = 'y';
 	memcpy(name + HEAD_SIZE,(cdat)&sp->prop_id,PROPERTY_SIZE);
 
 	return _rt_goto_name(inv,obj,&sp->single_ptr,name,sizeof(name));
@@ -435,6 +431,7 @@ static void _rt_num_out(struct _rt_invocation* inv, struct _rt_stack* to, rt_num
 		break;
 	case STACK_PTR:
 		st_insert(inv->t,&to->single_ptr_w,buffer,len);
+		break;
 	default:
 		_rt_error(inv,__LINE__);
 	}
@@ -509,6 +506,7 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 		resp_data = (*sp)[1].outdata;
 		break;
 	case STACK_PTR:
+	case STACK_REF:
 	default:
 		return _rt_error(inv,__LINE__);
 	}
@@ -553,7 +551,7 @@ static uint _rt_insert_objectid(struct _rt_invocation* inv, st_ptr to, st_ptr ob
 		st_insert_st(inv->t,&to,&pt);
 	else
 	{
-		// mem-obj -> make persistent
+		// mem-obj -> make persistent -> recursive
 		it_ptr it;
 		st_ptr obj = inv->hdl->instance;
 		st_insert(inv->t,&obj,HEAD_OID,HEAD_SIZE);
@@ -1063,7 +1061,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				_rt_error(inv,__LINE__);
 			else
 			{
-				sp->num = it_next(inv->t,0,&sp->it);
+				sp->num = it_next(inv->t,0,&sp->it,0);
 				sp->type = STACK_NUM;
 			}
 			break;
@@ -1073,7 +1071,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				_rt_error(inv,__LINE__);
 			else
 			{
-				sp->num = it_prev(inv->t,0,&sp->it);
+				sp->num = it_prev(inv->t,0,&sp->it,0);
 				sp->type = STACK_NUM;
 			}
 			break;
@@ -1458,10 +1456,8 @@ static void _rt_start(event_handler* hdl)
 	inv->top = 0;
 
 	if(_rt_load_code(inv,hdl->handler) == 0)
-	{
-		cle_stream_fail(hdl,"runtime:start",14);
 		return;
-	}
+
 	_rt_newcall(inv,inv->code_cache,&hdl->object,0);
 
 	// push response-pipe
@@ -1518,6 +1514,7 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 
 		_rt_run(inv);
 
+		// retire 'read': then this is not needed
 		if(hdl->error == 0)
 			cle_stream_fail(hdl,"runtime:end",12);
 	}

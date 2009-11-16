@@ -167,9 +167,12 @@ static void _it_lookup(struct _st_lkup_it_res* rt)
 
 static void _it_grow_kdata(it_ptr* it, struct _st_lkup_it_res* rt)
 {
+	uchar* kdata = it->kdata;
 	uint path_offset = (char*)rt->path - (char*)it->kdata;
 	it->ksize += IT_GROW_SIZE;
-	it->kdata = (uchar*)tk_realloc(rt->t,it->kdata,it->ksize);
+	it->kdata = tk_alloc(rt->t,it->ksize,0);
+	if(kdata != 0)
+		memcpy(it->kdata,kdata,it->kused);
 	rt->path = it->kdata + path_offset;
 }
 
@@ -188,7 +191,7 @@ static void _it_get_prev(struct _st_lkup_it_res* rt)
 	}
 }
 
-static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_next)
+static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_next, const uint length)
 {
 	key* sub    = rt->sub;
 	key* prev   = rt->prev;
@@ -253,11 +256,26 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 		{
 			it->kused++;
 			if(it->kused > it->ksize)
-				_it_grow_kdata(it,rt);
+			{
+				if(length == 0)
+					_it_grow_kdata(it,rt);
+				else
+				{
+					it->kdata = tk_alloc(rt->t,length,0);
+					it->ksize = length;
+					rt->path = it->kdata;
+				}
+			}
 
 			rt->diff += 8;
-			if((*rt->path++ = *ckey++) == 0)
+			*rt->path++ = *ckey;
+			if(length == 0)
+			{
+				if(*ckey == 0) return;
+			}
+			else if(it->kused >= length)
    				return;
+			ckey++;
   		}
 
 		sub = prev;	// next key
@@ -266,7 +284,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 	while(sub);
 }
 
-uint it_next(task* t, st_ptr* pt, it_ptr* it)
+uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -302,7 +320,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	else
 		_it_get_prev(&rt);
 
-	_it_next_prev(it,&rt,1);
+	_it_next_prev(it,&rt,1,length);
 
 	if(pt)
 	{
@@ -315,7 +333,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it)
 	return (it->kused > 0);
 }
 
-uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
+uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -357,7 +375,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	else
 		_it_get_prev(&rt);
 
-	_it_next_prev(it,&rt,1);
+	_it_next_prev(it,&rt,1,length);
 
 	if(pt)
 	{
@@ -370,7 +388,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it)
 	return (it->kused > 0)? 1 : 0;
 }
 
-uint it_prev(task* t, st_ptr* pt, it_ptr* it)
+uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -406,7 +424,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	else
 		_it_get_prev(&rt);
 
-	_it_next_prev(it,&rt,0);
+	_it_next_prev(it,&rt,0,length);
 
 	if(pt)
 	{
@@ -419,7 +437,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it)
 	return (it->kused > 0);
 }
 
-uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
+uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -463,7 +481,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it)
 	else
 		_it_get_prev(&rt);
 
-	_it_next_prev(it,&rt,0);
+	_it_next_prev(it,&rt,0,length);
 
 	if(pt)
 	{
@@ -504,7 +522,6 @@ void it_create(task* t, it_ptr* it, st_ptr* pt)
 void it_dispose(task* t, it_ptr* it)
 {
 	tk_unref(t, it->pg);
-	tk_mfree(t, it->kdata);
 }
 
 void it_reset(it_ptr* it)
@@ -538,7 +555,7 @@ uint it_new(task* t, it_ptr* it, st_ptr* pt)
 
 	_it_get_prev(&rt);
 
-	_it_next_prev(it,&rt,0);	// get highest position
+	_it_next_prev(it,&rt,0,0);	// get highest position
 
 	if(it->kused == 0)	// init 1.index
 	{

@@ -118,13 +118,13 @@ void it_reset(it_ptr* it);
 
 uint it_new(task* t, it_ptr* it, st_ptr* pt);
 
-uint it_next(task* t, st_ptr* pt, it_ptr* it);
+uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length);
 
-uint it_next_eq(task* t, st_ptr* pt, it_ptr* it);
+uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length);
 
-uint it_prev(task* t, st_ptr* pt, it_ptr* it);
+uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length);
 
-uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it);
+uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length);
 
 uint it_current(task* t, it_ptr* it, st_ptr* pt);
 

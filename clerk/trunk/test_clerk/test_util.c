@@ -399,7 +399,7 @@ static void _cle_read(task* t, st_ptr* root, uint indent)
 
 	it_create(t,&it,root);
 
-	while(it_next(t,&pt,&it))
+	while(it_next(t,&pt,&it,0))
 	{
 		if(elms == 0)
 		{

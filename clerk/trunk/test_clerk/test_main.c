@@ -279,7 +279,7 @@ void test_iterate_c()
 	i = 0;
 
 	start = clock();
-	while(it_next(t,0,&it))
+	while(it_next(t,0,&it,0))
 	{
 		i++;
 	}
@@ -293,7 +293,7 @@ void test_iterate_c()
 	i = 0;
 
 	start = clock();
-	while(it_prev(t,0,&it))
+	while(it_prev(t,0,&it,0))
 	{
 		i++;
 	}
@@ -307,6 +307,71 @@ void test_iterate_c()
 	it_dispose(t,&it);
 
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	tk_drop_task(t);
+}
+
+void test_iterate_fixedlength()
+{
+	clock_t start,stop;
+
+	task* t;
+	st_ptr root,tmp;
+	it_ptr it;
+	int i;
+
+	//  new task
+	t = tk_create_task(0,0);
+
+	// should not happen.. but
+	ASSERT(t);
+
+	// create empty node no prob
+	ASSERT(st_empty(t,&root) == 0);
+
+	// insert data
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		tmp = root;
+		st_insert(t,&tmp,(cdat)&i,sizeof(int));
+	}
+	stop = clock();
+
+	printf("insert %d items. Time %d\n",i, stop - start);
+
+	// run up and down
+	// create
+	it_create(t,&it,&root);
+	i = 0;
+
+	start = clock();
+	while(it_next(t,&tmp,&it,sizeof(int)))
+	{
+		i++;
+	}
+	stop = clock();
+
+	printf("it_next[FIXED] %d items. Time %d\n",i, stop - start);
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	it_reset(&it);
+	i = 0;
+
+	start = clock();
+	while(it_prev(t,&tmp,&it,sizeof(int)))
+	{
+		i++;
+	}
+	stop = clock();
+
+	printf("it_prev[FIXED] %d items. Time %d\n",i, stop - start);
+
+	ASSERT(i == HIGH_ITERATION_COUNT);
+
+	// destroy
+	it_dispose(t,&it);
 
 	tk_drop_task(t);
 }
@@ -423,7 +488,7 @@ void test_task_c()
 	i = 0;
 	keystore[0] = 0;
 	start = clock();
-	while(it_next(t,0,&it))
+	while(it_next(t,0,&it,0))
 	{
 		uint klen = sim_new(keystore,sizeof(keystore));
 		i++;
@@ -480,7 +545,7 @@ void test_task_c()
 	i = 0;
 	keystore[0] = 0;
 	start = clock();
-	while(it_next(t,&tmp,&it))
+	while(it_next(t,&tmp,&it,0))
 	{
 		uint klen = sim_new(keystore,sizeof(keystore));
 		i++;
@@ -548,7 +613,7 @@ void test_task_c_filepager()
 
 	i = 0;
 	start = clock();
-	while(it_next(t,0,&it))
+	while(it_next(t,0,&it,0))
 	{
 		i++;
 		ASSERT(i <= HIGH_ITERATION_COUNT);
@@ -601,7 +666,7 @@ void test_task_c_filepager()
 
 	i = 0;
 	start = clock();
-	while(it_next(t,&tmp,&it))
+	while(it_next(t,&tmp,&it,0))
 	{
 		i++;
 		ASSERT(i <= HIGH_ITERATION_COUNT);
@@ -1194,6 +1259,8 @@ int main(int argc, char* argv[])
 	heap_check();
 
 	test_iterate_c();
+
+	test_iterate_fixedlength();
 
 	heap_check();
 

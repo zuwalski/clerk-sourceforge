@@ -424,7 +424,7 @@ static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 			int cmp;
 			it_load(app_instance,&it,user_roles[r] + 1,*user_roles[r]);
 
-			cmp = it_next_eq(app_instance,&pt,&it);
+			cmp = it_next_eq(app_instance,&pt,&it,0);
 			if(cmp == 0)
 				break;
 			else if(cmp == 2)
@@ -557,7 +557,7 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
 			it_create(app_instance,&it,&pt);
 
 			// iterate instance-refs / event-handler-id
-			while(it_next(app_instance,&pt,&it))
+			while(it_next(app_instance,&pt,&it,0))
 			{
 				st_ptr handler, obj = object;
 				int handlertype = st_scan(app_instance,&pt);

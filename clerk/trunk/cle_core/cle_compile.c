@@ -126,9 +126,9 @@ struct _cmp_var
 
 static const char* keywords[] = {
 	"do","end","if","elseif","else","while","repeat","until","open",
-	"var","new","each","break","and","or","not",
-	"handle","raise","switch","case","default","this","super","goto","yield",0
-};
+	"var","new","for","break","and","or","not",
+	"handle","raise","switch","case","default","this","super","goto","next",0
+};	// + true, false
 
 #define KW_MAX_LEN 7
 
@@ -144,7 +144,7 @@ enum cmp_keywords {
 	KW_OPEN,
 	KW_VAR,
 	KW_NEW,
-	KW_EACH,
+	KW_FOR,
 	KW_BREAK,
 	KW_AND,
 	KW_OR,
@@ -157,7 +157,7 @@ enum cmp_keywords {
 	KW_THIS,
 	KW_SUPER,
 	KW_GOTO,
-	KW_YIELD
+	KW_NEXT
 };
 
 struct _cmp_buildin
@@ -170,12 +170,11 @@ struct _cmp_buildin
 };
 
 static const struct _cmp_buildin buildins[] = {
-	{"read",OP_RECV,0,0,1},				// recieve data-structure from event-queue (timeout-param)
+	{"read",OP_RECV,0,0,1},				// * recieve data-structure from event-queue (timeout-param)
 	{"list",OP_NULL,0,1,255},			// form a list from input-params
 	{"void",OP_NULL,0,1,255},			// throw away values
-	{"yield",OP_NULL,0,0,0},
-	{"this",OP_NULL,0,0,0},
-	{"super",OP_NULL,0,0,0},
+	{"me",OP_NULL,0,0,0},
+	{"parent",OP_NULL,0,0,0},
 	{"user",OP_NULL,0,0,0},
 	{"request",OP_NULL,0,0,0},
 	{"session",OP_NULL,0,0,0},
@@ -183,7 +182,7 @@ static const struct _cmp_buildin buildins[] = {
 	{"id",OP_ID,OP_IDO,0,0},			// get objectid in stringid format
 	{"object",OP_FIND,0,1,1},			// lookup object using name or id
 	{"validate",OP_NULL,OP_NULL,0,1},	// validate object (in state) (current or ref)
-	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
+//	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
 
 	{"add",0,OP_CADD,1,255},			// collection: add object(s) to collection (refs)
 	{"remove",0,OP_CREMOVE,1,255},		// collection: remove object(s) from collection (ids or refs)
@@ -832,9 +831,9 @@ static uint _cmp_var_assign(struct _cmp_state* cst, const uint state)
 
 #define chk_state(legal) if(((legal) & state) == 0) err(__LINE__)
 /*
-* path.+|-:bindvar{path_must_exsist;other.:endvar;+|-*.:x;} do -> exit
+* path.:bindvar{path_must_exsist;other:endvar;} do -> exit
 */
-static void _cmp_it_expr(struct _cmp_state* cst)
+static void _cmp_match_expr(struct _cmp_state* cst)
 {
 	uint state = ST_0;
 	uint level = 0;
@@ -843,11 +842,6 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 	{
 		switch(cst->c)
 		{
-		case '+':
-		case '-':
-			chk_state(ST_0|ST_DOT)
-			state = ST_NUM_OP;
-			break;
 		case '{':
 			chk_state(ST_0|ST_ALPHA|ST_VAR)
 			level++;
@@ -869,7 +863,7 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 			state = ST_DOT;
 			break;
 		case ':':
-			chk_state(ST_0|ST_DOT|ST_NUM_OP)
+			chk_state(ST_0|ST_DOT|ST_ALPHA)
 			{
 				uint len;
 				_cmp_nextc(cst);
@@ -883,10 +877,6 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 			}
 			state = ST_VAR;
 			continue;
-		case '*':
-			chk_state(ST_0|ST_DOT|ST_NUM_OP)
-			state = ST_ALPHA;
-			break;
 		case '#':
 			_cmp_comment(cst);
 			break;
@@ -914,7 +904,7 @@ static void _cmp_it_expr(struct _cmp_state* cst)
 					}
 				}
 
-				chk_state(ST_0|ST_DOT|ST_NUM_OP)
+				chk_state(ST_0|ST_DOT|ST_VAR)
 				state = ST_ALPHA;
 				continue;
 			}
@@ -1418,16 +1408,29 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					}
 					state = ST_BREAK;
 					continue;
-				case KW_EACH:	// [struct|collection].each it_expr [sort sort-rules] do bexpr end
+				case KW_FOR:	// for var [,matcher] = expr do bexpr end
+					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
+					chk_out()
+					{
+						uint loop_coff;
+						_cmp_emit0(cst,OP_NULL);//OP_FOR);
+						loop_coff = cst->code_next;
+						if(whitespace(cst->c)) _cmp_whitespace(cst);
+						if(_cmp_expr(cst,0,NEST_EXPR) != 'd') err(__LINE__)
+						_cmp_fwd_loop(cst,loop_coff,nest,OP_NULL);//OP_FOR_START);
+					}
+					state = ST_0;
+					continue;
+/*					// [struct|collection].each it_expr [sort sort-rules] do bexpr end
 					chk_state(ST_DOT)
 					{
 						uint loop_coff = cst->code_next;
 						cst->glevel++;
-						_cmp_it_expr(cst);
+						_cmp_match_expr(cst);
 						_cmp_fwd_loop(cst,loop_coff,nest,OP_BZ);	// OP_EACH
 						_cmp_free_var(cst);
 					}
-					state = ST_0;
+					state = ST_0; */
 					continue;
 				case KW_OPEN:	// open expr [do bexpr] end
 					chk_state(ST_0|ST_ALPHA|ST_STR|ST_VAR)
@@ -1519,7 +1522,7 @@ static int _cmp_expr(struct _cmp_state* cst, struct _skip_list* skips, uchar nes
 					_cmp_stack(cst,1);
 					state = ST_ALPHA;
 					continue;
-				case KW_YIELD:
+				case KW_NEXT:
 					chk_state(ST_ALPHA|ST_STR|ST_VAR|ST_NUM)
 					if(otop != 0 && otop->opc == OP_OUT)
 						_cmp_op_pop(cst,&otop);
@@ -1787,7 +1790,7 @@ int cmp_method(task* t, st_ptr* ref, st_ptr* body, cle_pipe* response, void* dat
 				else
 					_cmp_update_imm(&cst,br_prev_handler + 1,cst.code_next - br_prev_handler - 1 - sizeof(ushort));
 
-				_cmp_it_expr(&cst);
+				_cmp_match_expr(&cst);
 
 				br_prev_handler = cst.code_next;
 				_cmp_emitIs(&cst,OP_BR,0);
