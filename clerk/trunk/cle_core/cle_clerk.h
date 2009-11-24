@@ -25,6 +25,7 @@ typedef unsigned long ulong;
 typedef unsigned short ushort;
 typedef unsigned char uchar;
 typedef const unsigned char* cdat;
+typedef unsigned short segment;
 
 typedef struct task task;
 //typedef struct page_wrap page_wrap;
@@ -89,8 +90,6 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from);
 
-//if task's are the same then create a simple pointer
-//not same: copy from one task to the other
 uint st_link(task* t, st_ptr* to, st_ptr* from);
 
 uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length);
@@ -133,22 +132,26 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 
 task* tk_clone_task(task* parent);
 
+// segment value never 0
+segment tk_segment(task* t);
+segment tk_new_segment(task* t);
+
 void tk_drop_task(task* t);
 int tk_commit_task(task* t);
 
-void* tk_alloc(task* t, uint size, struct page_wrap** pgref);
-
+// removing from h: internal use only!
 void* tk_malloc(task* t, uint size);
-void* tk_realloc(task* t, void* mem, uint size);
 void tk_mfree(task* t, void* mem);
+// deprecated!
+void* tk_realloc(task* t, void* mem, uint size);
 
+void* tk_alloc(task* t, uint size, struct page_wrap** pgref);
 void tk_unref(task* t, struct page_wrap* pg);
-void tk_dup_ptr(st_ptr* to, st_ptr* from);
+
+void tk_ref_ptr(st_ptr* ptr);
+void tk_free_ptr(st_ptr* ptr);
 
 void tk_root_ptr(task* t, st_ptr* pt);
-
-void* tk_pop_frame(task* t);
-void* tk_push_frame(task* t, void* f);
 
 ptr_list* ptr_list_reverse(ptr_list* e);
 /* test */

@@ -113,7 +113,7 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	{
 		// found: read address of page_wrapper
 		if(st_get(t,&root_ptr,(char*)&pw,sizeof(pw)) != -1)
-			pw = 0;	// panic
+			unimplm();	// panic (map corrupted)
 	}
 
 	// into cache
@@ -206,11 +206,6 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 	return me;
 }
 
-void tk_free_ptr(st_ptr* ptr)
-{
-	tk_unref(0,ptr->pg);
-}
-
 void tk_unref(task* t, page_wrap* pg)
 {
 	if(pg->ext_pageid == 0)
@@ -221,6 +216,16 @@ void tk_unref(task* t, page_wrap* pg)
 		if(pg->refcount == 0)
 			_tk_release_page(pg);
 	}
+}
+
+void tk_free_ptr(st_ptr* ptr)
+{
+	tk_unref(0,ptr->pg);
+}
+
+void tk_ref_ptr(st_ptr* ptr)
+{
+	ptr->pg->refcount++;
 }
 
 void tk_root_ptr(task* t, st_ptr* pt)
@@ -323,6 +328,16 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 	return (void*)((char*)pg + offset);
 }
 
+ushort tk_segment(task* t)
+{
+	return t->segment;
+}
+
+segment tk_new_segment(task* t)
+{
+	unimplm();
+}
+
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 {
 	task* t;
@@ -342,6 +357,7 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 	t->ps = ps;
 	t->stack = xt.stack;
 	t->wpages = 0;
+	t->segment = 1;	// TODO get from pager
 
 	// setup pagemap
 	t->pagemap_root_wrap = xt.stack;

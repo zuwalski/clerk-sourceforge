@@ -107,6 +107,8 @@ static _cmp(void* p, char* buffer, int len)
 	return 0;
 }
 
+static int _just_validate(void* p, char* buffer, int len) {return 0;}
+
 static int _move_validate(task* t, st_ptr* to, st_ptr from)
 {
 	struct _val_ctx ctx;
@@ -181,145 +183,407 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 {}
 
 /* object store */
-int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level)
+static oid _new_oid(task* app_instance, st_ptr app_root, st_ptr* newobj)
 {
-	it_ptr it;
-	st_ptr newobj,pt;
-	objectheader header;
-
-	pt = app_root;
-	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
-
-	if(_copy_validate(app_instance,&pt,name) <= 0)
-		return 1;
+	oid id;
 
 	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
+	
+	id._low = tk_segment(app_instance);
 
-	it_create(app_instance,&it,&app_root);
+	while(1)
+	{
+		*newobj = app_root;
 
-	it_new(app_instance,&it,&newobj);
+		if(st_insert(app_instance,newobj,(cdat)&id._low,sizeof(segment)))
+		{
+			id._high[0] = 0;	// first key in segment
+			id._high[1] = 0;
+			id._high[2] = 0;
+			id._high[3] = 1;
+			break;
+		}
+		else
+		{
+			it_ptr it;
+			int    i;
+			it_create(app_instance,&it,newobj);
 
-	st_insert(app_instance,&pt,it.kdata,it.kused);
+			it_prev(app_instance,0,&it,OID_HIGH_SIZE);
 
-	// reflect name in object
-	pt = newobj;
-	st_insert(app_instance,&pt,HEAD_NAMES,HEAD_SIZE);
+			// add one
+			for(i = OID_HIGH_SIZE - 1; i >= 0; i--)
+			{
+				if(it.kdata[i] == 0xFF)
+					it.kdata[i] = 0;
+				else
+				{
+					it.kdata[i] += 1;
+					break;
+				}
+			}
 
-	st_insert_st(app_instance,&pt,&name);
+			memcpy(id._high,it.kdata,OID_HIGH_SIZE);
 
-	// reflect oid in object
-	pt = newobj;
-	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
+			it_dispose(app_instance,&it);
 
-	header.level = level;
-	header.state = 0;
-	header.next_property_id = 0;
-	header.next_state_id = 1;
-	// write header
-	st_insert(app_instance,&pt,(cdat)&header,sizeof(header));
+			if(id._high[i] != 0)
+				break;
 
-	st_insert(app_instance,&pt,it.kdata,it.kused);
+			// segment filled
+			id._low = tk_new_segment(app_instance);
+		}
+	}
 
-	it_dispose(app_instance,&it);
-
-	if(obj != 0)
-		*obj = newobj;
-	return 0;
+	// oid
+	st_insert(app_instance,&newobj,id._high,OID_HIGH_SIZE);
+	return id;
 }
 
-int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj)
+int cle_new(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, cdat extends_name, uint exname_length)
 {
-	st_ptr newobj,pt,pt1;
-	objectheader header;
+	st_ptr        newobj,names;
+	objectheader2 header;
+	identity      devid;
 
-	pt = app_root;
-	if(st_move(app_instance,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
-		return 1;
-	
-	if(st_move(app_instance,&pt,extends_name,exname_length) != 0)
-		return 1;
+	names = app_root;
+	st_insert(app_instance,&names,HEAD_NAMES,HEAD_SIZE);
 
-	// move to extend-object
-	pt1 = app_root;
-	if(st_move(app_instance,&pt1,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-	if(st_move_st(app_instance,&pt1,&pt) != 0)
-		return 1;
-	// get header from extend-object
-	if(st_move(app_instance,&pt1,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-	if(st_get(app_instance,&pt1,(char*)&header,sizeof(header)) != -2)
-		return 1;
+	if(_copy_validate(app_instance,&names,name) <= 0)
+		return __LINE__;
 
-	if(cle_new_object(app_instance,app_root,name,&newobj,header.level + 1))
-		return 1;
+	if(exname_length == 0 || (exname_length == 7 && memcmp(exname,"object",7) == 0))
+	{
+		// no extend
+		header.ext._low  = 0;
+		header.ext._high = {0,0,0,0};
+		devid            = IDMAKE(1,0);
+	}
+	else
+	{
+		// get extended object
+		st_ptr ext = app_root;
+		if(cle_goto_object(app_instance,&ext,extends_name,exname_length))
+			return __LINE__;
 
-	st_insert(app_instance,&newobj,HEAD_EXTENDS,HEAD_SIZE);
+		// get extend-header
+		if(st_get(app_instance,&ext,(cdat)&header,sizeof(header)) != -2)
+			return __LINE__;
 
-	// copy id
-	st_insert_st(app_instance,&newobj,&pt);
+		// new header.id = extend.id
+		header.ext = header.id;
+
+		// get dev.header
+		if(st_move(app_instance,&ext,HEAD_DEV,HEAD_SIZE) != 0)
+			return __LINE__;
+
+		if(st_get(app_instance,&ext,(cdat)&devid,sizeof(identity)) <= 0)
+			return __LINE__;
+
+		// new dev: level + 1
+		devid = IDMAKE(IDLEVEL(devid) + 1,0);
+	}
+
+	// state = start
+	header.state = 0;
+
+	// create base-object: first new id
+	header.id = _new_oid(app_instance,app_root,newobj);
 
 	if(obj != 0)
 		*obj = newobj;
+
+	// write header
+	st_append(app_instance,&newobj,(cdat)&header,sizeof(header));
+
+	// finish name
+	st_append(app_instance,&names,&header.id,sizeof(oid));
+
+	// reflect name and dev
+	st_append(app_instance,&newobj,HEAD_DEV,HEAD_SIZE);
+
+	st_append(app_instance,&newobj,(cdat)&devid,sizeof(identity));
+
+	st_insert_st(app_instance,&newobj,name);
 	return 0;
 }
 
 int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 {
-	objectheader header;
-	st_ptr pt;
-
-	if(st_move(app_instance,&extends,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
+	objheader header;
+	st_ptr    pt;
 
 	if(st_get(app_instance,&extends,(char*)&header,sizeof(header)) != -2)
-		return 1;
+		return __LINE__;
 
 	// new obj
 	st_empty(app_instance,newobj);
 
 	pt = *newobj;
-	st_insert(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE);
-	// copy id
-	st_insert_st(app_instance,&pt,&extends);
 
-	pt = *newobj;
-	st_insert(app_instance,&pt,HEAD_OID,HEAD_SIZE);
+	header.zero = 0;
+	header.ext  = extends;
 
-	header.level++;
-	header.state = 0;
-	header.next_property_id = 0;
-	header.next_state_id = 1;
-
-	// write header
-	return st_append(app_instance,&pt,(cdat)&header,sizeof(header));
-}
-
-int cle_delete_object(task* t, st_ptr* root, cdat name, uint name_length)
-{
-	if(cle_goto_object(t,root,name,name_length))
-		return 1;
-
-	return 0;
+	st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 {
 	st_ptr pt = *root;
+	struct
+	{
+		uchar head[2];
+		oid id;
+	} the_object;
+
 	if(st_move(t,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
-		return 1;
+		return __LINE__;
 	
 	if(st_move(t,&pt,name,name_length) != 0)
-		return 1;
+		return __LINE__;
 
-	if(st_move(t,root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
+	if(st_get(t,&pt,(char*)&the_object.id,sizeof(oid)) != -1)
+		return __LINE__;
 
-	return st_move_st(t,root,&pt);
+	the_object.head[0] = 0;
+	the_object.head[1] = 'O';
+	return st_move(t,&root,(cdat)&the_object,sizeof(the_object));
+}
+
+// recursively persist this object as well as extends and ref-by-property.
+int cle_persist_object(task* app_instance, st_ptr* app_root, st_ptr* obj)
+{
+	objheader header;
+	st_ptr    newobj,ext,pt = *obj;
+	it_ptr    it;
+
+	if(st_get(app_instance,&pt,(cdat)&header,sizeof(header)) != -2)
+		return __LINE__;
+
+	// object needs persisting?
+	if(header.zero != 0)
+		return 0;
+
+	// save extends-ptr
+	ext = header.ext;
+
+	// get an id for this object
+	header.obj.id = _new_oid(app_instance,*app_root,&newobj);
+
+	// write it to prevent endless recursions (obj <-> ext-obj)
+	st_dataupdate(app_instance,obj,(cdat)&header.obj.id,sizeof(oid));
+
+	// check and persist extends (if needed)
+	if(cle_persist_object(app_instance,app_root,&ext))
+		return __LINE__;
+
+	// get ext-id
+	if(st_get(app_instance,&ext,(char*)&header.obj.ext,sizeof(oid)) != -2)
+		return __LINE__;
+
+	// state = start
+	header.obj.state = 0;
+
+	// update header (all)
+	st_dataupdate(app_instance,obj,(cdat)&header,sizeof(header));
+
+	// link content to id
+	st_link(app_instance,&newobj,obj);
+
+	// recursivly persist all mem-objects on properties as well
+	if(st_move(app_instance,&pt,HEAD_PROPERTY,HEAD_SIZE) != 0)
+		return 0;	// no property-values
+
+	it_create(app_instance,&it,&pt);
+
+	// for all mem-obj-refs
+	while(it_next(app_instance,&pt,&it,PROPERTY_SIZE))
+	{
+		st_ptr memobj,upd = pt;
+		struct
+		{
+			uchar head;
+			oid   ref;
+		} new_ref;
+
+		if(st_scan(app_instance,&pt) != 'r')
+			continue;
+
+		if(st_get(app_instance,&pt,(char*)&memobj,sizeof(st_ptr)) != -1)
+			return __LINE__;
+
+		// persist...
+		if(cle_persist_object(app_instance,app_root,&memobj))
+			return __LINE__;
+
+		// update ref
+		if(st_get(app_instance,&memobj,(char*)&new_ref.ref,sizeof(oid)) != -1)
+			return __LINE__;
+
+		new_ref.head = 'R';
+		st_update(app_instance,&upd,(cdat)&new_ref,sizeof(new_ref));
+	}
+
+	it_dispose(app_instance,&it);
+	return 0;
+}
+
+int cle_delete_name(task* t, st_ptr* root, cdat name, uint name_length)
+{
+	st_ptr app_root = *root;
+
+	if(cle_goto_object(t,&app_root,name,name_length))
+		return __LINE__;
+
+	if(st_offset(t,&app_root,sizeof(objectheader2)) != 0)
+		return __LINE__;
+
+	if(st_move(t,&app_root,HEAD_DEV,HEAD_SIZE) != 0)
+		return __LINE__;
+
+	st_delete(t,&app_root,0,0);
+
+	app_root = *root;
+
+	if(st_move(t,&app_root,HEAD_NAMES,HEAD_SIZE) != 0)
+		return __LINE__;
+
+	st_delete(t,&app_root,name,name_length);
+	return 0;
+}
+
+static identity _next_identity(task* app_instance, st_ptr root, st_ptr obj)
+{
+	objheader header;
+	identity  id;
+
+	if(st_get(app_instance,&obj,(char*)&header,sizeof(header)) != -2)
+		return 0;
+
+	if(header.zero == 0)
+		return 0;
+
+	if(st_insert(app_instance,&obj,HEAD_DEV,HEAD_SIZE) != 0)
+	{
+		// create dev-handler in object
+		// need to find level of this object
+		uint level = 1;
+
+		st_move(app_instance,&root,HEAD_OID,HEAD_SIZE);
+
+		while(header.obj.ext._low != 0)
+		{
+			st_ptr pt = root;
+			level++;
+
+			st_move(app_instance,&pt,(cdat)&header.obj.ext,sizeof(oid));
+			st_get(app_instance,&pt,(char*)&header,sizeof(header));
+			if(st_move(app_instance,&pt,HEAD_DEV,HEAD_SIZE) == 0)
+			{
+				st_get(app_instance,&pt,(char*)id,sizeof(id));
+				level += IDLEVEL(id);
+				break;
+			}
+		}
+
+		id = IDMAKE(level,0);
+
+		st_append(app_instance,&obj,(cdat)&id,sizeof(id));
+	}
+	else
+	{
+		st_ptr pt = obj;
+		st_get(app_instance,&pt,(char*)id,sizeof(id));
+
+		id = IDMAKE(IDLEVEL(id),IDNUMBER(id) + 1);
+
+		st_dataupdate(app_instance,&obj,(cdat)&id,sizeof(id));
+	}
+
+	return id;
+}
+
+enum
+{
+	NO_CREATE,
+	CREATE_OR_GET,
+	CREATE_UNIQUE
+} create_state;
+
+// name must be normalized and validated before call
+static identity _identify(task* app_instance, st_ptr root, st_ptr obj, st_ptr name, st_ptr* value, enum create_state create)
+{
+	st_ptr pt = obj;
+
+	while(1)
+	{
+		objectheader2 header;
+
+		if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
+			break;
+
+		if(st_move_st(app_instance,&pt,&to_name) == 0)
+		{
+			identity id;
+
+			if(st_get(app_instance,&pt,(char*)&id,sizeof(id)) != -1)
+				break;
+			return id;
+		}
+
+		if(header.ext._low == 0)
+			break;
+
+		pt = root;
+		if(st_move(app_instance,&pt,(cdat)&header.ext,sizeof(oid)) != 0)
+			break;
+	}
+	return 0;
 }
 
 int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
+	st_ptr obj, state_data;
+
+	// reserved state-name ('start')
+	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) == 0)
+		return __LINE__;
+
+	obj = root;
+	if(cle_goto_object(app_instance,&obj,object_name,object_length))
+		return __LINE__;
+
+	// name must not be used at lower level
+	if(_identify(app_instance,root,obj,state,&state_data,CREATE_UNIQUE) == 0)
+		return __LINE__;
+
+	st_append(app_instance,&state_data,HEAD_STATES,HEAD_SIZE);
+	// TODO: write validator-expr here...
+	return 0;
+}
+
+
+
+
+
+
+
+
+	id = _next_identity(app_instance,root,obj);
+	if(id == 0)
+		return __LINE__;
+
+	st_offset(app_instance,&obj,sizeof(objectheader2));
+
+	if(_copy_validate(app_instance,&obj,&state) <= 0)
+		return __LINE__;
+
+	st_append(app_instance,&obj,(cdat)&id,sizeof(id));
+	return 0;
+
+
+
+
 	st_ptr pt,pt1,app_root;
 	objectheader header;
 

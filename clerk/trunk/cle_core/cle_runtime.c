@@ -72,7 +72,7 @@ struct _rt_stack
 		struct
 		{
 			st_ptr prop_obj;
-			ulong prop_id;
+			identity prop_id;
 		};
 		struct
 		{

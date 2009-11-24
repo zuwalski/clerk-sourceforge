@@ -555,6 +555,7 @@ static key* _trace_nxt(st_ptr* pt)
 	return nxt;
 }
 
+// return read lenght. Or -1 => eof data, -2 more data, buffer full
 int st_get(task* t, st_ptr* pt, char* buffer, uint length)
 {
 	page_wrap* pg = pt->pg;

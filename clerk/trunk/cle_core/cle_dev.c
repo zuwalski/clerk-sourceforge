@@ -18,12 +18,12 @@
 
 /*
 	Dev-functions:
-	dev.new.<extend-objectname> , objectname (if objectname == 'object' -> new root object)
+	dev.new.<extend> , objectname (if extend == 'object' -> new root object)
 	dev.eval.<objectname> , expr
 	dev.make.expr.<objectname> , path.path , expr/method/ref/collection
 	dev.make.property.<objectname> , path.path 
 	dev.make.state.<objectname> , state [, entry-validation expr]
-	dev.make.handler.sync.<objectname> , state, event, method/expr (handler)
+	dev.make.handler.sync.<objectname> , event, method/expr (handler) , state [,states]
 	dev.make.handler.asyn.<objectname> , state, event, method/expr (handler)
 	dev.make.handler.resp.<objectname> , state, event, method/expr (handler)
 	dev.make.handler.reqs.<objectname> , state, event, method/expr (handler)
@@ -55,14 +55,8 @@ static void new_extends_next(event_handler* hdl)
 {
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
-	uint ret = 0;
 
-	if(exname_length == 7 && memcmp(exname,"object",7) == 0)
-		ret = cle_new_object(hdl->instance_tk,hdl->instance,hdl->root,0,0);
-	else
-		ret = cle_new(hdl->instance_tk,hdl->instance,exname,exname_length,hdl->root,0);
-
-	if(ret != 0)
+	if(cle_new(hdl->instance_tk,hdl->instance,hdl->root,0,exname,exname_length))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);

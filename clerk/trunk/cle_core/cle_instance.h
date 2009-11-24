@@ -32,7 +32,8 @@
 #define HEAD_ROLES "\0r"
 #define HEAD_OID "\0O"
 #define HEAD_NAMES "\0o"
-#define HEAD_EXTENDS "\0x"
+#define HEAD_DEV "\0D"
+//#define HEAD_EXTENDS "\0x"
 #define HEAD_STATES "\0s"
 #define HEAD_STATE_NAMES "\0z"
 #define HEAD_PROPERTY "\0y"
@@ -42,9 +43,9 @@
 #define HEAD_NUM "\0N"
 #define HEAD_REF "\0R"
 #define HEAD_COLLECTION "\0C"
+#define HEAD_REF_MEM "\0r"
 
-#define PROPERTY_SIZE 4
-
+/*
 typedef struct objectheader
 {
 	ulong  state;
@@ -54,11 +55,12 @@ typedef struct objectheader
 	// ... followed by OID
 }
 objectheader;
-
+*/
+#define OID_HIGH_SIZE 4
 typedef struct
 {
-	uchar _low[4];
-	uchar _high[4];
+	segment _low;
+	uchar   _high[OID_HIGH_SIZE];
 } oid;
 
 // Bit
@@ -70,18 +72,33 @@ typedef ulong identity;
 #define IDNUMBER(id) ((id) & 0x3FFFFF)
 #define IDMAKE(level,number) (((level) << 22) | IDNUMBER(number))
 
+// later: mark-sweep of persisten objects. Flip first bit from mark to mark.
+#define IDMARK(id) ((id) & 1)
+
 typedef struct
 {
-	oid       ext;
 	oid       id;
+	oid       ext;
 	identity  state;
 }
-objectheader_v2;
+objectheader2;
 // followed by object-content
 
+typedef union
+{
+	struct
+	{
+		segment zero;
+		st_ptr  ext;
+	};
+	objectheader2 obj;
+}
+objheader;
 
 // DEV-hdr: (next)identity
 // ... followed by optional name
+
+#define PROPERTY_SIZE (sizeof(identity))
 
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
@@ -95,8 +112,7 @@ void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint m
 void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
 /* object-store */
-int cle_new_object(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, ushort level);
-int cle_new(task* app_instance, st_ptr app_root, cdat extends_name, uint exname_length, st_ptr name, st_ptr* obj);
+int cle_new(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, cdat extends_name, uint exname_length);
 int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends);
 
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);

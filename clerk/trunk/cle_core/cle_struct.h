@@ -81,6 +81,7 @@ struct task
 	cle_psrc_data   psrc_data;
 	page_wrap*      pagemap_root_wrap;
 	ushort          pagemap_root_key;
+	segment         segment;
 };
 
 //#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))
