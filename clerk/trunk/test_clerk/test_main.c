@@ -1242,8 +1242,36 @@ void test_measure2()
 	tk_drop_task(t);
 }
 
+static void make_map()
+{
+	st_ptr root,pt;
+	cle_psrc_data psrc_data = util_create_mempager();
+	task* t = tk_create_task(&util_memory_pager,psrc_data);
+	
+	st_empty(t,&root);
+
+	pt = root;
+	st_insert(t,&pt,"sstart",7);
+
+	pt = root;
+	st_insert(t,&pt,"minit",6);
+
+	pt = root;
+	st_insert(t,&pt,"mstr",5);
+
+	tk_commit_task(t);
+
+	tk_root_ptr(t,&pt);
+
+	map_static_page(pt.pg);
+
+	tk_drop_task(t);
+}
+
 int main(int argc, char* argv[])
 {
+	make_map();
+
 	test_measure2();
 
 	heap_check();

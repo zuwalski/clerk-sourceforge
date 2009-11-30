@@ -183,14 +183,11 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 {
-	page_wrap* oldpage = *pg;
 	ptr* pt = (ptr*)me;
 	if(pt->koffset != 0)
 	{
 		*pg = (page_wrap*)pt->pg;
 		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
-
-		(*pg)->refcount++;
 	}
 	else
 	{
@@ -198,11 +195,6 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 		/* go to root-key */
 		me = GOKEY(*pg,sizeof(page));
 	}
-
-	if(oldpage->ext_pageid == 0 && --(oldpage->refcount) == 0)
-		/* dead page */
-		//_tk_release_page(t,oldpage);
-		;
 	return me;
 }
 

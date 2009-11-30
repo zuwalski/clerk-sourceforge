@@ -26,6 +26,8 @@
 #include "cle_clerk.h"
 #include "cle_stream.h"
 
+TODO - root headers have size 3 (\0\0[Identifier])
+object-headers have size2 (\0[Identifier])
 #define HEAD_SIZE 2
 #define HEAD_EVENT "\0e"
 #define HEAD_HANDLER "\0h"

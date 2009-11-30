@@ -964,3 +964,18 @@ static void print_struct(page_wrap* pg, const key* me, int ind)
 }
 
 */
+
+void map_static_page(page_wrap* pgw)
+{
+	int i;
+	page* pg = pgw->pg;
+
+	for(i = 0; i < pg->used; i++)
+	{
+		if(i != 0)
+			printf(",");
+		if((i & 31) == 31)
+			printf("\n");
+		printf("0x%x",(char*)pg + i);
+	}
+}

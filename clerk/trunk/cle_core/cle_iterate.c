@@ -295,7 +295,6 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -303,10 +302,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		if(rt.high == 0)
 		{
 			if(rt.length == 0)
-			{
-				tk_unref(t,rt.pg);
 				return 0;
-			}
 		}
 		else if(rt.length == 0)
 		{
@@ -328,8 +324,6 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
-	else
-		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -344,7 +338,6 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -361,10 +354,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		}
 
 		if(rt.high == 0)
-		{
-			tk_unref(t,rt.pg);
 			return 0;
-		}
 
 		rt.diff = rt.high_diff;
 		rt.sub  = rt.high;
@@ -383,8 +373,6 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
-	else
-		tk_unref(t,rt.pg);
 	return (it->kused > 0)? 1 : 0;
 }
 
@@ -399,7 +387,6 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -407,10 +394,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		if(rt.low == 0)
 		{
 			if(rt.length == 0)
-			{
-				tk_unref(t,rt.pg);
 				return 0;
-			}
 		}
 		else if(rt.length == 0)
 		{
@@ -432,8 +416,6 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
-	else
-		tk_unref(t,rt.pg);
 	return (it->kused > 0);
 }
 
@@ -448,7 +430,6 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	rt.prev   = 0;
 	rt.diff   = it->offset;
 
-	rt.pg->refcount++;
 	if(rt.length > 0)
 	{
 		_it_lookup(&rt);
@@ -461,16 +442,11 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 				pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 				pt->offset = rt.diff;
 			}
-			else
-				tk_unref(t,rt.pg);
 			return 2;
 		}
 
 		if(rt.low == 0)
-		{
-			tk_unref(t,rt.pg);
 			return 0;
-		}
 
 		rt.diff = rt.low_diff;
 		rt.sub  = rt.low;
@@ -489,8 +465,6 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
 		pt->offset = rt.diff;
 	}
-	else
-		tk_unref(t,rt.pg);
 	return (it->kused > 0)? 1 : 0;
 }
 

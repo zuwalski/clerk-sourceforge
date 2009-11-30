@@ -34,6 +34,8 @@ void st_prt_distribution(st_ptr* pt, task* tsk);
 
 void _tk_print(page* pg);
 
+void map_static_page(page_wrap* pgw);
+
 int rt_do_read(task* t, st_ptr root);
 
 void _rt_dump_function(task* t, st_ptr* root);

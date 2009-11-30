@@ -185,10 +185,7 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 /* object store */
 static oid _new_oid(task* app_instance, st_ptr app_root, st_ptr* newobj)
 {
-	oid id;
-
-	st_insert(app_instance,&app_root,HEAD_OID,HEAD_SIZE);
-	
+	oid id;	
 	id._low = tk_segment(app_instance);
 
 	while(1)
@@ -313,9 +310,6 @@ int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 	objheader header;
 	st_ptr    pt;
 
-	if(st_get(app_instance,&extends,(char*)&header,sizeof(header)) != -2)
-		return __LINE__;
-
 	// new obj
 	st_empty(app_instance,newobj);
 
@@ -330,11 +324,7 @@ int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends)
 int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 {
 	st_ptr pt = *root;
-	struct
-	{
-		uchar head[2];
-		oid id;
-	} the_object;
+	oid id;
 
 	if(st_move(t,&pt,HEAD_NAMES,HEAD_SIZE) != 0)
 		return __LINE__;
@@ -342,12 +332,10 @@ int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length)
 	if(st_move(t,&pt,name,name_length) != 0)
 		return __LINE__;
 
-	if(st_get(t,&pt,(char*)&the_object.id,sizeof(oid)) != -1)
+	if(st_get(t,&pt,(char*)&id,sizeof(oid)) != -1)
 		return __LINE__;
 
-	the_object.head[0] = 0;
-	the_object.head[1] = 'O';
-	return st_move(t,&root,(cdat)&the_object,sizeof(the_object));
+	return st_move(t,&root,(cdat)&id,sizeof(the_object));
 }
 
 // recursively persist this object as well as extends and ref-by-property.
@@ -412,7 +400,7 @@ int cle_persist_object(task* app_instance, st_ptr* app_root, st_ptr* obj)
 		if(st_get(app_instance,&pt,(char*)&memobj,sizeof(st_ptr)) != -1)
 			return __LINE__;
 
-		// persist...
+		// persist property object...
 		if(cle_persist_object(app_instance,app_root,&memobj))
 			return __LINE__;
 
@@ -452,7 +440,7 @@ int cle_delete_name(task* t, st_ptr* root, cdat name, uint name_length)
 	return 0;
 }
 
-static identity _next_identity(task* app_instance, st_ptr root, st_ptr obj)
+static identity _create_identity(task* app_instance, st_ptr root, st_ptr obj)
 {
 	objheader header;
 	identity  id;
@@ -503,144 +491,119 @@ static identity _next_identity(task* app_instance, st_ptr root, st_ptr obj)
 	return id;
 }
 
-enum
+struct _split_ctx
 {
-	NO_CREATE,
-	CREATE_OR_GET,
-	CREATE_UNIQUE
-} create_state;
+	task*   t;
+	st_ptr* name;
+	st_ptr* hostpart;
+	st_ptr* namepart;
+	uint    in_host;
+};
 
-// name must be normalized and validated before call
-static identity _identify(task* app_instance, st_ptr root, st_ptr obj, st_ptr name, st_ptr* value, enum create_state create)
+static uint _do_split_name(void* pctx, char* chrs, int len)
 {
-	st_ptr pt = obj;
+	struct _split_ctx* ctx = (struct _split_ctx*)pctx;
 
-	while(1)
+	if(ctx->in_host != 0)
 	{
-		objectheader2 header;
-
-		if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
-			break;
-
-		if(st_move_st(app_instance,&pt,&to_name) == 0)
+		int hlen;
+		for(hlen = 0; hlen < len; hlen++)
 		{
-			identity id;
-
-			if(st_get(app_instance,&pt,(char*)&id,sizeof(id)) != -1)
+			if(chrs[hlen] == 0)
+			{
+				// from first 0 its namepart
+				ctx->in_host = 0;
 				break;
-			return id;
+			}
 		}
 
-		if(header.ext._low == 0)
+		st_append(ctx->t,ctx->hostpart,chrs,hlen);
+
+		len -= hlen;
+		if(len == 0)
+			return 0;
+	}
+
+	st_append(ctx->t,ctx->namepart,chrs,len);
+	return 0;
+}
+
+static int _split_name(task* t, st_ptr* name, st_ptr hostpart, st_ptr namepart, uchar typeheader)
+{
+	struct _split_ctx ctx;
+	ctx.t        = t;
+	ctx.name     = name;
+	ctx.hostpart = &hostpart;
+	ctx.namepart = &namepart;
+	ctx.in_host  = 1;
+
+	// prefix host w/header
+	st_append(t,&hostpart,&typeheader,1);
+
+	return _scan_validate(t,&from,_do_split_name,&ctx);
+}
+
+static identity _identify(task* app_instance, st_ptr root, st_ptr obj, st_ptr name, uchar typeheader, uchar create)
+{
+	st_ptr hostpart,namepart,tobj,pt;
+	identity id;
+
+	st_empty(app_instance,&namepart);
+	st_empty(app_instance,&hostpart);
+
+	if(_split_name(app_instance,&name,&hostpart,&namepart,typeheader) != 0)
+		return 0;
+
+	// lookup host-object
+	tobj = obj;
+	while(1)
+	{
+		objheader header;
+
+		pt = tobj;
+		if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
+			return 0;
+
+		if(header.zero == 0)
+			return 0;
+
+		if(st_move_st(app_instance,&pt,&hostpart) == 0)
 			break;
 
-		pt = root;
-		if(st_move(app_instance,&pt,(cdat)&header.ext,sizeof(oid)) != 0)
-			break;
+		if(header.obj.ext._low == 0)
+			return 0;
+
+		tobj = root;
+		if(st_move(app_instance,tobj,(cdat)&header.obj.ext,sizeof(oid)) != 0)
+			return 0;
 	}
-	return 0;
+
+	if(st_move_st(app_instance,&pt,&namepart) != 0)
+		return 0;
+	
+	if(st_get(app_instance,&pt,(char*)&id,sizeof(id)) != -1)
+		return 0;
+
+	return id;
 }
 
 int cle_create_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
 {
-	st_ptr obj, state_data;
+	st_ptr obj = root;
+	identity id;
 
-	// reserved state-name ('start')
-	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) == 0)
-		return __LINE__;
-
-	obj = root;
 	if(cle_goto_object(app_instance,&obj,object_name,object_length))
 		return __LINE__;
 
 	// name must not be used at lower level
-	if(_identify(app_instance,root,obj,state,&state_data,CREATE_UNIQUE) == 0)
+	id = _identify(app_instance,root,obj,state,'S');
+	if(id != 0)
 		return __LINE__;
 
-	st_append(app_instance,&state_data,HEAD_STATES,HEAD_SIZE);
+	id = _create_identity(app_instance,root,obj);
+
 	// TODO: write validator-expr here...
 	return 0;
-}
-
-
-
-
-
-
-
-
-	id = _next_identity(app_instance,root,obj);
-	if(id == 0)
-		return __LINE__;
-
-	st_offset(app_instance,&obj,sizeof(objectheader2));
-
-	if(_copy_validate(app_instance,&obj,&state) <= 0)
-		return __LINE__;
-
-	st_append(app_instance,&obj,(cdat)&id,sizeof(id));
-	return 0;
-
-
-
-
-	st_ptr pt,pt1,app_root;
-	objectheader header;
-
-	app_root = root;
-	if(st_move(app_instance,&app_root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-
-	// reserved state-name
-	if(_cmp_validate(app_instance,state,start_state,sizeof(start_state)) == 0)
-		return 1;
-
-	if(cle_goto_object(app_instance,&root,object_name,object_length))
-		return 1;
-
-	// name must not be used at lower level
-	pt = root;
-	while(1)
-	{
-		// go to super-object (if any)
-		if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
-			break;
-
-		pt1 = app_root;
-		if(st_move_st(app_instance,&pt1,&pt) != 0)
-			break;
-		
-		pt = pt1;
-		if(st_move(app_instance,&pt1,HEAD_STATE_NAMES,HEAD_SIZE) == 0)
-		{
-			// state-name used at lower level!
-			if(st_move_st(app_instance,&pt1,&state) == 0)
-				return 1;
-		}
-	}
-
-	pt = root;
-	st_insert(app_instance,&pt,HEAD_STATE_NAMES,HEAD_SIZE);
-
-	// copy state-name
-	if(_copy_validate(app_instance,&pt,state) <= 0)
-		return 1;
-
-	st_insert(app_instance,&pt,"\0",1);
-
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return 1;
-	pt1 = root;
-	if(st_get(app_instance,&root,(char*)&header,sizeof(header)) != -2)
-		return 1;
-
-	// link name to new id
-	st_insert(app_instance,&pt,(cdat)&header.next_state_id,sizeof(ushort));
-	st_insert(app_instance,&pt,(cdat)&header.level,sizeof(ushort));
-
-	header.next_state_id++;
-	// save new id
-	return st_dataupdate(app_instance,&pt1,(char*)&header,sizeof(header));
 }
 
 int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state)
