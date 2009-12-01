@@ -238,6 +238,46 @@ static void _register_handler(task* app_instance, event_handler** hdlists, cle_s
 		hdl->handler = *handler;
 }
 
+/* system event-handler setup */
+void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
+{
+	cle_syshandler* exsisting;
+
+	st_insert(config_task,&config_root,eventmask,mask_length);
+
+	st_insert(config_task,&config_root,HEAD_HANDLER,HEAD_SIZE);
+
+	if(st_get(config_task,&config_root,(char*)&exsisting,sizeof(cle_syshandler*)) == -1)
+		// prepend to list
+		handler->next_handler = exsisting;
+	else
+		handler->next_handler = 0;
+
+	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
+}
+
+/* control role-access */
+void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_length, cdat role, uint role_length)
+{
+	// max length!
+	if(role_length > 255)
+		return;
+
+	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
+
+	st_insert(app_instance,&root,eventmask,mask_length);
+
+	st_insert(app_instance,&root,HEAD_ROLES,HEAD_SIZE);
+
+	st_insert(app_instance,&root,role,role_length);
+}
+
+void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length)
+{}
+
+void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length)
+{}
+
 static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
 {
 	hdl->instance_tk = inst_tk;

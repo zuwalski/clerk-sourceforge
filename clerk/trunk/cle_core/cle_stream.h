@@ -117,6 +117,14 @@ void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 void cle_stream_submit(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt);
 
 cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type);
+/* setup system-level handler */
+void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
+
+/* control role-access */
+void cle_allow_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
+void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
+// if access is granted - give (or add) this role to the user (for the rest of the request)
+void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
 
 // thread-subsystem hook
 void cle_notify_start(event_handler* handler);

@@ -24,10 +24,9 @@
 #define __CLE_INSTANCE_H__
 
 #include "cle_clerk.h"
-#include "cle_stream.h"
 
-TODO - root headers have size 3 (\0\0[Identifier])
-object-headers have size2 (\0[Identifier])
+//TODO - root headers have size 3 (\0\0[Identifier])
+//object-headers have size2 (\0[Identifier])
 #define HEAD_SIZE 2
 #define HEAD_EVENT "\0e"
 #define HEAD_HANDLER "\0h"
@@ -47,17 +46,7 @@ object-headers have size2 (\0[Identifier])
 #define HEAD_COLLECTION "\0C"
 #define HEAD_REF_MEM "\0r"
 
-/*
-typedef struct objectheader
-{
-	ulong  state;
-	ushort next_state_id;
-	ushort level;
-	ushort next_property_id;
-	// ... followed by OID
-}
-objectheader;
-*/
+
 #define OID_HIGH_SIZE 4
 typedef struct
 {
@@ -102,17 +91,6 @@ objheader;
 
 #define PROPERTY_SIZE (sizeof(identity))
 
-/* setup system-level handler */
-void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
-
-/* control role-access */
-void cle_allow_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
-void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
-// if access is granted - give (or add) this role to the user (for the rest of the request)
-void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
-
 /* object-store */
 int cle_new(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, cdat extends_name, uint exname_length);
 int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends);
@@ -140,7 +118,5 @@ int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler
 int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length);
 
 int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize);
-
-int cle_make_collection(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path);
 
 #endif
