@@ -16,7 +16,7 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "cle_stream.h"
-#include "cle_instance.h"
+#include "cle_object.h"
 
 /*
 *	The main input-interface to the running system
@@ -419,6 +419,8 @@ static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 		switch(eventid[i])
 		{
 		case '.':
+		case '/':
+		case '\\':
 		case 0:
 			if(state != 1)
 				return -1;

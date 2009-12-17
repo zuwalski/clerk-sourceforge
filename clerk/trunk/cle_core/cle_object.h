@@ -20,13 +20,13 @@
 	Creating instances and managing content
 */
 
-#ifndef __CLE_INSTANCE_H__
-#define __CLE_INSTANCE_H__
+#ifndef __CLE_OBJECT_H__
+#define __CLE_OBJECT_H__
 
 #include "cle_clerk.h"
 
 //TODO - root headers have size 3 (\0\0[Identifier])
-//object-headers have size2 (\0[Identifier])
+//object-headers have size 1 ([Identifier])
 #define HEAD_SIZE 2
 #define HEAD_EVENT "\0e"
 #define HEAD_HANDLER "\0h"
@@ -55,9 +55,10 @@ typedef struct
 } oid;
 
 // Bit
-// [31-22]	Level
-// [21-0]	Runningnumber
+// [31-22]	Level (0 == system/object)
+// [21-0]	Runningnumber (starting from 1)
 typedef ulong identity;
+// identity == 0 => not valid!
 
 #define IDLEVEL(id)  ((id) >> 22)
 #define IDNUMBER(id) ((id) & 0x3FFFFF)
@@ -86,10 +87,18 @@ typedef union
 }
 objheader;
 
+#define ISMEMOBJ(header) (((objheader)(header)).zero == 0)
 // DEV-hdr: (next)identity
 // ... followed by optional name
 
 #define PROPERTY_SIZE (sizeof(identity))
+
+typedef struct
+{
+	task*  t;
+	st_ptr root;
+}
+cle_instance;
 
 /* object-store */
 int cle_new(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, cdat extends_name, uint exname_length);

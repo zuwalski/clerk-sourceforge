@@ -53,6 +53,12 @@ typedef struct it_ptr
 	ushort kused;
 } it_ptr;
 
+typedef struct
+{
+	cdat string;
+	uint length;
+} st_str;
+
 /* generel functions */
 // create empty node
 // = 0 if ok - 1 if t is readonly

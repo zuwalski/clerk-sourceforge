@@ -83,6 +83,7 @@ struct _rt_stack
 		{
 			cle_pipe* out;
 			void* outdata;
+			task* outtask;
 		};
 		it_ptr it;
 	};
@@ -495,6 +496,7 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 {
 	cle_pipe* response;
 	void* resp_data;
+	task* outtask;
 	_ipt* ipt;
 	int   ev_len;
 	uchar eventid[EVENT_MAX_LENGTH+1];	// hmmmm
@@ -518,22 +520,28 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 	ev_len = st_get(inv->t,&(*sp)->single_ptr,eventid,sizeof(eventid));
 	if(ev_len <= 0)
 		return _rt_error(inv,__LINE__);
+
+	outtask = tk_clone_task(inv->t);
 	
 	ipt = cle_start(
 		inv->hdl->eventdata->config,
 		eventid,ev_len,
 		inv->hdl->eventdata->userid,inv->hdl->eventdata->userid_len,0,
-		response,resp_data,inv->t);
+		response,resp_data,outtask);
 
 	if(ipt == 0)
+	{
+		tk_drop_task(outtask);
 		// TODO raise catchable exception
 		return _rt_error(inv,__LINE__);
+	}
 
 	if(inv->response_started == 0)
 		inv->response_started = 1;
 
 	(*sp)->outdata = ipt;
 	(*sp)->out     = &_rt_open_pipe;
+	(*sp)->outtask = outtask;
 	(*sp)->type    = STACK_OUTPUT;
 	return 0;
 }
@@ -1239,6 +1247,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				sp->out->next(sp->outdata);
 			sp->out->end(sp->outdata,0,0);
 			inv->response_started = 1;
+			tk_commit_task(sp->outtask);
 			sp++;
 			break;
 		// receive input
@@ -1464,6 +1473,7 @@ static void _rt_start(event_handler* hdl)
 	inv->top->sp--;
 	inv->top->sp->out = hdl->response;
 	inv->top->sp->outdata = hdl->respdata;
+	inv->top->sp->outtask = 0;
 	inv->top->sp->type = STACK_OUTPUT;
 
 	// get parameters before launch?
