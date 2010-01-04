@@ -17,7 +17,7 @@
 */
 #include "test.h"
 #include "../cle_core/cle_stream.h"
-#include "../cle_core/cle_instance.h"
+#include "../cle_core/cle_object.h"
 #include <stdio.h>
 #include <memory.h>
 #include <time.h>

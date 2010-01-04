@@ -58,9 +58,9 @@ static int _async_end(event_handler* hdl, cdat c, uint clen)
 {
 	// end async-task
 	if(clen == 0)
-		return tk_commit_task(hdl->instance_tk);
+		return tk_commit_task(hdl->inst.t);
 
-	tk_drop_task(hdl->instance_tk);
+	tk_drop_task(hdl->inst.t);
 	return 0;
 }
 
@@ -85,7 +85,7 @@ static ptr_list* _alloc_elem(event_handler* hdl)
 		return elm;
 	}
 
-	return (ptr_list*)tk_alloc(hdl->instance_tk,sizeof(ptr_list),0);
+	return (ptr_list*)tk_alloc(hdl->inst.t,sizeof(ptr_list),0);
 }
 
 void cle_standard_push(event_handler* hdl)
@@ -96,7 +96,7 @@ void cle_standard_push(event_handler* hdl)
 		elm->pt = hdl->top->pt;
 	else
 	{
-		st_empty(hdl->instance_tk,&elm->pt);
+		st_empty(hdl->inst.t,&elm->pt);
 		hdl->root = elm->pt;
 	}
 
@@ -106,7 +106,7 @@ void cle_standard_push(event_handler* hdl)
 
 uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 {
-	return st_append(hdl->instance_tk,&hdl->top->pt,data,length);
+	return st_append(hdl->inst.t,&hdl->top->pt,data,length);
 }
 
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* from)
@@ -123,7 +123,7 @@ void cle_standard_next_done(event_handler* hdl)
 	if(hdl->error == 0)
 	{
 		// done processing .. clear and ready for next input-stream
-		st_empty(hdl->instance_tk,&hdl->top->pt);
+		st_empty(hdl->inst.t,&hdl->top->pt);
 		hdl->root = hdl->top->pt;
 	}
 }
@@ -280,8 +280,8 @@ void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mas
 
 static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
 {
-	hdl->instance_tk = inst_tk;
-	hdl->instance = *instance;
+	hdl->inst.t = inst_tk;
+	hdl->inst.root = *instance;
 
 	//TODO copy event and user data
 	hdl->eventdata = sysdata;
@@ -347,7 +347,7 @@ static void _sync_start(event_handler* hdl)
 	sc->real_out = hdl->response;
 	sc->real_out_data = hdl->respdata;
 
-	_ready_handler(sc->synch,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
+	_ready_handler(sc->synch,hdl->inst.t,&hdl->inst.root,hdl->eventdata,&_sync_response,sc,sc->create_object);
 	// start first handler
 	sc->synch->thehandler->input.start(sc->synch);
 }
@@ -383,12 +383,12 @@ static void _sync_end(event_handler* hdl, cdat c, uint u)
 	{
 		ptr_list* now = sc->input;
 
-		_ready_handler(chn,hdl->instance_tk,&hdl->instance,hdl->eventdata,&_sync_response,sc,sc->create_object);
+		_ready_handler(chn,hdl->inst.t,&hdl->inst.root,hdl->eventdata,&_sync_response,sc,sc->create_object);
 
 		chn->thehandler->input.start(chn);
 		while(now != 0 && sc->failed == 0)
 		{
-			chn->thehandler->input.submit(chn,hdl->instance_tk,&now->pt);
+			chn->thehandler->input.submit(chn,hdl->inst.t,&now->pt);
 			chn->thehandler->input.next(chn);
 			now = now->link;
 		}

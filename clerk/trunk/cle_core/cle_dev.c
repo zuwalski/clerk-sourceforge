@@ -29,7 +29,7 @@
 	dev.make.handler.reqs.<objectname> , state, event, method/expr (handler)
 
 */
-#include "cle_instance.h"
+#include "cle_object.h"
 
 static const char _new_extends_name[] = "dev\0new";
 static const char _set_expr_name[] = "dev\0set\0expr";
@@ -56,7 +56,7 @@ static void new_extends_next(event_handler* hdl)
 	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
 	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
 
-	if(cle_new(hdl->instance_tk,hdl->instance,hdl->root,0,exname,exname_length))
+	if(cle_new(hdl->inst,0,exname,exname_length))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);

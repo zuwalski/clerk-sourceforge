@@ -17,7 +17,7 @@
 */
 #include "cle_runtime.h"
 #include "cle_stream.h"
-#include "cle_instance.h"
+#include "cle_object.h"
 #include <stdio.h>
 
 typedef double rt_number;
@@ -231,14 +231,14 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		*sp = inv->top->sp;
 		break;
 	case 'R':	// ref (oid)
-		(*sp)->obj = inv->hdl->instance;
-		if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
-			return;
-		// copy_move sp-obj , top.ptr
-		if(st_move_st(inv->t,&(*sp)->obj,&top.ptr) != 0)
-			return;
-		(*sp)->ptr = (*sp)->obj;
-		(*sp)->type = STACK_OBJ;
+		//(*sp)->obj = inv->hdl->inst.root;
+		//if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
+		//	return;
+		//// copy_move sp-obj , top.ptr
+		//if(st_move_st(inv->t,&(*sp)->obj,&top.ptr) != 0)
+		//	return;
+		//(*sp)->ptr = (*sp)->obj;
+		//(*sp)->type = STACK_OBJ;
 		break;
 	case 'C':	// collection
 		// geting from within objectcontext or external?
@@ -272,7 +272,7 @@ static uint _rt_goto_name(struct _rt_invocation* inv, st_ptr obj, st_ptr* pt, cd
 		if(st_move(inv->t,&obj,HEAD_EXTENDS,HEAD_SIZE) != 0)
 			return _rt_error(inv,__LINE__);
 
-		root = inv->hdl->instance;
+		root = inv->hdl->inst.root;
 		if(st_move(inv->t,&root,HEAD_OID,HEAD_SIZE) != 0)
 			return _rt_error(inv,__LINE__);
 

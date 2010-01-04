@@ -93,8 +93,7 @@ struct event_handler
 	void* respdata;
 	ptr_list* top;
 	ptr_list* free;
-	task* instance_tk;
-	st_ptr instance;
+	cle_instance inst;
 	st_ptr handler;
 	st_ptr object;
 	st_ptr root;

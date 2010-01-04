@@ -65,6 +65,6 @@ static cle_syshandler _cgi_headers;
 ///// cgi main
 int main(int argc, char* argv[])
 {
-	getenv("var");
+	//getenv("var");
 	return 0;
 }

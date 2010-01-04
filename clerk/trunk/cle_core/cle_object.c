@@ -1,6 +1,6 @@
 /* 
     Clerk application and storage engine.
-    Copyright (C) 2008  Lars Szuwalski
+    Copyright (C) 2009  Lars Szuwalski
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -275,23 +275,99 @@ int cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
 	st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
 
-// handle @
 int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj)
 {
-	st_ptr pt = inst.root;
 	oid id;
 
-	if(st_move(inst.t,&pt,HEAD_NAMES,IHEAD_SIZE) != 0)
-		return __LINE__;
-	
-	if(st_move(inst.t,&pt,name.string,name.length) != 0)
-		return __LINE__;
+	if(name.length == sizeof(oid)*2+1 && name.string[0] == '@')
+	{
+		char* boid = (char*)&id;
+		int i;
 
-	if(st_get(inst.t,&pt,(char*)&id,sizeof(oid)) != -1)
-		return __LINE__;
+		for(i = 0; i < sizeof(oid)*2; i++)
+		{
+			int val = name.string[i] - 'a';
+			if(val < 0 || (val & 0xF0))
+				return __LINE__;
+
+			if(i & 1)
+				boid[i >> 1] |= val;
+			else
+				boid[i >> 1] = val << 4;
+		}
+	}
+	else
+	{
+		*obj = inst.root;
+		if(st_move(inst.t,obj,HEAD_NAMES,IHEAD_SIZE) != 0)
+			return __LINE__;
+		
+		if(st_move(inst.t,obj,name.string,name.length) != 0)
+			return __LINE__;
+
+		if(st_get(inst.t,obj,(char*)&id,sizeof(oid)) != -1)
+			return __LINE__;
+	}
 
 	*obj = inst.root;
 	return st_move(inst.t,obj,(cdat)&id,sizeof(id));
+}
+
+int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize)
+{
+	objheader header;
+	uint i;
+	if(st_get(inst.t,&obj,(char*)&header,sizeof(header)) >= 0)
+		return __LINE__;
+
+	if(ISMEMOBJ(header))
+		return __LINE__;
+
+	if(buffersize < sizeof(oid)*2+1)
+		return __LINE__;
+
+	buffer[0] = '@';
+	for(i = 0; i < sizeof(oid)*2+1; i++)
+	{
+		int c = ((char*)&header.obj.id)[i];
+		buffer[i*2] = (c >> 4) + 'a';
+		buffer[i*2 + 1] = (c & 0xf) + 'a';
+	}
+
+	return 0;
+}
+
+int cle_goto_parent(cle_instance inst, st_ptr* child)
+{
+	objheader header;
+
+	if(st_get(inst.t,child,(char*)&header,sizeof(header)) != -2)
+		return __LINE__;
+
+	if(ISMEMOBJ(header))
+		*child = header.ext;
+	else if(header.obj.ext._low != 0)
+	{
+		*child = inst.root;
+		if(st_move(inst.t,child,(cdat)&header.obj.id,sizeof(oid)))
+			return __LINE__;
+	}
+	else
+		return __LINE__;
+	return 0;
+}
+
+int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child)
+{
+	while(1)
+	{
+		// same
+		if(parent.pg == child.pg && parent.key == child.key)
+			return 1;
+
+		if(cle_goto_parent(inst,&child))
+			return 0;
+	}
 }
 
 // TODO: persist collections ?? or share one all the way down?
@@ -383,7 +459,7 @@ int cle_delete_name(cle_instance inst, st_str name)
 	if(st_move(inst.t,&obj,HEAD_DEV,OHEAD_SIZE) != 0)
 		return __LINE__;
 
-	st_delete(t,&obj,0,0);
+	st_delete(inst.t,&obj,0,0);
 
 	obj = inst.root;
 	if(st_move(inst.t,&obj,HEAD_NAMES,IHEAD_SIZE) != 0)
@@ -570,7 +646,7 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, uchar type
 	return _id.id;
 }
 
-int _new_value(cle_instance inst, st_ptr obj, identity id, st_ptr* value)
+static int _new_value(cle_instance inst, st_ptr obj, identity id, st_ptr* value)
 {
 	*value = obj;
 	if(st_offset(inst.t,value,sizeof(objectheader2)))
@@ -637,7 +713,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 			if(_new_value(inst,obj,id,&obj))
 				return __LINE__;
 
-			return _copy_validate(inst.t,&obj,&expr);
+			return _copy_validate(inst.t,&obj,expr);
 		case '=':	// expr
 			id = _identify(inst,obj,path,'E',1);
 			if(id == 0)
@@ -697,11 +773,7 @@ static int _copy_handler_states(cle_instance inst, st_ptr obj, st_ptr handler, p
 int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, enum handler_type type)
 {
 	st_ptr pt;
-	struct {
-		oid       object_id;
-		identity  hid;
-		uchar     type;
-	} _handler_ptr;
+	cle_handler href;
 
 	do
 	{
@@ -720,11 +792,11 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 	} while(0);
 
 	// create handler in object
-	_handler_ptr.hid = _identify(inst,obj,eventname,'H',1);
-	if(_handler_ptr.hid == 0)
+	href.handler = _identify(inst,obj,eventname,'H',1);
+	if(href.handler == 0)
 		return __LINE__;
 
-	if(_new_value(inst,obj,_handler_ptr.hid,&pt))
+	if(_new_value(inst,obj,href.handler,&pt))
 		return __LINE__;
 
 	_record_source_and_path(inst.t,pt,eventname,expr,'(');
@@ -738,7 +810,7 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 		return __LINE__;
 
 	pt = inst.root;
-	// register handler in instance
+	// register handler in instance TODO: -> cle_stream.c
 	st_insert(inst.t,&pt,HEAD_EVENT,IHEAD_SIZE);
 
 	// event-name
@@ -748,276 +820,106 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 	st_insert(inst.t,&pt,HEAD_HANDLER,HEAD_SIZE);
 
 	// get oid
-	if(st_get(inst.t,&obj,(char*)&_handler_ptr.object_id,sizeof(oid)) != -2)
+	if(st_get(inst.t,&obj,(char*)&href.oid,sizeof(oid)) != -2)
 		return __LINE__;
 
-	_handler_ptr.type = type;
+	href.type = type;
 	// insert {oid,id (handler),type}
-	st_insert(inst.t,&pt,(cdat)&_handler_ptr,sizeof(_handler_ptr));
+	st_insert(inst.t,&pt,(cdat)&href,sizeof(cle_handler));
 	return 0;
 }
 
-
-int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type)
+static int _get_implementation(cle_instance inst, identity id, st_ptr* obj, st_ptr* value)
 {
-	ulong state = 0;	// no object -> "start"
-	char handlertype[2] = {0,(char)type};
-
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return -1;
-
-	// lookup handler-object
-	*handler = root;
-	if(st_move_st(app_instance,handler,&oid) != 0)
-		return -1;
-
-	// is there a target-object?
-	if(object->pg != 0 && type < PIPELINE_REQUEST)
+	while(1)
 	{
-		st_ptr pt;
-		objectheader header;
-		// verify that target-object extends handler-object
-		pt = *object;
-		while(pt.pg != handler->pg || pt.key != handler->key)
+		objectheader2 header;
+		st_ptr pt = *obj;
+
+		if(st_get(inst.t,&pt,(char*)&header,sizeof(objectheader2)) >= 0)
+			return __LINE__;
+
+		if(st_move(inst.t,&pt,(cdat)&id,sizeof(identity)) != 0)
 		{
-			// go to super-object (if any)
-			st_ptr pt0;
-			if(st_move(app_instance,&pt,HEAD_EXTENDS,HEAD_SIZE) != 0)
-				return -1;
-
-			pt0 = root;
-			if(st_move_st(app_instance,&pt0,&pt) != 0)
-				return -1;
-			
-			pt = pt0;
-		}
-
-		// get object-header
-		pt = *object;
-		if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
-			return -1;
-		if(st_get(app_instance,&pt,(char*)&header,sizeof(header)) != -2)
-			return -1;
-
-		state = header.state;
-	}
-	else
-		*object = *handler;
-
-	// target-object must be in a state that allows this event
-	if(st_move(app_instance,handler,HEAD_STATES,HEAD_SIZE) != 0)
-		return -1;
-	if(st_move(app_instance,handler,(cdat)&state,sizeof(state)) != 0)
-		return -1;
-	if(st_move(app_instance,handler,eventid,eventid_length) != 0)
-		return -1;
-
-	// set handler to the implementing handler-method
-	if(st_move(app_instance,handler,(cdat)&handlertype,2) != 0)
-		return -1;
-
-	return 0;
-}
-
-int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize)
-{
-	int i = 1;
-	if(st_move(app_instance,&object,HEAD_OID,HEAD_SIZE) != 0)
-		return 0;
-	if(st_offset(app_instance,&object,sizeof(objectheader)) != 0)
-		return 0;
-
-	buffer[0] = '@';
-	while(i < buffersize - 1)
-	{
-		int c = st_scan(app_instance,&object);
-		if(c <= 0)
-		{
-			buffer[i] = 0;
-			return i;
-		}
-
-		buffer[i++] = (c >> 4) + 'a';
-		buffer[i++] = (c & 0xf) + 'a';
-	}
-
-	return 0;
-}
-
-// TODO target_oid -> st_ptr
-int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length)
-{
-	int i;
-	char buffer[50];
-
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return 0;
-
-	// decipher
-	for(i = 0; i < target_oid_length; i++)
-	{
-		char val;
-		if(i >= sizeof(buffer)*2)
+			*value = pt;
 			return 0;
+		}
 
-		if(target_oid[i] >= 'a' && target_oid[i] <= 'q')
-			val = target_oid[i] - 'a';
-		else
-			break;
+		if(header.ext._low == 0)
+			return __LINE__;
 
-		if(i & 1)
-			buffer[i >> 1] |= val;
-		else
-			buffer[i >> 1] = val << 4;
+		*obj = inst.root;
+		if(st_move(inst.t,obj,(cdat)&header.ext,sizeof(oid)) != 0)
+			return __LINE__;
 	}
-	
-	i /= 2;
-	buffer[i++] = 0;
-
-	if(i != buffer[0] + 2)
-		return 0;
-
-	// lookup target object
-	*object = root;
-	if(st_move(app_instance,object,buffer,i))
-		return 0;
-
-	return (st_exsist(app_instance,object,HEAD_OID,HEAD_SIZE) == 0)? 0 : i;
 }
 
-int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length)
+int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler)
 {
-	int super_prop = 0;
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return -1;
+	objectheader2 header;
+	st_ptr pt;
 
-	// seach inheritance-chain
+	*obj = inst.root;
+	if(st_move(inst.t,obj,(cdat)&href.oid,sizeof(oid)) != 0)
+		return __LINE__;
+
+	pt = *obj;
+	// find first handler impl
+	if(_get_implementation(inst,href.handler,&pt,handler))
+		return __LINE__;
+
+	// check if handler is allowed in current state
+	pt = *obj;
+	if(st_get(inst.t,&pt,(char*)&header,sizeof(objectheader2)) >= 0)
+		return __LINE__;
+
+	pt = *handler;
+	if(st_move(inst.t,&pt,"S",1))
+		return __LINE__;
+
+	return st_exsist(inst.t,&pt,(cdat)&header.state,sizeof(identity)) ? 0 : 1;
+}
+
+int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname)
+{
+	int level = 0;
 	while(1)
 	{
-		st_ptr pt;
-		// in this object?
-		if(st_move(app_instance,object,propname,name_length) == 0)
-			return super_prop;
+		st_ptr pt = *obj;
 
-		// no more extends -> property not found
-		if(st_move(app_instance,object,HEAD_EXTENDS,HEAD_SIZE) != 0)
+		if(st_offset(inst.t,&pt,sizeof(objectheader2)))
 			return -1;
 
-		pt = root;
-		if(st_move_st(app_instance,&pt,object))
-			return -1;
+		if(st_move(inst.t,&pt,(cdat)&names_identity,sizeof(identity)) == 0)
+		{
+			if(st_move(inst.t,&pt,propname.string,propname.length) == 0)
+				return level;
+		}
 
-		*object = pt;
-		super_prop++;
+		if(cle_goto_parent(inst,obj))
+			return -1;
+		level++;
 	}
 }
 
-int cle_get_property_host_st(task* app_instance, st_ptr root, st_ptr* object, st_ptr propname)
+int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname)
 {
-	int super_prop = 0;
-	if(st_move(app_instance,&root,HEAD_OID,HEAD_SIZE) != 0)
-		return -1;
-
-	// seach inheritance-chain
+	int level = 0;
 	while(1)
 	{
-		st_ptr pt;
-		// in this object?
-		if(st_move_st(app_instance,object,&propname) == 0)
-			return super_prop;
+		st_ptr pt = *obj;
 
-		// no more extends -> property not found
-		if(st_move(app_instance,object,HEAD_EXTENDS,HEAD_SIZE) != 0)
+		if(st_offset(inst.t,&pt,sizeof(objectheader2)))
 			return -1;
 
-		pt = root;
-		if(st_move_st(app_instance,&pt,object))
+		if(st_move(inst.t,&pt,(cdat)&names_identity,sizeof(identity)) == 0)
+		{
+			if(st_move_st(inst.t,&pt,&propname) == 0)
+				return level;
+		}
+
+		if(cle_goto_parent(inst,obj))
 			return -1;
-
-		*object = pt;
-		super_prop++;
+		level++;
 	}
 }
-
-int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop)
-{
-	st_ptr obj,app = root;
-	int c,i;
-	char buffer[250];
-
-	if(cle_goto_object(app_instance,&root,object_name,object_length))
-		return 1;
-
-	// first part
-	i = 0;
-	do
-	{
-		c = st_scan(app_instance,&path);
-		buffer[i++] = c;
-	}
-	while(c > 0 && c != '.' && i < sizeof(buffer));
-
-	buffer[i - 1] = 0;
-
-	// find hosting object
-	obj = root;
-	if(cle_get_property_host(app_instance,app,&root,buffer,i) < 0)
-		return 1;
-
-	// remaining path
-	i = _move_validate(app_instance,&root,path);
-	if(i != 0 && i != -2)
-		return 1;
-
-	// get prop-index
-	if(st_get(app_instance,&root,buffer,HEAD_SIZE + PROPERTY_SIZE) >= 0 ||
-		buffer[0] != 0 || buffer[1] != 'y')
-	{
-		// is there a header here?
-		obj = root;
-		if(st_get(app_instance,&obj,buffer,HEAD_SIZE) >= 0 || buffer[0] != 0)
-			return 1;
-
-		switch(buffer[1])
-		{
-		case 'M':
-		case 'E':
-			// method or expr? show source
-			root = obj;
-			st_move(app_instance,&root,"s",1);
-			break;
-		default:
-			// some other headertype ..
-			return 1;
-		}
-	}
-	else
-	{
-		while(1)
-		{
-			st_ptr pt;
-
-			if(st_move(app_instance,&obj,buffer,HEAD_SIZE + PROPERTY_SIZE) == 0)
-			{
-				*prop = obj;	// found value in object
-				return 0;
-			}
-
-			// search for value at lower levels...
-			if(st_move(app_instance,&obj,HEAD_EXTENDS,HEAD_SIZE) != 0)
-				break;
-
-			pt = app;
-			if(st_move(app_instance,&pt,HEAD_OID,HEAD_SIZE) != 0)
-				break;
-			if(st_move_st(app_instance,&pt,&obj))
-				break;
-
-			obj = pt;
-		}
-	}
-
-	*prop = root;
-	return 0;
-}
-

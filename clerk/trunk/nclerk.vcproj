@@ -164,11 +164,11 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_core\cle_instance.c"
+				RelativePath=".\cle_core\cle_iterate.c"
 				>
 			</File>
 			<File
-				RelativePath=".\cle_core\cle_iterate.c"
+				RelativePath=".\cle_core\cle_object.c"
 				>
 			</File>
 			<File
@@ -206,7 +206,7 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_core\cle_instance.h"
+				RelativePath=".\cle_core\cle_object.h"
 				>
 			</File>
 			<File

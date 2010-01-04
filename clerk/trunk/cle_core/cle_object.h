@@ -1,6 +1,6 @@
 /* 
     Clerk application and storage engine.
-    Copyright (C) 2008  Lars Szuwalski
+    Copyright (C) 2009  Lars Szuwalski
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #define __CLE_OBJECT_H__
 
 #include "cle_clerk.h"
+#include "cle_stream.h"
 
 //TODO - root headers have size 3 (\0\0[Identifier])
 //object-headers have size 1 ([Identifier])
@@ -87,7 +88,7 @@ typedef union
 }
 objheader;
 
-#define ISMEMOBJ(header) (((objheader)(header)).zero == 0)
+#define ISMEMOBJ(header) ((header).zero == 0)
 // DEV-hdr: (next)identity
 // ... followed by optional name
 
@@ -95,37 +96,43 @@ objheader;
 
 typedef struct
 {
-	task*  t;
-	st_ptr root;
+	oid      oid;
+	identity handler;
+	uchar    type;
 }
-cle_instance;
+cle_handler;
 
-/* object-store */
-int cle_new(task* app_instance, st_ptr app_root, st_ptr name, st_ptr* obj, cdat extends_name, uint exname_length);
-int cle_new_mem(task* app_instance, st_ptr* newobj, st_ptr extends);
+int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
-int cle_goto_object(task* t, st_ptr* root, cdat name, uint name_length);
+int cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
 
-int cle_set_expr(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
+int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj);
 
-int cle_get_property_host(task* app_instance, st_ptr root, st_ptr* object, cdat propname, uint name_length);
+int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize);
 
-int cle_get_property_host_st(task* app_instance, st_ptr root, st_ptr* object, st_ptr propname);
+int cle_goto_parent(cle_instance inst, st_ptr* child);
 
-int cle_get_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path, st_ptr* prop);
+int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child);
 
-int cle_set_property(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr path);
+int cle_persist_object(cle_instance inst, st_ptr* obj);
 
-int cle_create_state(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state);
+int cle_delete_name(cle_instance inst, st_str name);
 
-int cle_set_state(task* app_instance, st_ptr root, cdat object_name, uint object_length, st_ptr state);
+int cle_create_state(cle_instance inst, st_ptr obj, st_ptr newstate);
 
-int cle_set_handler(task* app_instance, st_ptr app_root, cdat object_name, uint object_length, st_ptr state, st_ptr eventname, st_ptr meth, cle_pipe* response, void* data, enum handler_type type);
+int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state);
 
-int cle_get_handler(task* app_instance, st_ptr root, st_ptr oid, st_ptr* handler, st_ptr* object, cdat eventid, uint eventid_length, enum handler_type type);
+int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname);
 
-int cle_get_target(task* app_instance, st_ptr root, st_ptr* object, cdat target_oid, uint target_oid_length);
+int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
-int cle_get_oid(task* app_instance, st_ptr object, char* buffer, int buffersize);
+int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, enum handler_type type);
+
+int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler);
+
+int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname);
+
+int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname);
+
 
 #endif
