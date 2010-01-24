@@ -411,6 +411,209 @@ static cle_syshandler _sync_chain_handler = {0,{_sync_start,_sync_next,_sync_end
 // input-functions
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
+
+/* rewrite start */
+
+struct _mark_chain
+{
+	struct _mark_chain* next;
+	cle_syshandler* syshdl;
+	st_ptr eventpt;
+};
+
+struct _scan_event
+{
+	task* t;
+	struct _mark_chain* first, *last;
+	st_ptr eventpt, syspt;
+	uint allowed, state;
+};
+
+static void _scan_setup(task* t, struct _scan_event* se)
+{
+	se->t = t;
+	se->state = 0;
+	se->first = se->last = 0;
+}
+
+static void _event_mark(struct _scan_event* se)
+{
+	cle_syshandler* syshdl = 0;
+	st_ptr pt, eventpt;
+	// lookup allowed roles (if no access yet)
+	//if(allowed == 0)
+	//	allowed = _access_check(app_instance,eventpt,user_roles);
+
+	// get pipeline-handlers
+	// module-level
+	pt = se->eventpt;
+	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+		eventpt = pt;
+	else
+		eventpt.pg = 0;
+
+	// system-level
+	pt = se->syspt;
+	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+	{
+		if(st_get(0,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) != -1)
+			syshdl = 0;	// should never happen
+	}
+
+	// mark
+	if(syshdl != 0 || eventpt.pg != 0)
+	{
+		struct _mark_chain* mc = (struct _mark_chain*)tk_alloc(se->t,sizeof(struct _mark_chain),0);
+		mc->eventpt = eventpt;
+		mc->syshdl  = syshdl;
+		mc->next    = 0;
+
+		if(se->last != 0)
+		{
+			se->last->next = mc;
+			se->last = mc;
+		}
+		else
+			se->first = se->last = mc;
+	}
+}
+
+static uint _event_move(struct _scan_event* se, cdat cs, uint l)
+{
+	// lookup event-part (module-level)
+	if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
+		se->eventpt.pg = 0;
+
+	if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
+		se->syspt.pg = 0;
+
+	// not found! scan end (or no possible grants)
+	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
+}
+
+static uint _event_scan(void* ctx, cdat cs, uint l)
+{
+	struct _scan_event* se = (struct _scan_event*)ctx;
+	for(; l > 0; l--)
+	{
+		uint c = *cs++;
+		switch(c)
+		{
+		case '.':
+		case '/':
+		case '\\':
+		case 0:
+			if(state != 1)
+				return -1;
+			state = 2;
+			if(_event_move(se,cs,l))
+				return -1;
+			_event_mark(se);
+			break;
+		case -1:
+			return (state == 1)? 0 : -1;
+		case '!':
+		case '@':
+			if(state != 1)
+				return -1;
+			if(_event_move(se,cs,l))
+				return -1;
+			_event_mark(se);
+			state = 3;
+			return 0;
+		case ' ':
+		case '\n':
+		case '\t':
+		case '\r':
+			if(state == 1)
+				return -1;
+			break;
+		default:
+			// illegal character?
+			if(c < '0' || c > 'z' || (c > 'Z' && c < 'a') || (c > '9' && c < 'A'))
+				return -1;
+			state = 1;
+		}
+	}
+	return _event_move(se,cs,l);
+}
+
+static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_handler* hdlists, st_ptr obj)
+{
+	for(; mc != 0; mc = mc->next)
+	{
+		if(mc->eventpt.pg != 0)
+		{
+			it_ptr it;
+			it_create(inst.t,&it,&mc->eventpt);
+
+			while(it_next(inst.t,0,&it,sizeof(cle_handler))
+			{
+				cle_handler href = *((cle_handler*)it.kdata);
+				st_ptr handler;
+				if(cle_get_handler(inst,href,&obj,&handler) == 0)
+					_register_handler(inst.t,hdlists,&_runtime_handler,&handler,&obj,href.type);
+			}
+
+			it_dispose(inst.t,&it);
+		}
+
+		while(mc->syshdl != 0);
+		{
+			_register_handler(inst.t,hdlists,mc->syshdl,0,&obj,mc->syshdl->systype);
+
+			// next in list...
+			mc->syshdl = mc->syshdl->next_handler;
+		}
+	}
+}
+
+_ipt* cle_start2(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles
+				 cle_pipe* response, void* responsedata)
+{
+	_ipt* ipt = 0;
+	struct _scan_event se;
+	cle_instance inst;
+
+	/* get a root ptr to instance-db */
+	inst.t = app_instance;
+	tk_root_ptr(inst.t,&inst.root);
+
+	if(response == 0)
+		response = &_nil_out;
+
+	_scan_setup(inst.t,&se);
+
+	// no username? -> root/sa
+	se.allowed = (userid.pg == 0) || st_empty(inst.t,&userid);
+
+	cle_eventroot(inst.t,&se.eventpt);
+	se.syspt = config;
+
+	if(st_map(inst.t,&eventid,_event_scan,&se) || se.allowed == 0)
+		_error(event_not_allowed);
+	else
+	{
+		event_handler* hdlists[4] = {0,0,0,0};
+
+		_setup_handlers(inst,se.first,hdllists,obj);
+
+		// is there anyone in the other end?
+		if(hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)
+		{
+			_error(event_not_allowed);
+			return 0;
+		}
+
+		// do start
+		cle_notify_start(ipt->event_chain_begin);
+	}
+
+	return ipt;
+}
+/* rewrite end */
+
+
 static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 {
 	uint i,state = 0,to = 0;

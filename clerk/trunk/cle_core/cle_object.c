@@ -20,7 +20,8 @@
 
 // defines
 static const identity names_identity = 0;
-static const identity start_state_identity = 1;
+static const identity dev_identity = 1;
+static const identity start_state_identity = 2;
 
 // helper-functions
 static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), void* ctx)
@@ -225,7 +226,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 		header.ext = header.id;
 
 		// get dev.header
-		if(st_move(inst.t,&extends,HEAD_DEV,OHEAD_SIZE) != 0)
+		if(st_move(inst.t,&extends,(cdat)&dev_identity,sizeof(identity)) != 0)
 			return __LINE__;
 
 		if(st_get(inst.t,&extends,(char*)&devid,sizeof(identity)) <= 0)
@@ -251,7 +252,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 	st_append(inst.t,&names,(cdat)&header.id,sizeof(oid));
 
 	// reflect name and dev
-	st_append(inst.t,&newobj,HEAD_DEV,OHEAD_SIZE);
+	st_append(inst.t,&newobj,(cdat)&dev_identity,sizeof(identity));
 
 	st_append(inst.t,&newobj,(cdat)&devid,sizeof(identity));
 
@@ -259,7 +260,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 	return 0;
 }
 
-int cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
+void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
 {
 	objheader header;
 	st_ptr    pt;
@@ -456,7 +457,7 @@ int cle_delete_name(cle_instance inst, st_str name)
 	if(st_offset(inst.t,&obj,sizeof(objectheader2)) != 0)
 		return __LINE__;
 
-	if(st_move(inst.t,&obj,HEAD_DEV,OHEAD_SIZE) != 0)
+	if(st_move(inst.t,&obj,(cdat)&dev_identity,sizeof(identity)) != 0)
 		return __LINE__;
 
 	st_delete(inst.t,&obj,0,0);
@@ -483,7 +484,7 @@ static identity _create_identity(cle_instance inst, st_ptr obj)
 	if(ISMEMOBJ(header))
 		return 0;
 
-	if(st_insert(inst.t,&obj,HEAD_DEV,OHEAD_SIZE) != 0)
+	if(st_insert(inst.t,&obj,(cdat)&dev_identity,sizeof(identity)) != 0)
 	{
 		// create dev-handler in object
 		// need to find level of this object
@@ -496,7 +497,7 @@ static identity _create_identity(cle_instance inst, st_ptr obj)
 
 			st_move(inst.t,&pt,(cdat)&header.obj.ext,sizeof(oid));
 			st_get(inst.t,&pt,(char*)&header,sizeof(header));
-			if(st_move(inst.t,&pt,HEAD_DEV,OHEAD_SIZE) == 0)
+			if(st_move(inst.t,&pt,(cdat)&dev_identity,sizeof(identity)) == 0)
 			{
 				st_get(inst.t,&pt,(char*)id,sizeof(id));
 				level += IDLEVEL(id);
@@ -859,9 +860,12 @@ int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* ha
 	objectheader2 header;
 	st_ptr pt;
 
-	*obj = inst.root;
-	if(st_move(inst.t,obj,(cdat)&href.oid,sizeof(oid)) != 0)
-		return __LINE__;
+	if(obj == 0)
+	{
+		*obj = inst.root;
+		if(st_move(inst.t,obj,(cdat)&href.oid,sizeof(oid)) != 0)
+			return __LINE__;
+	}
 
 	pt = *obj;
 	// find first handler impl
@@ -922,4 +926,8 @@ int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname)
 			return -1;
 		level++;
 	}
+}
+
+void cle_eventroot(task* t, st_ptr* eventpt)
+{
 }

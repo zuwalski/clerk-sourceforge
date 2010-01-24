@@ -47,6 +47,8 @@
 #define HEAD_COLLECTION "\0C"
 #define HEAD_REF_MEM "\0r"
 
+// \0\0[Identificer]
+#define IHEAD_SIZE (sizeof(segment) + 1)
 
 #define OID_HIGH_SIZE 4
 typedef struct
@@ -104,7 +106,7 @@ cle_handler;
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
-int cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
+void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
 
 int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj);
 
@@ -134,5 +136,6 @@ int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname);
 
 int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname);
 
+void cle_eventroot(task* t, st_ptr* eventpt);
 
 #endif

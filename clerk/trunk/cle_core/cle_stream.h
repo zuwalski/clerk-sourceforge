@@ -96,7 +96,6 @@ struct event_handler
 	cle_instance inst;
 	st_ptr handler;
 	st_ptr object;
-	st_ptr root;
 	cdat error;
 	uint errlength;
 };
