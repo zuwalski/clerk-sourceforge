@@ -222,22 +222,6 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 	return hdl;
 }
 
-static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
-{
-	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler),0);
-
-	hdl->next = hdlists[type];
-	hdlists[type] = hdl;
-	hdl->thehandler = syshandler;
-	hdl->object = *object;
-	hdl->handler_data = 0;
-
-	if(handler == 0)
-		hdl->handler.pg = 0;
-	else
-		hdl->handler = *handler;
-}
-
 /* system event-handler setup */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
 {
@@ -277,29 +261,6 @@ void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint m
 
 void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {}
-
-static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
-{
-	hdl->inst.t = inst_tk;
-	hdl->inst.root = *instance;
-
-	//TODO copy event and user data
-	hdl->eventdata = sysdata;
-
-	// set output-handler
-	hdl->response = response;
-	hdl->respdata = respdata;
-
-	hdl->errlength = 0;
-	hdl->error = 0;
-
-	if(targetset == 0 && hdl->handler.pg != 0)
-		cle_new_mem(inst_tk,&hdl->object,hdl->object);
-
-	// prepare for input-stream
-	hdl->top = hdl->free = 0;
-	cle_standard_push(hdl);
-}
 
 // sync-handler-chain
 struct _sync_chain
@@ -413,7 +374,6 @@ static cle_syshandler _sync_chain_handler = {0,{_sync_start,_sync_next,_sync_end
 
 
 /* rewrite start */
-
 struct _mark_chain
 {
 	struct _mark_chain* next;
@@ -428,13 +388,6 @@ struct _scan_event
 	st_ptr eventpt, syspt;
 	uint allowed, state;
 };
-
-static void _scan_setup(task* t, struct _scan_event* se)
-{
-	se->t = t;
-	se->state = 0;
-	se->first = se->last = 0;
-}
 
 static void _event_mark(struct _scan_event* se)
 {
@@ -538,6 +491,22 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 	return _event_move(se,cs,l);
 }
 
+static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
+{
+	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler),0);
+
+	hdl->next = hdlists[type];
+	hdlists[type] = hdl;
+	hdl->thehandler = syshandler;
+	hdl->object = *object;
+	hdl->handler_data = 0;
+
+	if(handler == 0)
+		hdl->handler.pg = 0;
+	else
+		hdl->handler = *handler;
+}
+
 static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_handler* hdlists, st_ptr obj)
 {
 	for(; mc != 0; mc = mc->next)
@@ -568,10 +537,127 @@ static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_han
 	}
 }
 
+static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
+{
+	hdl->inst.t = inst_tk;
+	hdl->inst.root = *instance;
+
+	//TODO copy event and user data
+	hdl->eventdata = sysdata;
+
+	// set output-handler
+	hdl->response = response;
+	hdl->respdata = respdata;
+
+	hdl->errlength = 0;
+	hdl->error = 0;
+
+	if(targetset == 0 && hdl->handler.pg != 0)
+		cle_new_mem(inst_tk,&hdl->object,hdl->object);
+
+	// prepare for input-stream
+	hdl->top = hdl->free = 0;
+	cle_standard_push(hdl);
+}
+
+static void _init_async_handlers(_ipt* ipt, event_handler* hdl)
+{
+	ipt->event_chain_begin = hdl;
+
+	while(hdl != 0)
+	{
+		// put in separat tasks/transactions
+		st_ptr clone_instance;
+		task* clone = tk_clone_task(app_instance);
+		tk_root_ptr(clone,&clone_instance);
+
+		// "no output"-handler on all async's
+		_ready_handler(hdl,clone,&clone_instance,&ipt->sys,&_async_out,hdl,object.pg != 0);
+
+		hdl = hdl->next;
+	}
+}
+
+static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_handler* response_pipe)
+{
+	// more than one sync-handler?
+	if(sync_handler->next != 0)
+	{
+		struct _sync_chain* sc = (struct _sync_chain*)tk_alloc(app_instance,sizeof(struct _sync_chain),0);
+
+		_register_handler(app_instance,hdlists,&_sync_chain_handler,0,&object,SYNC_REQUEST_HANDLER);
+
+		sc->synch = sync_handler;
+		sc->create_object = (object.pg != 0);
+		sc->started = 0;
+		sc->failed = 0;
+		sc->input = 0;
+
+		sync_handler = hdlists[SYNC_REQUEST_HANDLER];
+		sync_handler->handler_data = sc;
+	}
+
+	// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
+	// setup response-handler chain (only make sense with sync handlers)
+	if(hdlists[PIPELINE_RESPONSE] != 0)
+	{
+		event_handler* last;
+		// in correct order (most specific handler comes first)
+		hdl = hdlists[PIPELINE_RESPONSE];
+
+		last = sync_handler;
+		do
+		{
+			_ready_handler(last,app_instance,&instance,&ipt->sys,&hdl->thehandler->input,hdl,object.pg != 0);
+
+			last = hdl;
+			hdl = hdl->next;
+		}
+		while(hdl != 0);
+
+		// and finally the original output-target
+		_ready_handler(last,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+	}
+	else
+		_ready_handler(sync_handler,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+
+	sync_handler->next = ipt->event_chain_begin;
+	ipt->event_chain_begin = sync_handler;
+}
+
+static void _init_request_pipe(_ipt* ipt, event_handler* hdl)
+{
+	// reverse order (most general handlers comes first)
+	event_handler* last;
+	cle_pipe* resp;
+	void* data = ipt->event_chain_begin;
+
+	// just a single (sync-receiver?) -> just (hard)chain together
+	// ipt->event_chain_begin == hdlists[SYNC_REQUEST_HANDLER] && 
+	if(ipt->event_chain_begin->next == 0)
+		resp = &ipt->event_chain_begin->thehandler->input;
+	else
+		resp = &_pipeline_all;
+
+	do
+	{
+		last = hdl;
+		_ready_handler(hdl,app_instance,&instance,&ipt->sys,resp,data,object.pg != 0);
+
+		resp = &hdl->thehandler->input;
+		data = hdl;
+
+		hdl = hdl->next;
+	}
+	while(hdl != 0);
+
+	last->next = 0;
+	ipt->event_chain_begin = last;
+}
+
 _ipt* cle_start2(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles
 				 cle_pipe* response, void* responsedata)
 {
-	_ipt* ipt = 0;
 	struct _scan_event se;
 	cle_instance inst;
 
@@ -582,34 +668,51 @@ _ipt* cle_start2(task* app_instance, st_ptr config, st_ptr eventid, st_ptr useri
 	if(response == 0)
 		response = &_nil_out;
 
-	_scan_setup(inst.t,&se);
-
+	se.t = inst.t;
+	se.first = se.last = 0;
+	se.state = 0;
 	// no username? -> root/sa
 	se.allowed = (userid.pg == 0) || st_empty(inst.t,&userid);
 
 	cle_eventroot(inst.t,&se.eventpt);
 	se.syspt = config;
 
-	if(st_map(inst.t,&eventid,_event_scan,&se) || se.allowed == 0)
-		_error(event_not_allowed);
-	else
+	if(st_map(inst.t,&eventid,_event_scan,&se) == 0 && se.allowed != 0)
 	{
 		event_handler* hdlists[4] = {0,0,0,0};
 
 		_setup_handlers(inst,se.first,hdllists,obj);
 
 		// is there anyone in the other end?
-		if(hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)
+		if(hdlists[SYNC_REQUEST_HANDLER] != 0 || hdlists[ASYNC_REQUEST_HANDLER] != 0)
 		{
-			_error(event_not_allowed);
-			return 0;
-		}
+			// ipt setup - internal task
+			_ipt* ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
+			// default null
+			memset(ipt,0,sizeof(_ipt));
 
-		// do start
-		cle_notify_start(ipt->event_chain_begin);
+			ipt->sys.config = config;
+//			ipt->sys.eventid = ievent;
+//			ipt->sys.event_len = event_len;
+//			ipt->sys.userid = userid;
+//			ipt->sys.userid_len = userid_len;
+
+			_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER]);
+
+			if(hdlists[SYNC_REQUEST_HANDLER] != 0)
+				_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE]);
+
+			if(hdlists[SYNC_REQUEST_HANDLER] != 0)
+				_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST]);
+
+			// do start
+			cle_notify_start(ipt->event_chain_begin);
+			return ipt;
+		}
 	}
 
-	return ipt;
+	_error(event_not_allowed);
+	return 0;
 }
 /* rewrite end */
 
