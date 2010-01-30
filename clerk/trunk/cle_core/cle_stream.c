@@ -386,13 +386,39 @@ struct _scan_event
 	task* t;
 	struct _mark_chain* first, *last;
 	st_ptr eventpt, syspt;
-	uint allowed, state;
+	uint allowed, state, idl;
+	char ids[sizeof(oid)*4+3];
 };
 
-static void _event_mark(struct _scan_event* se)
+static uint _event_move(struct _scan_event* se, cdat cs, uint l)
+{
+	if(l != 0)
+	{
+		// lookup event-part (module-level)
+		if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
+			se->eventpt.pg = 0;
+
+		if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
+			se->syspt.pg = 0;
+	}
+	// not found! scan end (or no possible grants)
+	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
+}
+
+static uint _event_mark(struct _scan_event* se, cdat cs, uint l)
 {
 	cle_syshandler* syshdl = 0;
 	st_ptr pt, eventpt;
+	uchar chr = cs[l];
+	cs[l] = 0;
+
+	if(_event_move(se,cs,l + 1) != 0)
+	{
+		cs[l - 1] = chr;
+		return 1;
+	}
+	cs[l - 1] = chr;
+
 	// lookup allowed roles (if no access yet)
 	//if(allowed == 0)
 	//	allowed = _access_check(app_instance,eventpt,user_roles);
@@ -410,7 +436,7 @@ static void _event_mark(struct _scan_event* se)
 	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 	{
 		if(st_get(0,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) != -1)
-			syshdl = 0;	// should never happen
+			unimplm();	// should never happen
 	}
 
 	// mark
@@ -429,71 +455,85 @@ static void _event_mark(struct _scan_event* se)
 		else
 			se->first = se->last = mc;
 	}
-}
-
-static uint _event_move(struct _scan_event* se, cdat cs, uint l)
-{
-	// lookup event-part (module-level)
-	if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
-		se->eventpt.pg = 0;
-
-	if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
-		se->syspt.pg = 0;
-
-	// not found! scan end (or no possible grants)
-	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
+	return 0;
 }
 
 static uint _event_scan(void* ctx, cdat cs, uint l)
 {
 	struct _scan_event* se = (struct _scan_event*)ctx;
-	for(; l > 0; l--)
+	uint i;
+	for(i = 0; l > 0; l--)
 	{
-		uint c = *cs++;
+		uint c = *cs;
 		switch(c)
 		{
 		case '.':
 		case '/':
 		case '\\':
 		case 0:
-			if(state != 1)
+			if(se->state & 1 == 0)
 				return -1;
-			state = 2;
-			if(_event_move(se,cs,l))
+			if(_event_mark(se,cs,i))
 				return -1;
-			_event_mark(se);
+			se->state = 2;
+			cs++;
+			i = 0;
 			break;
-		case -1:
-			return (state == 1)? 0 : -1;
-		case '!':
-		case '@':
-			if(state != 1)
+		case '@':	// OID
+			if(se->state & 1 == 0)
 				return -1;
-			if(_event_move(se,cs,l))
+			if(_event_mark(se,cs,i))
 				return -1;
-			_event_mark(se);
-			state = 3;
-			return 0;
+			se->state = 8;
+			se->idl = 0;
+			se->ids[se->idl++] = c;
+			break;
+		case '!':	// TRACER-ID
+			if(se->state & 1 != 0)
+			{
+				if(_event_mark(se,cs,i))
+					return -1;
+				se->state = 0;
+				se->idl = 0;
+			}
+			else if(se->state != 8)
+				return -1;
+			se->state |= 16;
+			se->ids[se->idl++] = c;
+			break;
 		case ' ':
 		case '\n':
 		case '\t':
 		case '\r':
-			if(state == 1)
-				return -1;
+			se->state |= 4;
+			cs++;
 			break;
 		default:
 			// illegal character?
 			if(c < '0' || c > 'z' || (c > 'Z' && c < 'a') || (c > '9' && c < 'A'))
 				return -1;
-			state = 1;
+			if(se->state == 5)
+				return -1;
+			else if(se->state & 24 != 0)
+			{
+				if(se->idl >= sizeof(se->ids))
+					return -1;
+
+				se->ids[se->idl++] = c;
+			}
+			else
+			{
+				se->state = 1;
+				i++;
+			}
 		}
 	}
-	return _event_move(se,cs,l);
+	return (se->state & 1 != 0)? _event_move(se,cs,i) : 0;
 }
 
-static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
+static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
 {
-	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler),0);
+	event_handler* hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler),0);
 
 	hdl->next = hdlists[type];
 	hdlists[type] = hdl;
@@ -507,8 +547,21 @@ static void _register_handler(task* app_instance, event_handler** hdlists, cle_s
 		hdl->handler = *handler;
 }
 
-static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_handler* hdlists, st_ptr obj)
+static uint _setup_handlers(cle_instance inst, struct _scan_event* se, event_handler* hdlists)
 {
+	struct _mark_chain* mc = se->first;
+	st_ptr obj;
+	uint ido = 0;
+
+	if(se->state & 8)
+	{
+		if
+		ido = sizeof(
+	}
+
+	if(se->state & 16)
+	{}
+
 	for(; mc != 0; mc = mc->next)
 	{
 		if(mc->eventpt.pg != 0)
@@ -535,6 +588,7 @@ static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_han
 			mc->syshdl = mc->syshdl->next_handler;
 		}
 	}
+	return 0;s
 }
 
 static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
@@ -658,8 +712,10 @@ static void _init_request_pipe(_ipt* ipt, event_handler* hdl)
 _ipt* cle_start2(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles
 				 cle_pipe* response, void* responsedata)
 {
+	event_handler* hdlists[4] = {0,0,0,0};
 	struct _scan_event se;
 	cle_instance inst;
+	_ipt* ipt;
 
 	/* get a root ptr to instance-db */
 	inst.t = app_instance;
@@ -679,40 +735,45 @@ _ipt* cle_start2(task* app_instance, st_ptr config, st_ptr eventid, st_ptr useri
 
 	if(st_map(inst.t,&eventid,_event_scan,&se) == 0 && se.allowed != 0)
 	{
-		event_handler* hdlists[4] = {0,0,0,0};
+		_error(event_not_allowed);
+		return 0;
+	}
 
-		_setup_handlers(inst,se.first,hdllists,obj);
+	if(_setup_handlers(inst,&se,hdllists))
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
 
 		// is there anyone in the other end?
-		if(hdlists[SYNC_REQUEST_HANDLER] != 0 || hdlists[ASYNC_REQUEST_HANDLER] != 0)
-		{
-			// ipt setup - internal task
-			_ipt* ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
-			// default null
-			memset(ipt,0,sizeof(_ipt));
+	if(hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
 
-			ipt->sys.config = config;
+	// ipt setup - internal task
+	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
+	// default null
+	memset(ipt,0,sizeof(_ipt));
+
+	ipt->sys.config = config;
 //			ipt->sys.eventid = ievent;
 //			ipt->sys.event_len = event_len;
 //			ipt->sys.userid = userid;
 //			ipt->sys.userid_len = userid_len;
 
-			_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER]);
+	_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER]);
 
-			if(hdlists[SYNC_REQUEST_HANDLER] != 0)
-				_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE]);
+	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
+		_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE]);
 
-			if(hdlists[SYNC_REQUEST_HANDLER] != 0)
-				_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST]);
+	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
+		_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST]);
 
-			// do start
-			cle_notify_start(ipt->event_chain_begin);
-			return ipt;
-		}
-	}
-
-	_error(event_not_allowed);
-	return 0;
+	// do start
+	cle_notify_start(ipt->event_chain_begin);
+	return ipt;
 }
 /* rewrite end */
 
