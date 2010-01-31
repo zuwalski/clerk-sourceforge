@@ -350,7 +350,7 @@ int cle_goto_parent(cle_instance inst, st_ptr* child)
 	else if(header.obj.ext._low != 0)
 	{
 		*child = inst.root;
-		if(st_move(inst.t,child,(cdat)&header.obj.id,sizeof(oid)))
+		if(st_move(inst.t,child,(cdat)&header.obj.ext,sizeof(oid)))
 			return __LINE__;
 	}
 	else
@@ -855,12 +855,30 @@ static int _get_implementation(cle_instance inst, identity id, st_ptr* obj, st_p
 	}
 }
 
+static int _is_related(cle_instance inst, cle_handler href, st_ptr obj)
+{
+	while(1)
+	{
+		objectheader2 header;
+		if(st_get(inst.t,&obj,(char*)&header,sizeof(objectheader2)) >= 0)
+			return __LINE__;
+
+		if(header.id == href.oid)
+			return 0;
+
+		obj = inst.root;
+		if(header.ext._low == 0 || st_move(inst.t,&obj,(cdat)&header.ext,sizeof(oid)))
+			return __LINE__;
+	}
+}
+
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler)
 {
 	objectheader2 header;
 	st_ptr pt;
+	uint check_relation = obj->pg != 0;
 
-	if(obj == 0)
+	if(obj->pg == 0)
 	{
 		*obj = inst.root;
 		if(st_move(inst.t,obj,(cdat)&href.oid,sizeof(oid)) != 0)
@@ -870,6 +888,9 @@ int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* ha
 	pt = *obj;
 	// find first handler impl
 	if(_get_implementation(inst,href.handler,&pt,handler))
+		return __LINE__;
+
+	if(check_relation && _is_related(inst,href,*handler))
 		return __LINE__;
 
 	// check if handler is allowed in current state

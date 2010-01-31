@@ -33,7 +33,7 @@ typedef struct cle_pipe
 	void (*start)(void*);
 	void (*next)(void*);
 	void (*end)(void*,cdat,uint);
-	void (*pop)(void*);
+	uint (*pop)(void*);
 	void (*push)(void*);
 	uint (*data)(void*,cdat,uint);
 	void (*submit)(void*,task*,st_ptr*);
@@ -44,8 +44,8 @@ typedef struct cle_pipe
 /* event input functions */
 typedef struct _ipt_internal _ipt;
 
-_ipt* cle_start(st_ptr config_root, cdat eventid, uint event_len, cdat userid, uint userid_len, char* user_roles[],
-				cle_pipe* response, void* responsedata, task* app_instance);
+_ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles,
+				 cle_pipe* response, void* responsedata);
 
 void cle_next(_ipt* inpt);
 void cle_end(_ipt* inpt, cdat code, uint length);
@@ -65,6 +65,7 @@ enum handler_type
 
 typedef struct sys_handler_data
 {
+	ptr_list* free;
 	st_ptr config;
 	cdat eventid;
 	uint event_len;
@@ -92,10 +93,10 @@ struct event_handler
 	cle_pipe* response;
 	void* respdata;
 	ptr_list* top;
-	ptr_list* free;
 	cle_instance inst;
 	st_ptr handler;
 	st_ptr object;
+	st_ptr root;
 	cdat error;
 	uint errlength;
 };
@@ -107,7 +108,7 @@ void cle_stream_leave(event_handler* hdl);
 
 // convenience-functions for implementing the cle_pipe-interface
 void cle_standard_next_done(event_handler* hdl);
-void cle_standard_pop(event_handler* hdl);
+uint cle_standard_pop(event_handler* hdl);
 void cle_standard_push(event_handler* hdl);
 uint cle_standard_data(event_handler* hdl, cdat data, uint length);
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
@@ -131,7 +132,6 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength);
 
 // hook-ref for the ignite-interpreter
 extern cle_syshandler _runtime_handler;
-
 
 // standard handlers
 void dev_register_handlers(task* config_t, st_ptr* config_root);
