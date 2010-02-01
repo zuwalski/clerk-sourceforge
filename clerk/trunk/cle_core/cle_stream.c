@@ -24,10 +24,8 @@
 */
 
 /* TODO: 
-		handle end: make sure all receive the event
-		debugger id in event-string e.g. path.path[#objid][@debuggerId]
 		kill submit or rework st_link etc.
-		share ptr_list free-list across task-handlers
+		handlers on "same" object should have ref to same instance (not new each time)
 */
 
 // error-messages
@@ -38,7 +36,6 @@ static char event_not_allowed[] = "stream:event not allowed";
 struct _ipt_internal
 {
 	event_handler* event_chain_begin;
-
 	sys_handler_data sys;
 };
 
@@ -113,7 +110,7 @@ uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* from)
 {
 	// toplevel?
-	if(hdl->top->link == 0)
+	if(hdl->top->link == 0 && hdl->top->pt.offset == hdl->root.offset && hdl->top->pt.key == hdl->root.key && hdl->top->pt.pg == hdl->root.pg)
 		hdl->root = hdl->top->pt = *from;	// subst
 	else
 		st_link(t,&hdl->top->pt,from);
@@ -476,8 +473,8 @@ static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* 
 	}
 
 	hdl->thehandler = syshandler;
-	hdl->object = *object;
 	hdl->handler_data = 0;
+	hdl->object = *object;
 
 	if(handler == 0)
 		hdl->handler.pg = 0;
@@ -542,10 +539,9 @@ static uint _setup_handlers(cle_instance inst, struct _scan_event* se, event_han
 	return 0;
 }
 
-static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
+static void _ready_handler(event_handler* hdl, cle_instance inst, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint create_object)
 {
-	hdl->inst.t = inst_tk;
-	hdl->inst.root = *instance;
+	hdl->inst = inst;
 
 	//TODO copy event and user data
 	hdl->eventdata = sysdata;
@@ -557,10 +553,10 @@ static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, 
 	hdl->errlength = 0;
 	hdl->error = 0;
 
-	if(targetset == 0 && hdl->handler.pg != 0)
+	if(create_object)
 	{
 		st_ptr ext = hdl->object;
-		cle_new_mem(inst_tk,&ext,&hdl->object);
+		cle_new_mem(inst.t,&ext,&hdl->object);
 	}
 
 	// prepare for input-stream
@@ -568,38 +564,37 @@ static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, 
 	cle_standard_push(hdl);
 }
 
-static void _init_async_handlers(_ipt* ipt, event_handler* hdl, task* t)
+static void _init_async_handlers(_ipt* ipt, event_handler* hdl, task* t, uint create_object)
 {
 	ipt->event_chain_begin = hdl;
 
 	while(hdl != 0)
 	{
+		cle_instance clone;
 		// put in separat tasks/transactions
-		st_ptr clone_instance;
-		task* clone = tk_clone_task(t);
-		tk_root_ptr(clone,&clone_instance);
+		clone.t = tk_clone_task(t);
+		tk_root_ptr(clone.t,&clone.root);
 
 		// "no output"-handler on all async's
-		_ready_handler(hdl,clone,&clone_instance,&ipt->sys,&_async_out,hdl,object.pg != 0);
+		_ready_handler(hdl,clone,&ipt->sys,&_async_out,hdl,create_object);
 
 		hdl = hdl->next;
 	}
 }
 
-static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_handler* response_pipe)
+static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_handler* response_pipe, cle_instance inst, uint create_object, cle_pipe* response, void* responsedata)
 {
 	// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
 	// setup response-handler chain (only make sense with sync handlers)
-	if(hdlists[PIPELINE_RESPONSE] != 0)
+	if(response_pipe != 0)
 	{
-		event_handler* last;
+		event_handler* last,*hdl = response_pipe;
 		// in correct order (most specific handler comes first)
-		hdl = hdlists[PIPELINE_RESPONSE];
 
 		last = sync_handler;
 		do
 		{
-			_ready_handler(last,app_instance,&instance,&ipt->sys,&hdl->thehandler->input,hdl,object.pg != 0);
+			_ready_handler(last,inst,&ipt->sys,&hdl->thehandler->input,hdl,1);
 
 			last = hdl;
 			hdl = hdl->next;
@@ -607,16 +602,16 @@ static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_ha
 		while(hdl != 0);
 
 		// and finally the original output-target
-		_ready_handler(last,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+		_ready_handler(last,inst,&ipt->sys,response,responsedata,create_object);
 	}
 	else
-		_ready_handler(sync_handler,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+		_ready_handler(sync_handler,inst,&ipt->sys,response,responsedata,create_object);
 
 	sync_handler->next = ipt->event_chain_begin;
 	ipt->event_chain_begin = sync_handler;
 }
 
-static void _init_request_pipe(_ipt* ipt, event_handler* hdl)
+static void _init_request_pipe(_ipt* ipt, event_handler* hdl, cle_instance inst)
 {
 	// reverse order (most general handlers comes first)
 	event_handler* last;
@@ -633,7 +628,7 @@ static void _init_request_pipe(_ipt* ipt, event_handler* hdl)
 	do
 	{
 		last = hdl;
-		_ready_handler(hdl,app_instance,&instance,&ipt->sys,resp,data,object.pg != 0);
+		_ready_handler(hdl,inst,&ipt->sys,resp,data,1);
 
 		resp = &hdl->thehandler->input;
 		data = hdl;
@@ -692,24 +687,23 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	// ipt setup - internal task
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
 	// default null
-	memset(ipt,0,sizeof(_ipt));
+	ipt->event_chain_begin = 0;
 
 	// reuse markchain
 	ipt->sys.free = (ptr_list*)se.first;
-
 	ipt->sys.config = config;
 //			ipt->sys.eventid = ievent;
 //			ipt->sys.event_len = event_len;
 //			ipt->sys.userid = userid;
 //			ipt->sys.userid_len = userid_len;
 
-	_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER]);
+	_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER],inst.t,se.state & 8);
 
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
-		_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE]);
+		_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE],inst,se.state & 8,response,responsedata);
 
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
-		_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST]);
+		_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST],inst);
 
 	// do start
 	cle_notify_start(ipt->event_chain_begin);
