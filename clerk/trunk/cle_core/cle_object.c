@@ -863,7 +863,7 @@ static int _is_related(cle_instance inst, cle_handler href, st_ptr obj)
 		if(st_get(inst.t,&obj,(char*)&header,sizeof(objectheader2)) >= 0)
 			return __LINE__;
 
-		if(header.id == href.oid)
+		if(header.id. == href.oid)
 			return 0;
 
 		obj = inst.root;

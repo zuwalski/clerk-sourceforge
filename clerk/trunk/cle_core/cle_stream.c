@@ -25,7 +25,7 @@
 
 /* TODO: 
 		kill submit or rework st_link etc.
-		handlers on "same" object should have ref to same instance (not new each time)
+		Share: handlers on "same" object should have ref to same instance (not new each time)
 */
 
 // error-messages
@@ -208,21 +208,6 @@ void cle_stream_end(event_handler* hdl)
 	cle_stream_fail(hdl,"",0);
 }
 
-cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
-{
-	cle_syshandler hdl;
-	hdl.next_handler = 0;
-	hdl.input.start = start == 0 ? _nil1 : start;
-	hdl.input.next = next == 0 ? _nil1 : next;
-	hdl.input.end = end == 0 ? _nil2 : end;
-	hdl.input.pop = cle_standard_pop;
-	hdl.input.push = cle_standard_push;
-	hdl.input.data = cle_standard_data;
-	hdl.input.submit = cle_standard_submit;
-	hdl.systype = type;
-	return hdl;
-}
-
 /* system event-handler setup */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler)
 {
@@ -239,6 +224,39 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 		handler->next_handler = 0;
 
 	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
+}
+
+static void _simple_hdl_next(event_handler* hdl)
+{
+	// collect parameters
+	cle_standard_next_done(hdl);
+}
+
+static void _simple_hdl_end(event_handler* hdl, cdat msg, uint msglen)
+{
+	if(msglen != 0)
+	{
+		// execute handler w/parameters
+	}
+	else msg = "";
+
+	cle_stream_fail(hdl,msg,msglen);
+}
+
+void cle_register_simple_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, enum handler_type type, void (handler*)(event_handler* hdl))
+{
+	cle_syshandler hdl;
+	hdl.next_handler = 0;
+	hdl.input.start = _nil1;
+	hdl.input.next = _simple_hdl_next;
+	hdl.input.end = _simple_hdl_end;
+	hdl.input.pop = cle_standard_pop;
+	hdl.input.push = cle_standard_push;
+	hdl.input.data = cle_standard_data;
+	hdl.input.submit = cle_standard_submit;
+	hdl.systype = type;
+
+	cle_add_sys_handler(config_task,config_root,eventmask,mask_length,&hdl);
 }
 
 /* control role-access */
@@ -282,21 +300,6 @@ struct _scan_event
 	char ids[sizeof(oid)*4+3];
 };
 
-static uint _event_move(struct _scan_event* se, cdat cs, uint l)
-{
-	if(l != 0)
-	{
-		// lookup event-part (module-level)
-		if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
-			se->eventpt.pg = 0;
-
-		if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
-			se->syspt.pg = 0;
-	}
-	// not found! scan end (or no possible grants)
-	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
-}
-
 static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 {
 	if(st_move(app_instance,&pt,HEAD_ROLES,HEAD_SIZE) == 0)
@@ -333,19 +336,26 @@ static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 	return 0;
 }
 
-static uint _event_mark(struct _scan_event* se, char* cs, uint l)
+static uint _event_move(struct _scan_event* se, cdat cs, uint l)
+{
+	// lookup event-part (module-level)
+	if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
+		se->eventpt.pg = 0;
+
+	if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
+		se->syspt.pg = 0;
+
+	// not found! scan end (or no possible grants)
+	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
+}
+
+static uint _event_mark(struct _scan_event* se, cdat cs, uint len)
 {
 	cle_syshandler* syshdl = 0;
 	st_ptr pt, eventpt;
-	uchar chr = cs[l];
-	cs[l] = 0;
 
-	if(_event_move(se,cs,l + 1) != 0)
-	{
-		cs[l] = chr;
+	if(_event_move(se,cs,len) != 0 || _event_move(se,"",1))
 		return 1;
-	}
-	cs[l] = chr;
 
 	// lookup allowed roles (if no access yet)
 	//if(allowed == 0)
@@ -401,7 +411,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 		case 0:
 			if(se->state & 1 == 0)
 				return -1;
-			if(_event_mark(se,(char*)cs,i))
+			if(_event_mark(se,cs,i))
 				return -1;
 			se->state = 2;
 			cs++;
@@ -410,7 +420,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 		case '@':	// OID
 			if(se->state & 1 == 0)
 				return -1;
-			if(_event_mark(se,(char*)cs,i))
+			if(_event_mark(se,cs,i))
 				return -1;
 			se->state = 8;
 			se->idl = 0;
@@ -419,7 +429,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 		case '!':	// TRACER-ID
 			if(se->state & 1 != 0)
 			{
-				if(_event_mark(se,(char*)cs,i))
+				if(_event_mark(se,cs,i))
 					return -1;
 				se->state = 0;
 				se->idl = 0;
@@ -482,34 +492,8 @@ static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* 
 		hdl->handler = *handler;
 }
 
-static uint _setup_handlers(cle_instance inst, struct _scan_event* se, event_handler** hdlists)
+static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_handler** hdlists, st_ptr* obj)
 {
-	struct _mark_chain* mc = se->first;
-	st_ptr obj;
-	uint ido = 0;
-
-	if(se->state & 8)	// OID
-	{
-		st_str id;
-		if(se->idl < sizeof(oid)*2+1)
-			return 1;
-
-		id.length = ido = sizeof(oid)*2+1;
-		id.string = se->ids;
-
-		if(cle_goto_object(inst,id,&obj) != 0)
-			return 1;
-	}
-	else
-		obj.pg = 0;
-
-	if(se->state & 16)	// TID
-	{
-		if(se->idl - ido != sizeof(oid)*2+1)
-			return 1;
-		// TODO Trace
-	}
-
 	for(; mc != 0; mc = mc->next)
 	{
 		if(mc->eventpt.pg != 0)
@@ -520,7 +504,7 @@ static uint _setup_handlers(cle_instance inst, struct _scan_event* se, event_han
 			while(it_next(inst.t,0,&it,sizeof(cle_handler)))
 			{
 				cle_handler href = *((cle_handler*)it.kdata);
-				st_ptr handler,lobj = obj;
+				st_ptr handler,lobj = *obj;
 				if(cle_get_handler(inst,href,&lobj,&handler) == 0)
 					_register_handler(inst.t,hdlists,&_runtime_handler,&handler,&lobj,href.type);
 			}
@@ -530,13 +514,12 @@ static uint _setup_handlers(cle_instance inst, struct _scan_event* se, event_han
 
 		while(mc->syshdl != 0);
 		{
-			_register_handler(inst.t,hdlists,mc->syshdl,0,&obj,mc->syshdl->systype);
+			_register_handler(inst.t,hdlists,mc->syshdl,0,obj,mc->syshdl->systype);
 
 			// next in list...
 			mc->syshdl = mc->syshdl->next_handler;
 		}
 	}
-	return 0;
 }
 
 static void _ready_handler(event_handler* hdl, cle_instance inst, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint create_object)
@@ -588,10 +571,8 @@ static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_ha
 	// setup response-handler chain (only make sense with sync handlers)
 	if(response_pipe != 0)
 	{
-		event_handler* last,*hdl = response_pipe;
+		event_handler *last = sync_handler,*hdl = response_pipe;
 		// in correct order (most specific handler comes first)
-
-		last = sync_handler;
 		do
 		{
 			_ready_handler(last,inst,&ipt->sys,&hdl->thehandler->input,hdl,1);
@@ -618,8 +599,7 @@ static void _init_request_pipe(_ipt* ipt, event_handler* hdl, cle_instance inst)
 	cle_pipe* resp;
 	void* data = ipt->event_chain_begin;
 
-	// just a single (sync-receiver?) -> just (hard)chain together
-	// ipt->event_chain_begin == hdlists[SYNC_REQUEST_HANDLER] && 
+	// just a single receiver? -> just (hard)chain together
 	if(ipt->event_chain_begin->next == 0)
 		resp = &ipt->event_chain_begin->thehandler->input;
 	else
@@ -641,6 +621,31 @@ static void _init_request_pipe(_ipt* ipt, event_handler* hdl, cle_instance inst)
 	ipt->event_chain_begin = last;
 }
 
+static void _setup_object_and_trace(cle_instance inst, struct _scan_event* se, st_ptr* obj)
+{
+	uint ido = 0;
+	obj->pg = 0;
+
+	if(se->state & 8)	// OID
+	{
+		st_str id;
+		if(se->idl < sizeof(oid)*2+1)
+			return;
+
+		id.length = ido = sizeof(oid)*2+1;
+		id.string = se->ids;
+
+		cle_goto_object(inst,id,obj);
+	}
+
+	if(se->state & 16)	// TID
+	{
+		if(se->idl - ido != sizeof(oid)*2+1)
+			return;
+		// TODO Trace
+	}
+}
+
 _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles,
 				 cle_pipe* response, void* responsedata)
 {
@@ -648,6 +653,7 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	struct _scan_event se;
 	cle_instance inst;
 	_ipt* ipt;
+	st_ptr obj;
 
 	/* get a root ptr to instance-db */
 	inst.t = app_instance;
@@ -660,24 +666,22 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	se.first = se.last = 0;
 	se.state = 0;
 	// no username? -> root/sa
-	se.allowed = (userid.pg == 0) || st_empty(inst.t,&userid);
+	se.allowed = st_is_empty(&userid);
 
 	cle_eventroot(inst.t,&se.eventpt);
 	se.syspt = config;
 
-	if(st_map(inst.t,&eventid,_event_scan,&se) == 0 && se.allowed != 0)
+	if(st_map(inst.t,&eventid,_event_scan,&se) != 0 || se.allowed == 0)
 	{
 		_error(event_not_allowed);
 		return 0;
 	}
 
-	if(_setup_handlers(inst,&se,hdlists))
-	{
-		_error(event_not_allowed);
-		return 0;
-	}
+	_setup_object_and_trace(inst,&se,&obj);
 
-		// is there anyone in the other end?
+	_setup_handlers(inst,se.first,hdlists,&obj);
+
+	// is there anyone in the other end?
 	if(hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)
 	{
 		_error(event_not_allowed);

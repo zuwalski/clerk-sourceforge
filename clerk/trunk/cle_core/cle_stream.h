@@ -115,7 +115,6 @@ void cle_standard_submit(event_handler* hdl, task* t, st_ptr* st);
 
 void cle_stream_submit(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* pt);
 
-cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type);
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
 

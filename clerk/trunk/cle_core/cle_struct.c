@@ -273,19 +273,24 @@ uint st_empty(task* t, st_ptr* pt)
 	pt->key = (char*)nk - (char*)pt->pg->pg;
 	pt->offset = 0;
 
-	memset(nk,0,sizeof(key) + 2);
+	memset(nk,0,sizeof(key));
 	return 0;
 }
 
 uint st_is_empty(st_ptr* pt)
 {
-	key* k = GOOFF(pt->pg,pt->key);
-	if(k->length == 0 && k->sub == 0) return 1;
-	if(pt->offset != k->length) return 0;
-	if(k->sub == 0) return 1;
-	k = GOOFF(pt->pg,k->sub);
-	while(k->next && k->offset < pt->offset) k = GOOFF(pt->pg,k->next);
-	return (k->offset < pt->offset);
+	key* k;
+	ushort offset;
+	if(pt == 0 || pt->pg == 0) return 1;
+	k = GOOFF(pt->pg,pt->key);
+	offset = pt->offset;
+	while(1)
+	{
+		if(offset < k->length) return 0;
+		if(k->sub == 0) return 1;
+		k = GOOFF(pt->pg,k->sub);
+		offset = 0;
+	}
 }
 
 uint st_exsist(task* t, st_ptr* pt, cdat path, uint length)
