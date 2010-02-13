@@ -498,8 +498,6 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 	void* resp_data;
 	task* outtask;
 	_ipt* ipt;
-	int   ev_len;
-	uchar eventid[EVENT_MAX_LENGTH+1];	// hmmmm
 	
 	switch((*sp)[1].type)
 	{
@@ -516,18 +514,15 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 	if((*sp)->type != STACK_RO_PTR && (*sp)->type != STACK_PTR)
 		return _rt_error(inv,__LINE__);
 
-	// TODO: when cle_start changes to use st_ptr directly - delete this!!!
-	ev_len = st_get(inv->t,&(*sp)->single_ptr,eventid,sizeof(eventid));
-	if(ev_len <= 0)
-		return _rt_error(inv,__LINE__);
-
 	outtask = tk_clone_task(inv->t);
-	
+
 	ipt = cle_start(
+		outtask,
 		inv->hdl->eventdata->config,
-		eventid,ev_len,
-		inv->hdl->eventdata->userid,inv->hdl->eventdata->userid_len,0,
-		response,resp_data,outtask);
+		(*sp)->single_ptr,
+		inv->hdl->eventdata->userid,
+		inv->hdl->eventdata->userroles,
+		response,resp_data);
 
 	if(ipt == 0)
 	{
@@ -617,33 +612,8 @@ static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st
 	// ref'ed by oid/name in stringform
 	case STACK_PTR:
 	case STACK_RO_PTR:
-		*pt = sp->single_ptr;
-
-		if(st_scan(inv->t,pt) == '@')	// string is an id
-		{
-			int len;
-			char buffer[100];
-
-			len = st_get(inv->t,pt,buffer,sizeof(buffer));
-			if(len <= 0) return _rt_error(inv,__LINE__);
-
-			if(cle_get_target(inv->t,inv->hdl->instance,pt,buffer,len) == 0)
-				return _rt_error(inv,__LINE__);
-		}
-		else							// string is an object-name
-		{
-			// goto object
-			*pt = inv->hdl->instance;
-
-			if(st_move(inv->t,pt,HEAD_NAMES,HEAD_SIZE) != 0)
-				return _rt_error(inv,__LINE__);
-			
-			if(st_move_st(inv->t,pt,&sp->single_ptr) != 0)
-				return _rt_error(inv,__LINE__);
-
-			if(st_exsist(inv->t,pt,HEAD_OID,HEAD_SIZE) == 0)
-				return _rt_error(inv,__LINE__);
-		}
+		if(cle_goto_object(inv->hdl->inst,sp->single_ptr,pt))
+			return _rt_error(inv,__LINE__);
 		break;
 	default:
 		return _rt_error(inv,__LINE__);

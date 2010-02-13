@@ -197,7 +197,7 @@ void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {
 	hdl->thehandler = &_nil_handler;
 
-	hdl->error = msg;
+	hdl->error = (msglen == 0)? "" : msg;
 	hdl->errlength = msglen;
 
 	hdl->response->end(hdl->respdata,msg,msglen);
@@ -205,7 +205,7 @@ void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 
 void cle_stream_end(event_handler* hdl)
 {
-	cle_stream_fail(hdl,"",0);
+	cle_stream_fail(hdl,0,0);
 }
 
 /* system event-handler setup */
@@ -226,37 +226,19 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
 }
 
-static void _simple_hdl_next(event_handler* hdl)
-{
-	// collect parameters
-	cle_standard_next_done(hdl);
-}
-
-static void _simple_hdl_end(event_handler* hdl, cdat msg, uint msglen)
-{
-	if(msglen != 0)
-	{
-		// execute handler w/parameters
-	}
-	else msg = "";
-
-	cle_stream_fail(hdl,msg,msglen);
-}
-
-void cle_register_simple_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, enum handler_type type, void (handler*)(event_handler* hdl))
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
 {
 	cle_syshandler hdl;
 	hdl.next_handler = 0;
-	hdl.input.start = _nil1;
-	hdl.input.next = _simple_hdl_next;
-	hdl.input.end = _simple_hdl_end;
+	hdl.input.start = start == 0 ? _nil1 : start;
+	hdl.input.next = next == 0 ? _nil1 : next;
+	hdl.input.end = end == 0 ? _nil2 : end;
 	hdl.input.pop = cle_standard_pop;
 	hdl.input.push = cle_standard_push;
 	hdl.input.data = cle_standard_data;
 	hdl.input.submit = cle_standard_submit;
 	hdl.systype = type;
-
-	cle_add_sys_handler(config_task,config_root,eventmask,mask_length,&hdl);
+	return hdl;
 }
 
 /* control role-access */

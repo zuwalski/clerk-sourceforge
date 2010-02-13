@@ -67,10 +67,9 @@ typedef struct sys_handler_data
 {
 	ptr_list* free;
 	st_ptr config;
-	cdat eventid;
-	uint event_len;
-	cdat userid;
-	uint userid_len;
+	st_ptr eventid;
+	st_ptr userid;
+	st_ptr userroles;
 }
 sys_handler_data;
 
@@ -117,6 +116,8 @@ void cle_stream_submit(task* t, cle_pipe* recv, void* data, task* t_pt, st_ptr* 
 
 /* setup system-level handler */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler);
+
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type);
 
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
