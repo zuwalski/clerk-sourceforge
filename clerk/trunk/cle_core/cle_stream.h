@@ -119,6 +119,9 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 
 cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type);
 
+uint cle_obj_from_event(event_handler* hdl, uint sizeofname, st_ptr* obj);
+void cle_collect_params_next(event_handler* hdl);
+
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);
 void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length);

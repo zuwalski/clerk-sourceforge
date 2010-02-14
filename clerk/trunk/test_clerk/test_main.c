@@ -122,7 +122,7 @@ void test_struct_c()
 	ASSERT(st_is_empty(&root));
 
 	// insert single value
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
 
 	// collection not empy anymore
@@ -137,7 +137,7 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test3,sizeof(test3)) == 0);
 
 	// can move pointer there (same as exsist) no prob
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
 	// now tmp points to an empty node
@@ -153,22 +153,22 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move half way and find rest
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
 	ASSERT(st_exsist(t,&tmp,test1,sizeof(test1)));
 
 	// we can move all the way and find and empty node
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_move(t,&tmp,test1x2,sizeof(test1x2)) == 0);
 
 	ASSERT(st_is_empty(&tmp));
 
 	// put 2 more root-values in
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_insert(t,&tmp,test2,sizeof(test2)));
 
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_insert(t,&tmp,test3,sizeof(test3)));
 
 	// we can find all 3 distinct values
@@ -182,13 +182,13 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move to one of the new values and start a new collection there
-	tk_dup_ptr(&tmp,&root);
+	tmp = root;
 	ASSERT(st_move(t,&tmp,test2,sizeof(test2)) == 0);
 
-	tk_dup_ptr(&tmp2,&tmp);
+	tmp2 = tmp;
 	ASSERT(st_insert(t,&tmp2,test2,sizeof(test2)));
 
-	tk_dup_ptr(&tmp2,&tmp);
+	tmp2 = tmp;
 	ASSERT(st_insert(t,&tmp2,test3,sizeof(test3)));
 
 	// we can find them relative to tmp ..
@@ -1047,13 +1047,10 @@ static key* _trace_nxt(st_ptr* pt)
 #define COMMIT_ITERATION_COUNT 1000000
 void test_measure2()
 {
-		it_ptr it;
 	st_ptr pt,pt2;
 	struct _tk_setup setup;
 	cle_psrc_data psrc_data = util_create_mempager();
 	task* t = tk_create_task(&util_memory_pager,psrc_data);
-	char** chr;
-	key* k;
 	int i;
 	ushort sub;
 	uint a = 0x80;
@@ -1079,7 +1076,7 @@ void test_measure2()
 	setup.pg = 0;
 
 	dest.head.id = 0;
-	dest.head.size = sizeof(page) + setup.fullsize/8;
+	dest.head.size = (ushort)(sizeof(page) + setup.fullsize/8);
 	dest.head.used = 0;
 	dest.head.waste = 0;
 
@@ -1189,7 +1186,7 @@ void test_measure2()
 	// commit!
 	setup.fullsize = 1000*8;
 	setup.halfsize = setup.fullsize/2;
-	dest.head.size = sizeof(page) + setup.fullsize/8;
+	dest.head.size = (ushort)(sizeof(page) + setup.fullsize/8);
 
 	heap_check();
 	_tk_measure2(&setup,pt.pg,0,GOOFF(pt.pg,pt.key));
@@ -1309,10 +1306,6 @@ int main(int argc, char* argv[])
 	//heap_check();
 
 	test_instance_c();
-
-	//heap_check();
-
-	test_runtime_c();
 
 	heap_check();
 	// test

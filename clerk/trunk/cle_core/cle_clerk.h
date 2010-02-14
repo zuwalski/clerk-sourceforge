@@ -94,6 +94,8 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from);
 
 int st_compare_st(task* t, st_ptr* to, st_ptr* from);
 
+uint st_delete_st(task* t, st_ptr* from, st_ptr* str);
+
 int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx);
 
 uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx);

@@ -276,18 +276,19 @@ void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
 	st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
 
-int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj)
+int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 {
+	st_ptr tname = name;
 	oid id;
 
-	if(name.length == sizeof(oid)*2+1 && name.string[0] == '@')
+	if(st_scan(inst.t,&tname) == '@')
 	{
 		char* boid = (char*)&id;
 		int i;
 
 		for(i = 0; i < sizeof(oid)*2; i++)
 		{
-			int val = name.string[i] - 'a';
+			int val = st_scan(inst.t,&tname) - 'a';
 			if(val < 0 || (val & 0xF0))
 				return __LINE__;
 
@@ -296,6 +297,7 @@ int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj)
 			else
 				boid[i >> 1] = val << 4;
 		}
+		// may be too long ... hmmm
 	}
 	else
 	{
@@ -303,7 +305,7 @@ int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj)
 		if(st_move(inst.t,obj,HEAD_NAMES,IHEAD_SIZE) != 0)
 			return __LINE__;
 		
-		if(st_move(inst.t,obj,name.string,name.length) != 0)
+		if(st_move_st(inst.t,obj,&name) != 0)
 			return __LINE__;
 
 		if(st_get(inst.t,obj,(char*)&id,sizeof(oid)) != -1)
@@ -447,7 +449,7 @@ int cle_persist_object(cle_instance inst, st_ptr* obj)
 	return 0;
 }
 
-int cle_delete_name(cle_instance inst, st_str name)
+int cle_delete_name(cle_instance inst, st_ptr name)
 {
 	st_ptr obj;
 
@@ -466,7 +468,7 @@ int cle_delete_name(cle_instance inst, st_str name)
 	if(st_move(inst.t,&obj,HEAD_NAMES,IHEAD_SIZE) != 0)
 		return __LINE__;
 
-	st_delete(inst.t,&obj,name.string,name.length);
+	st_delete_st(inst.t,&obj,&name);
 	return 0;
 }
 
@@ -476,7 +478,7 @@ int cle_delete_name(cle_instance inst, st_str name)
 static identity _create_identity(cle_instance inst, st_ptr obj)
 {
 	objheader header;
-	identity  id;
+	identity  id = 0;
 
 	if(st_get(inst.t,&obj,(char*)&header,sizeof(header)) != -2)
 		return 0;
@@ -863,7 +865,7 @@ static int _is_related(cle_instance inst, cle_handler href, st_ptr obj)
 		if(st_get(inst.t,&obj,(char*)&header,sizeof(objectheader2)) >= 0)
 			return __LINE__;
 
-		if(header.id. == href.oid)
+		if(memcmp(&header.id,&href.oid) == 0)
 			return 0;
 
 		obj = inst.root;

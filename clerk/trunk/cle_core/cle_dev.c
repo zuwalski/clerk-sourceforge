@@ -32,8 +32,8 @@
 #include "cle_object.h"
 
 static const char _new_extends_name[] = "dev\0new";
+static const char _new_object_name[] = "dev\0new\0object";
 static const char _set_expr_name[] = "dev\0set\0expr";
-static const char _set_property_name[] = "dev\0set\0property";
 static const char _create_state_name[] = "dev\0create\0state";
 static const char _set_handler_name_sync[] = "dev\0set\0handler\0sync";
 static const char _set_handler_name_asyn[] = "dev\0set\0handler\0asyn";
@@ -41,8 +41,8 @@ static const char _set_handler_name_resp[] = "dev\0set\0handler\0resp";
 static const char _set_handler_name_reqs[] = "dev\0set\0handler\0reqs";
 
 static cle_syshandler _new_extends;
+static cle_syshandler _new_object;
 static cle_syshandler _set_expr;
-static cle_syshandler _set_property;
 static cle_syshandler _create_state;
 static cle_syshandler _set_handler_sync;
 static cle_syshandler _set_handler_asyn;
@@ -53,113 +53,105 @@ static const char _illegal_argument[] = "dev:illegal argument";
 
 static void new_extends_next(event_handler* hdl)
 {
-	cdat exname = hdl->eventdata->eventid + sizeof(_new_extends_name);
-	uint exname_length = hdl->eventdata->event_len - sizeof(_new_extends_name);
-
-	if(cle_new(hdl->inst,0,exname,exname_length))
+	st_ptr extends;
+	
+	if(cle_obj_from_event(hdl,sizeof(_new_extends_name),&extends) || cle_new(hdl->inst,hdl->root,extends,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
 }
 
-static void set_property_next(event_handler* hdl)
+static void new_object_next(event_handler* hdl)
 {
-	cdat obname = hdl->eventdata->eventid + sizeof(_set_property_name);
-	uint obname_length = hdl->eventdata->event_len - sizeof(_set_property_name);
-
-	if(cle_set_property(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->root))
+	st_ptr extends;
+	extends.pg = 0;
+	if(cle_new(hdl->inst,hdl->root,extends,0))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
 }
-
-struct _dev_set
-{
-	st_ptr p1;
-	st_ptr p2;
-	uint hit;
-};
 
 static void _set_expr_next(event_handler* hdl)
 {
-	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
+	st_ptr* first = (st_ptr*)hdl->handler_data;
 
 	// first hit?
-	if(state == 0)
+	if(first == 0)
 	{
-		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set),0);
-		state = (struct _dev_set*)hdl->handler_data;
+		hdl->handler_data = tk_alloc(hdl->inst.t,sizeof(st_ptr),0);
+		first = (st_ptr*)hdl->handler_data;
 
-		state->p1 = hdl->root;
+		*first = hdl->root;
 		cle_standard_next_done(hdl);
 	}
 	else
 	{
-		cdat obname = hdl->eventdata->eventid + sizeof(_set_expr_name);
-		uint obname_length = hdl->eventdata->event_len - sizeof(_set_expr_name);
+		st_ptr obj;
 
-		hdl->response->start(hdl->respdata);
-		cle_set_expr(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,hdl->root,hdl->response,hdl->respdata);
-		cle_stream_end(hdl);
+		if(cle_obj_from_event(hdl,sizeof(_set_expr_name),&obj)
+			|| cle_create_expr(hdl->inst,obj,*first,hdl->root,hdl->response,hdl->respdata))
+			cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
+		else
+			cle_stream_end(hdl);
 	}
 }
 
-static void _set_handler_shared(event_handler* hdl, uint namesize, enum handler_type tp)
+static void _set_handler_shared(event_handler* hdl, uint namelength, cdat msg, uint msglen, enum handler_type tp)
 {
-	struct _dev_set* state = (struct _dev_set*)hdl->handler_data;
-
-	// first hit?
-	if(state == 0)
+	while(msglen == 0)
 	{
-		hdl->handler_data = tk_alloc(hdl->instance_tk,sizeof(struct _dev_set),0);
-		state = (struct _dev_set*)hdl->handler_data;
+		ptr_list* states = ptr_list_reverse((ptr_list*)hdl->handler_data);
+		st_ptr obj,eventname,expr;
 
-		state->p1 = hdl->root;
-		state->hit = 0;
-		cle_standard_next_done(hdl);
-	}
-	// 2. hit
-	else if(state->hit == 0)
-	{
-		state->p2 = hdl->root;
-		state->hit = 1;
-		cle_standard_next_done(hdl);
-	}
-	// 3. hit
-	else
-	{
-		cdat obname = hdl->eventdata->eventid + namesize;
-		uint obname_length = hdl->eventdata->event_len - namesize;
+		msg = _illegal_argument;
+		msglen = sizeof(_illegal_argument);
 
-		hdl->response->start(hdl->respdata);
-		cle_set_handler(hdl->instance_tk,hdl->instance,obname,obname_length,state->p1,state->p2,hdl->root,hdl->response,hdl->respdata,tp);
-		cle_stream_end(hdl);
+		if(states == 0)
+			break;
+
+		eventname = states->pt;
+		states = states->link;
+		if(states == 0)
+			break;
+
+		expr = states->pt;
+		states = states->link;
+		if(states == 0)
+			break;
+
+		if(cle_obj_from_event(hdl,namelength,&obj)
+			|| cle_create_handler(hdl->inst,obj,eventname,expr,states,hdl->response,hdl->respdata,tp))
+			break;
+
+		msg = 0; msglen = 0;
+		break;
 	}
+	cle_stream_fail(hdl,msg,msglen);
 }
 
-static void _set_handler_sync_next(event_handler* hdl)
+static void _set_handler_sync_end(event_handler* hdl, cdat m, uint l)
 {
-	_set_handler_shared(hdl,sizeof(_set_handler_name_sync),SYNC_REQUEST_HANDLER);
+	_set_handler_shared(hdl,sizeof(_set_handler_name_sync),m,l,SYNC_REQUEST_HANDLER);
 }
-static void _set_handler_asyn_next(event_handler* hdl)
+static void _set_handler_asyn_end(event_handler* hdl, cdat m, uint l)
 {
-	_set_handler_shared(hdl,sizeof(_set_handler_name_asyn),ASYNC_REQUEST_HANDLER);
+	_set_handler_shared(hdl,sizeof(_set_handler_name_asyn),m,l,ASYNC_REQUEST_HANDLER);
 }
-static void _set_handler_resp_next(event_handler* hdl)
+static void _set_handler_resp_end(event_handler* hdl, cdat m, uint l)
 {
-	_set_handler_shared(hdl,sizeof(_set_handler_name_resp),PIPELINE_RESPONSE);
+	_set_handler_shared(hdl,sizeof(_set_handler_name_resp),m,l,PIPELINE_RESPONSE);
 }
-static void _set_handler_reqs_next(event_handler* hdl)
+static void _set_handler_reqs_end(event_handler* hdl, cdat m, uint l)
 {
-	_set_handler_shared(hdl,sizeof(_set_handler_name_reqs),PIPELINE_REQUEST);
+	_set_handler_shared(hdl,sizeof(_set_handler_name_reqs),m,l,PIPELINE_REQUEST);
 }
 
 static void _create_state_next(event_handler* hdl)
 {
-	cdat obname = hdl->eventdata->eventid + sizeof(_create_state_name);
-	uint obname_length = hdl->eventdata->event_len - sizeof(_create_state_name);
+	st_ptr obj;
 
-	if(cle_create_state(hdl->instance_tk,hdl->instance,obname,obname_length,hdl->root))
+	if(cle_obj_from_event(hdl,sizeof(_set_expr_name),&obj)
+		|| cle_create_state(hdl->inst,obj,hdl->root))
 		cle_stream_fail(hdl,_illegal_argument,sizeof(_illegal_argument));
 	else
 		cle_stream_end(hdl);
@@ -170,8 +162,8 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 	_new_extends = cle_create_simple_handler(0,new_extends_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_new_extends_name,sizeof(_new_extends_name),&_new_extends);
 
-	_set_property = cle_create_simple_handler(0,set_property_next,0,SYNC_REQUEST_HANDLER);
-	cle_add_sys_handler(config_t,*config_root,_set_property_name,sizeof(_set_property_name),&_set_property);
+	_new_object = cle_create_simple_handler(0,new_object_next,0,SYNC_REQUEST_HANDLER);
+	cle_add_sys_handler(config_t,*config_root,_new_object_name,sizeof(_new_object_name),&_new_object);
 	
 	_set_expr = cle_create_simple_handler(0,_set_expr_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_expr_name,sizeof(_set_expr_name),&_set_expr);
@@ -179,15 +171,15 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 	_create_state = cle_create_simple_handler(0,_create_state_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_create_state_name,sizeof(_create_state_name),&_create_state);
 
-	_set_handler_sync = cle_create_simple_handler(0,_set_handler_sync_next,0,SYNC_REQUEST_HANDLER);
+	_set_handler_sync = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_sync_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_sync,sizeof(_set_handler_name_sync),&_set_handler_sync);
 
-	_set_handler_asyn = cle_create_simple_handler(0,_set_handler_asyn_next,0,SYNC_REQUEST_HANDLER);
+	_set_handler_asyn = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_asyn_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_asyn,sizeof(_set_handler_name_asyn),&_set_handler_asyn);
 
-	_set_handler_resp = cle_create_simple_handler(0,_set_handler_resp_next,0,SYNC_REQUEST_HANDLER);
+	_set_handler_resp = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_resp_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_resp,sizeof(_set_handler_name_resp),&_set_handler_resp);
 
-	_set_handler_reqs = cle_create_simple_handler(0,_set_handler_reqs_next,0,SYNC_REQUEST_HANDLER);
+	_set_handler_reqs = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_reqs_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_reqs,sizeof(_set_handler_name_reqs),&_set_handler_reqs);
 }

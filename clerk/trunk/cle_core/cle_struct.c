@@ -769,6 +769,25 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 	return 0;
 }
 
+struct _del_ctx
+{
+	task* t;
+	st_ptr from;
+};
+
+static uint _del_st(struct _del_ctx* ctx, cdat txt, uint len)
+{
+	return st_delete(ctx->t,&ctx->from,txt,len);
+}
+
+uint st_delete_st(task* t, st_ptr* from, st_ptr* str)
+{
+	struct _del_ctx del;
+	del.from = *from;
+	del.t = t;
+	return st_map_st(t,str,_del_st,_dont_use,_dont_use,&del);
+}
+
 struct _st_insert
 {
 	struct _st_lkup_res rt;

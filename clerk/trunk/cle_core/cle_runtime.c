@@ -1217,7 +1217,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				sp->out->next(sp->outdata);
 			sp->out->end(sp->outdata,0,0);
 			inv->response_started = 1;
-			tk_commit_task(sp->outtask);
+			tk_commit_task(sp->outtask);	// well, what if something went wrong??
 			sp++;
 			break;
 		// receive input

@@ -188,11 +188,16 @@ void test_runtime_c()
 		for(i = 0; test_events[i] != 0; i++)
 		{
 			_ipt* ipt;
+			st_ptr dummy_user,dummy_userroles,eventname;
+			dummy_user.pg = 0; dummy_userroles.pg = 0;
 			//task* app_inst = tk_create_task(psource,pdata);
 
 			//printf("testing event: %.*s\n",10,test_events[i]);
+
+			st_empty(t,&eventname);
+			st_insert(t,&eventname,test_events[i],10);
 		
-			ipt = cle_start(config_root,test_events[i],10, userid, sizeof(userid), user_roles,&_test_pipe_stdout,0,t);
+			ipt = cle_start(t,config_root,eventname,dummy_user,dummy_userroles,&_test_pipe_stdout,0);
 
 			if(ipt != 0)
 			{

@@ -48,8 +48,6 @@ void test_compile_c();
 
 void test_instance_c();
 
-void test_runtime_c();
-
 extern cle_pipe _test_pipe_stdout;
 
 #endif

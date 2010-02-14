@@ -101,7 +101,7 @@ static int _print_usage(const char* toolname)
 {
 	printf("%s [-f<dbfilename>] [-e<event>] [params*]|-F [input-files*]|...\n",toolname);
 	puts("License GPL 3.0");
-	puts("(c) Lars Szuwalski, 2001-2009");
+	puts("(c) Lars Szuwalski, 2001-2010");
 	return -1;
 }
 
@@ -190,6 +190,10 @@ int main(int argc, char* argv[])
 	task* t;
 	int i,nodev = 0,noadm = 0,failed = 1;
 
+	st_ptr user,userroles;
+	user.pg = 0;
+	userroles.pg = 0;
+
 	// options
 	for(i = 1; i < argc; i++)
 	{
@@ -251,7 +255,11 @@ int main(int argc, char* argv[])
 
 	if(script == 0)
 	{
-		ipt = cle_start(config_root,db_event,(uint)strlen(db_event), 0, 0, 0,&_pipe_stdout,0,t);
+		st_ptr eventname;
+		st_empty(t,&eventname);
+		st_insert(t,&eventname,db_event,(uint)strlen(db_event));
+		
+		ipt = cle_start(t,config_root,eventname,user,userroles,&_pipe_stdout,0);
 
 		if(ipt != 0)
 		{
@@ -279,6 +287,7 @@ int main(int argc, char* argv[])
 
 			while(failed == 0 && fgets(buffer,sizeof(buffer),sfile))
 			{
+				st_ptr eventname;
 				char* begin;
 				int length;
 				
@@ -291,8 +300,11 @@ int main(int argc, char* argv[])
 
 				//printf("event: %.*s\n",length,begin);
 
+				st_empty(t,&eventname);
+				st_insert(t,&eventname,begin,length);
+
 				// start event
-				ipt = cle_start(config_root,begin,length, 0, 0, 0,&_pipe_stdout,&failed,t);
+				ipt = cle_start(t,config_root,eventname,user,userroles,&_pipe_stdout,&failed);
 				if(ipt == 0) {failed = 1; break;}
 
 				// parameters

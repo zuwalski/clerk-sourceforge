@@ -212,10 +212,16 @@ void test_stream_c()
 		{
 			_ipt* ipt;
 			task* app_inst = tk_clone_task(t);
+			st_ptr dummy_user, dummy_userroles,eventname;
+			dummy_user.pg = 0;
+			dummy_userroles.pg = 0;
 
 			//printf("testing event: %.*s\n",10,test_events[i]);
-		
-			ipt = cle_start(config_root,test_events[i],10, userid, sizeof(userid), user_roles,&_test_pipe2,0,app_inst);
+	
+			st_empty(app_inst,&eventname);
+			st_insert(app_inst,&eventname,test_events[i],10);
+
+			ipt = cle_start(app_inst,config_root,eventname,dummy_user,dummy_userroles,&_test_pipe2,0);
 
 			if(ipt != 0)
 			{

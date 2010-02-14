@@ -108,7 +108,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
 void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
 
-int cle_goto_object(cle_instance inst, st_str name, st_ptr* obj);
+int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj);
 
 int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize);
 
@@ -118,7 +118,7 @@ int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child);
 
 int cle_persist_object(cle_instance inst, st_ptr* obj);
 
-int cle_delete_name(cle_instance inst, st_str name);
+int cle_delete_name(cle_instance inst, st_ptr name);
 
 int cle_create_state(cle_instance inst, st_ptr obj, st_ptr newstate);
 

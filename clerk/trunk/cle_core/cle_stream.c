@@ -241,6 +241,25 @@ cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*
 	return hdl;
 }
 
+uint cle_obj_from_event(event_handler* hdl, uint sizeofname, st_ptr* obj)
+{
+	*obj = hdl->eventdata->eventid;
+	st_offset(hdl->inst.t,obj,sizeofname);
+
+	return cle_goto_object(hdl->inst,*obj,obj);
+}
+
+void cle_collect_params_next(event_handler* hdl)
+{
+	ptr_list* list = (ptr_list*)tk_alloc(hdl->inst.t,sizeof(ptr_list),0);
+
+	list->pt = hdl->root;
+	list->link = (ptr_list*)hdl->handler_data;
+	hdl->handler_data = list;
+
+	cle_standard_next_done(hdl);
+}
+
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {
@@ -278,8 +297,7 @@ struct _scan_event
 	task* t;
 	struct _mark_chain* first, *last;
 	st_ptr eventpt, syspt;
-	uint allowed, state, idl;
-	char ids[sizeof(oid)*4+3];
+	uint allowed, state, oid_begin, trace_begin, index;
 };
 
 static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
@@ -382,7 +400,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 {
 	struct _scan_event* se = (struct _scan_event*)ctx;
 	uint i;
-	for(i = 0; l > 0; l--)
+	for(i = 0; l > 0; l--, se->index++)
 	{
 		uint c = *cs;
 		switch(c)
@@ -405,8 +423,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 			if(_event_mark(se,cs,i))
 				return -1;
 			se->state = 8;
-			se->idl = 0;
-			se->ids[se->idl++] = c;
+			se->oid_begin = se->index;
 			break;
 		case '!':	// TRACER-ID
 			if(se->state & 1 != 0)
@@ -414,12 +431,11 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 				if(_event_mark(se,cs,i))
 					return -1;
 				se->state = 0;
-				se->idl = 0;
 			}
 			else if(se->state != 8)
 				return -1;
 			se->state |= 16;
-			se->ids[se->idl++] = c;
+			se->trace_begin = se->index;
 			break;
 		case ' ':
 		case '\n':
@@ -434,14 +450,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 				return -1;
 			if(se->state == 5)
 				return -1;
-			else if(se->state & 24 != 0)
-			{
-				if(se->idl >= sizeof(se->ids))
-					return -1;
-
-				se->ids[se->idl++] = c;
-			}
-			else
+			else if(se->state & 24 == 0)
 			{
 				se->state = 1;
 				i++;
@@ -603,27 +612,20 @@ static void _init_request_pipe(_ipt* ipt, event_handler* hdl, cle_instance inst)
 	ipt->event_chain_begin = last;
 }
 
-static void _setup_object_and_trace(cle_instance inst, struct _scan_event* se, st_ptr* obj)
+static void _setup_object_and_trace(cle_instance inst, struct _scan_event* se, st_ptr eventid, st_ptr* obj)
 {
-	uint ido = 0;
 	obj->pg = 0;
 
 	if(se->state & 8)	// OID
 	{
-		st_str id;
-		if(se->idl < sizeof(oid)*2+1)
-			return;
-
-		id.length = ido = sizeof(oid)*2+1;
-		id.string = se->ids;
+		st_ptr id = eventid;
+		st_offset(inst.t,&id,se->oid_begin);
 
 		cle_goto_object(inst,id,obj);
 	}
 
 	if(se->state & 16)	// TID
 	{
-		if(se->idl - ido != sizeof(oid)*2+1)
-			return;
 		// TODO Trace
 	}
 }
@@ -644,9 +646,8 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	if(response == 0)
 		response = &_nil_out;
 
+	memset(&se,sizeof(se),0);
 	se.t = inst.t;
-	se.first = se.last = 0;
-	se.state = 0;
 	// no username? -> root/sa
 	se.allowed = st_is_empty(&userid);
 
@@ -659,7 +660,7 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 		return 0;
 	}
 
-	_setup_object_and_trace(inst,&se,&obj);
+	_setup_object_and_trace(inst,&se,eventid,&obj);
 
 	_setup_handlers(inst,se.first,hdlists,&obj);
 
