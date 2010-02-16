@@ -172,10 +172,6 @@
 				>
 			</File>
 			<File
-				RelativePath=".\cle_core\cle_runtime.c"
-				>
-			</File>
-			<File
 				RelativePath=".\cle_core\cle_stream.c"
 				>
 			</File>

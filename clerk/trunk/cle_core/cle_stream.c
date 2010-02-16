@@ -646,7 +646,7 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	if(response == 0)
 		response = &_nil_out;
 
-	memset(&se,sizeof(se),0);
+	memset(&se,0,sizeof(struct _scan_event));
 	se.t = inst.t;
 	// no username? -> root/sa
 	se.allowed = st_is_empty(&userid);
