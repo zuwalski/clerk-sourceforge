@@ -1241,15 +1241,15 @@ void test_measure2()
 
 int main(int argc, char* argv[])
 {
+	test_instance_c();
+
+	heap_check();
+
 	test_stream_c();
 
-	//heap_check();
+	heap_check();
 
 	test_compile_c();
-
-	//heap_check();
-
-	test_instance_c();
 
 	heap_check();
 

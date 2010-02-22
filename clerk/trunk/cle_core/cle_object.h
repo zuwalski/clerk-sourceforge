@@ -26,29 +26,31 @@
 #include "cle_clerk.h"
 #include "cle_stream.h"
 
-//TODO - root headers have size 3 (\0\0[Identifier])
+//root-headers \0\0[Identificer]
+#define IHEAD_SIZE 3	//(sizeof(segment) + 1)
+#define HEAD_EVENT "\0\0e"
+#define HEAD_NAMES "\0\0n"
+
 //object-headers have size 1 ([Identifier])
 #define HEAD_SIZE 2
-#define HEAD_EVENT "\0e"
 #define HEAD_HANDLER "\0h"
 #define HEAD_ROLES "\0r"
-#define HEAD_OID "\0O"
-#define HEAD_NAMES "\0o"
-#define HEAD_DEV "\0D"
-//#define HEAD_EXTENDS "\0x"
-#define HEAD_STATES "\0s"
-#define HEAD_STATE_NAMES "\0z"
-#define HEAD_PROPERTY "\0y"
 
-#define HEAD_METHOD "\0M"
-#define HEAD_EXPR "\0E"
-#define HEAD_NUM "\0N"
-#define HEAD_REF "\0R"
-#define HEAD_COLLECTION "\0C"
-#define HEAD_REF_MEM "\0r"
-
-// \0\0[Identificer]
-#define IHEAD_SIZE (sizeof(segment) + 1)
+// properties
+enum property_type 
+{
+	TYPE_ILLEGAL = 0,
+	TYPE_STATE,
+	TYPE_HANDLER,
+	TYPE_METHOD,
+	TYPE_EXPR,
+	TYPE_ANY,
+	TYPE_NUM,
+	TYPE_REF,
+	TYPE_REF_MEM,
+	TYPE_COLLECTION,
+	TYPE_DEPENDENCY
+};
 
 #define OID_HIGH_SIZE 4
 typedef struct
@@ -135,7 +137,5 @@ int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* ha
 int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname);
 
 int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname);
-
-void cle_eventroot(task* t, st_ptr* eventpt);
 
 #endif

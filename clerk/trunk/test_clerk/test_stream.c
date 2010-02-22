@@ -178,7 +178,7 @@ void test_stream_c()
 	st_empty(t,&config_root);
 
 	// dummy-sync handler for "abcdefghi"
-	cle_add_sys_handler(t,config_root,"abcdefghi",10,&handler1);
+	//cle_add_sys_handler(t,config_root,"abcdefghi",10,&handler1);
 
 	// sync handler for "ab*"
 	cle_add_sys_handler(t,config_root,"ab",3,&handler1);
@@ -212,14 +212,15 @@ void test_stream_c()
 		{
 			_ipt* ipt;
 			task* app_inst = tk_clone_task(t);
-			st_ptr dummy_user, dummy_userroles,eventname;
+			st_ptr dummy_user, dummy_userroles,eventname, pt;
 			dummy_user.pg = 0;
 			dummy_userroles.pg = 0;
 
 			//printf("testing event: %.*s\n",10,test_events[i]);
 	
 			st_empty(app_inst,&eventname);
-			st_insert(app_inst,&eventname,test_events[i],10);
+			pt = eventname;
+			st_insert(app_inst,&pt,test_events[i],10);
 
 			ipt = cle_start(app_inst,config_root,eventname,dummy_user,dummy_userroles,&_test_pipe2,0);
 

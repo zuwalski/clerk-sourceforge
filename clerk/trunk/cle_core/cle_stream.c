@@ -267,7 +267,7 @@ void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_l
 	if(role_length > 255)
 		return;
 
-	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
+	st_insert(app_instance,&root,HEAD_EVENT,IHEAD_SIZE);
 
 	st_insert(app_instance,&root,eventmask,mask_length);
 
@@ -296,7 +296,7 @@ struct _scan_event
 {
 	task* t;
 	struct _mark_chain* first, *last;
-	st_ptr eventpt, syspt;
+	st_ptr eventpt, syspt, eventid;
 	uint allowed, state, oid_begin, trace_begin, index;
 };
 
@@ -345,6 +345,8 @@ static uint _event_move(struct _scan_event* se, cdat cs, uint l)
 	if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
 		se->syspt.pg = 0;
 
+	// copy clean eventid
+	st_insert(se->t,&se->eventid,cs,l);
 	// not found! scan end (or no possible grants)
 	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
 }
@@ -402,23 +404,23 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 	uint i;
 	for(i = 0; l > 0; l--, se->index++)
 	{
-		uint c = *cs;
+		uint c = cs[i];
 		switch(c)
 		{
 		case '.':
 		case '/':
 		case '\\':
 		case 0:
-			if(se->state & 1 == 0)
+			if((se->state & 1) == 0)
 				return -1;
 			if(_event_mark(se,cs,i))
 				return -1;
 			se->state = 2;
-			cs++;
+			cs += i + 1;
 			i = 0;
 			break;
 		case '@':	// OID
-			if(se->state & 1 == 0)
+			if((se->state & 1) == 0)
 				return -1;
 			if(_event_mark(se,cs,i))
 				return -1;
@@ -426,7 +428,7 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 			se->oid_begin = se->index;
 			break;
 		case '!':	// TRACER-ID
-			if(se->state & 1 != 0)
+			if((se->state & 1) != 0)
 			{
 				if(_event_mark(se,cs,i))
 					return -1;
@@ -450,14 +452,14 @@ static uint _event_scan(void* ctx, cdat cs, uint l)
 				return -1;
 			if(se->state == 5)
 				return -1;
-			else if(se->state & 24 == 0)
+			else if((se->state & 24) == 0)
 			{
 				se->state = 1;
 				i++;
 			}
 		}
 	}
-	return (se->state & 1 != 0)? _event_move(se,cs,i) : 0;
+	return ((se->state & 1) != 0)? _event_move(se,cs,i) : 0;
 }
 
 static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
@@ -503,7 +505,7 @@ static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_han
 			it_dispose(inst.t,&it);
 		}
 
-		while(mc->syshdl != 0);
+		while(mc->syshdl != 0)
 		{
 			_register_handler(inst.t,hdlists,mc->syshdl,0,obj,mc->syshdl->systype);
 
@@ -651,10 +653,20 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	// no username? -> root/sa
 	se.allowed = st_is_empty(&userid);
 
-	cle_eventroot(inst.t,&se.eventpt);
+	se.eventpt = inst.root;
+	st_insert(inst.t,&se.eventpt,HEAD_EVENT,IHEAD_SIZE);
 	se.syspt = config;
 
+	st_empty(inst.t,&se.eventid);
+
 	if(st_map(inst.t,&eventid,_event_scan,&se) != 0 || se.allowed == 0)
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
+
+	// end-of-event without terminator-symbol
+	if(se.state == 1 && _event_mark(&se,"",0))
 	{
 		_error(event_not_allowed);
 		return 0;
@@ -673,14 +685,12 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 
 	// ipt setup - internal task
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
-	// default null
 	ipt->event_chain_begin = 0;
 
 	// reuse markchain
 	ipt->sys.free = (ptr_list*)se.first;
 	ipt->sys.config = config;
-//			ipt->sys.eventid = ievent;
-//			ipt->sys.event_len = event_len;
+	ipt->sys.eventid = se.eventid;
 //			ipt->sys.userid = userid;
 //			ipt->sys.userid_len = userid_len;
 
@@ -689,7 +699,7 @@ _ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
 		_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE],inst,se.state & 8,response,responsedata);
 
-	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
+	if(hdlists[PIPELINE_REQUEST] != 0)
 		_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST],inst);
 
 	// do start

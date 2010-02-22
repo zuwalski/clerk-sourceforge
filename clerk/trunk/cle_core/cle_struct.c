@@ -517,20 +517,24 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 		while(nxt->next && nxt->offset < pt->offset)
 			nxt = GOOFF(rt.pg,nxt->next);
 
-		while(1)
+		if(nxt->offset == rt.sub->length)
 		{
-			if(nxt->offset != rt.sub->length)
-				return 1;
-
-			rt.sub  = (ISPTR(nxt))?_tk_get_ptr(t,&rt.pg,nxt):nxt;
-			if(rt.sub->sub == 0)
+			while(1)
 			{
-				rt.diff = rt.sub->length;
-				break;
-			}
+				rt.sub  = (ISPTR(nxt))?_tk_get_ptr(t,&rt.pg,nxt):nxt;
+				if(rt.sub->sub == 0)
+				{
+					rt.diff = rt.sub->length;
+					break;
+				}
 
-			nxt = GOOFF(rt.pg,rt.sub->sub);
+				nxt = GOOFF(rt.pg,rt.sub->sub);
+				if(nxt->offset != rt.sub->length)
+					return 1;
+			}
 		}
+		else if(nxt->offset >= pt->offset)
+			return 1;
 	}
 
 	_st_write(&rt);

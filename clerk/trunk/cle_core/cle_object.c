@@ -147,12 +147,12 @@ static int _cmp_validate(task* t, st_ptr from, const char* str, uint len)
 static oid _new_oid(cle_instance inst, st_ptr* newobj)
 {
 	oid id;	
-	id._low = tk_segment(inst.t);
 
 	while(1)
 	{
-		*newobj = inst.root;
+		id._low = tk_segment(inst.t);
 
+		*newobj = inst.root;
 		if(st_insert(inst.t,newobj,(cdat)&id._low,sizeof(segment)))
 		{
 			id._high[0] = 0;	// first key in segment
@@ -185,11 +185,9 @@ static oid _new_oid(cle_instance inst, st_ptr* newobj)
 
 			it_dispose(inst.t,&it);
 
+			// segment filled
 			if(id._high[i] != 0)
 				break;
-
-			// segment filled
-			id._low = tk_new_segment(inst.t);
 		}
 	}
 
@@ -313,7 +311,7 @@ int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 	}
 
 	*obj = inst.root;
-	return st_move(inst.t,obj,(cdat)&id,sizeof(id));
+	return st_move(inst.t,obj,(cdat)&id,sizeof(oid));
 }
 
 int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize)
@@ -427,7 +425,7 @@ int cle_persist_object(cle_instance inst, st_ptr* obj)
 			oid   ref;
 		} new_ref;
 
-		if(st_scan(inst.t,&pt) != 'r')
+		if(st_scan(inst.t,&pt) != TYPE_REF_MEM)
 			continue;
 
 		if(st_get(inst.t,&pt,(char*)&memobj,sizeof(st_ptr)) != -1)
@@ -441,7 +439,7 @@ int cle_persist_object(cle_instance inst, st_ptr* obj)
 		if(st_get(inst.t,&memobj,(char*)&new_ref.ref,sizeof(oid)) != -1)
 			return __LINE__;
 
-		new_ref.head = 'R';
+		new_ref.head = TYPE_REF;
 		st_update(inst.t,&upd,(cdat)&new_ref,sizeof(new_ref));
 	}
 
@@ -574,7 +572,7 @@ static int _split_name(task* t, st_ptr* name, st_ptr hostpart, st_ptr namepart)
 	return _scan_validate(t,name,_do_split_name,&ctx);
 }
 
-static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, uchar typeheader, uchar create)
+static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum property_type type, uchar create)
 {
 	st_ptr hostpart,namepart,tobj,pt;
 	struct {
@@ -627,7 +625,7 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, uchar type
 	if(create != 0)
 	{
 		_id.id = _create_identity(inst,obj);
-		_id.type = typeheader;
+		_id.type = type;
 
 		st_insert_st(inst.t,&obj,&hostpart);
 
@@ -643,7 +641,7 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, uchar type
 		if(st_get(inst.t,&pt,(char*)&_id,sizeof(_id)) != -1)
 			return 0;
 
-		if(_id.type != typeheader)
+		if(_id.type != type)
 			return 0;
 	}
 	return _id.id;
@@ -663,14 +661,14 @@ static int _new_value(cle_instance inst, st_ptr obj, identity id, st_ptr* value)
 // TODO: write validator-expr here...
 int cle_create_state(cle_instance inst, st_ptr obj, st_ptr newstate)
 {
-	identity id = _identify(inst,obj,newstate,'S',1);
+	identity id = _identify(inst,obj,newstate,TYPE_STATE,1);
 	return (id == 0)? __LINE__ : 0;
 }
 
 int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state)
 {
 	// name must not be used at lower level
-	identity id = _identify(inst,obj,state,'S',0);
+	identity id = _identify(inst,obj,state,TYPE_STATE,0);
 	if(id == 0)
 		return __LINE__;
 
@@ -682,7 +680,7 @@ int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state)
 
 int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname)
 {
-	identity id = _identify(inst,obj,propertyname,'y',1);
+	identity id = _identify(inst,obj,propertyname,TYPE_ANY,1);
 	return (id == 0)? __LINE__ : 0;
 }
 
@@ -709,7 +707,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 		switch(st_scan(inst.t,&expr))
 		{
 		case ':':	// inject named context resource
-			id = _identify(inst,obj,path,'x',1);
+			id = _identify(inst,obj,path,TYPE_DEPENDENCY,1);
 			if(id == 0)
 				return __LINE__;
 
@@ -718,7 +716,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 
 			return _copy_validate(inst.t,&obj,expr);
 		case '=':	// expr
-			id = _identify(inst,obj,path,'E',1);
+			id = _identify(inst,obj,path,TYPE_EXPR,1);
 			if(id == 0)
 				return __LINE__;
 
@@ -729,7 +727,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 			// call compiler
 			return cmp_expr(inst.t,&obj,&expr,response,data);
 		case '(':	// method
-			id = _identify(inst,obj,path,'M',1);
+			id = _identify(inst,obj,path,TYPE_METHOD,1);
 			if(id == 0)
 				return __LINE__;
 
@@ -740,7 +738,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 			// call compiler
 			return cmp_method(inst.t,&obj,&expr,response,data,0);
 		case '[':	// collection (expr as index-spec?)
-			id = _identify(inst,obj,path,'C',1);
+			id = _identify(inst,obj,path,TYPE_COLLECTION,1);
 			if(id == 0)
 				return __LINE__;
 
@@ -763,7 +761,7 @@ static int _copy_handler_states(cle_instance inst, st_ptr obj, st_ptr handler, p
 
 	for(; states != 0; states = states->link)
 	{
-		identity id = _identify(inst,obj,states->pt,'S',0);
+		identity id = _identify(inst,obj,states->pt,TYPE_STATE,0);
 		if(id == 0)
 			return __LINE__;
 
@@ -773,7 +771,7 @@ static int _copy_handler_states(cle_instance inst, st_ptr obj, st_ptr handler, p
 	return 0;
 }
 
-int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, enum handler_type type)
+int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, enum handler_type htype)
 {
 	st_ptr pt;
 	cle_handler href;
@@ -795,7 +793,7 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 	} while(0);
 
 	// create handler in object
-	href.handler = _identify(inst,obj,eventname,'H',1);
+	href.handler = _identify(inst,obj,eventname,TYPE_HANDLER,1);
 	if(href.handler == 0)
 		return __LINE__;
 
@@ -813,7 +811,7 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 		return __LINE__;
 
 	pt = inst.root;
-	// register handler in instance TODO: -> cle_stream.c
+	// register handler in instance 
 	st_insert(inst.t,&pt,HEAD_EVENT,IHEAD_SIZE);
 
 	// event-name
@@ -826,7 +824,7 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 	if(st_get(inst.t,&obj,(char*)&href.oid,sizeof(oid)) != -2)
 		return __LINE__;
 
-	href.type = type;
+	href.type = htype;
 	// insert {oid,id (handler),type}
 	st_insert(inst.t,&pt,(cdat)&href,sizeof(cle_handler));
 	return 0;
@@ -951,6 +949,3 @@ int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname)
 	}
 }
 
-void cle_eventroot(task* t, st_ptr* eventpt)
-{
-}
