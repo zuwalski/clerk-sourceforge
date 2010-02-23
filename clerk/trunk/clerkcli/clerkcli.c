@@ -23,9 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../cle_core/backends/cle_backends.h"
 #include "../cle_core/cle_stream.h"
 
-void unimplm()
+void cle_panic(task* t)
 {
-	puts("failed in unimpl in clerkcli.c");
+	puts("failed in cle_panic in clerkcli.c");
 	exit(-1);
 }
 

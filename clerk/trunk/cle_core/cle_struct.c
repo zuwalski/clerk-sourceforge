@@ -484,7 +484,7 @@ uint st_link(task* t, st_ptr* to, st_ptr* from)
 
 	if(from->offset != 0)
 	{
-		unimplm();
+		cle_panic(t);	// unimpl
 	}
 	else
 	{
@@ -514,8 +514,14 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 	if(rt.sub->sub)
 	{
 		key* nxt = GOOFF(rt.pg,rt.sub->sub);
-		while(nxt->next && nxt->offset < pt->offset)
+		while(nxt->offset < pt->offset)
+		{
+			rt.prev = nxt;
+
+			if(nxt->next == 0)
+				break;
 			nxt = GOOFF(rt.pg,nxt->next);
+		}
 
 		if(nxt->offset == rt.sub->length)
 		{
@@ -525,6 +531,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 				if(rt.sub->sub == 0)
 				{
 					rt.diff = rt.sub->length;
+					rt.prev = 0;
 					break;
 				}
 

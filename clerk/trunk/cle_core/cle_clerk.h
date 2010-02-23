@@ -170,6 +170,8 @@ void tk_root_ptr(task* t, st_ptr* pt);
 ptr_list* ptr_list_reverse(ptr_list* e);
 /* test */
 
+void cle_panic(task* t);
+
 void unimplm();
 
 #endif

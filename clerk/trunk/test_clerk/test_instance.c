@@ -71,14 +71,14 @@ void test_instance_c()
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 
-	ASSERT(cle_new(inst,name,object,0) == 0);
+	ASSERT(cle_new(inst,name,object1,0) == 0);
 
 	ASSERT(cle_goto_object(inst,name,&object2) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 
-	ASSERT(cle_new(inst,name,object,0) == 0);
+	ASSERT(cle_new(inst,name,object2,0) == 0);
 
 	ASSERT(cle_goto_object(inst,name,&object3) == 0);
 
@@ -86,22 +86,22 @@ void test_instance_c()
 	st_update(t,&pt,objone,sizeof(objone));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) != 0);
-	ASSERT(memcmp(buffer,"@abab",6) == 0);
+	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
+	ASSERT(memcmp(buffer,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) != 0);
-	ASSERT(memcmp(buffer,"@abac",6) == 0);
+	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
+	ASSERT(memcmp(buffer,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) != 0);
-	ASSERT(memcmp(buffer,"@abad",6) == 0);
+	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
+	ASSERT(memcmp(buffer,"@abaaaaaaaaad",13) == 0);
 
 	// states
 	pt = name;
@@ -109,9 +109,9 @@ void test_instance_c()
 
 	ASSERT(cle_create_state(inst,object1,name) == 0);
 
-	ASSERT(cle_create_state(inst,object2,name) != 0);
+	ASSERT(cle_create_state(inst,object2,name) == 0);
 
-	ASSERT(cle_create_state(inst,object3,name) != 0);
+	ASSERT(cle_create_state(inst,object3,name) == 0);
 
 	pt = name;
 	st_update(t,&pt,state2,sizeof(state2));

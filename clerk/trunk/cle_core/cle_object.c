@@ -147,11 +147,10 @@ static int _cmp_validate(task* t, st_ptr from, const char* str, uint len)
 static oid _new_oid(cle_instance inst, st_ptr* newobj)
 {
 	oid id;	
+	id._low = tk_segment(inst.t);
 
 	while(1)
 	{
-		id._low = tk_segment(inst.t);
-
 		*newobj = inst.root;
 		if(st_insert(inst.t,newobj,(cdat)&id._low,sizeof(segment)))
 		{
@@ -188,6 +187,8 @@ static oid _new_oid(cle_instance inst, st_ptr* newobj)
 			// segment filled
 			if(id._high[i] != 0)
 				break;
+
+			id._low = tk_new_segment(inst.t);
 		}
 	}
 
@@ -227,7 +228,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 		if(st_move(inst.t,&extends,(cdat)&dev_identity,sizeof(identity)) != 0)
 			return __LINE__;
 
-		if(st_get(inst.t,&extends,(char*)&devid,sizeof(identity)) <= 0)
+		if(st_get(inst.t,&extends,(char*)&devid,sizeof(identity)) != -2)
 			return __LINE__;
 
 		// new dev: level + 1
@@ -243,11 +244,11 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 	if(obj != 0)
 		*obj = newobj;
 
-	// write header
-	st_append(inst.t,&newobj,(cdat)&header,sizeof(header));
-
 	// finish name
 	st_append(inst.t,&names,(cdat)&header.id,sizeof(oid));
+
+	// write header
+	st_append(inst.t,&newobj,(cdat)&header,sizeof(header));
 
 	// reflect name and dev
 	st_append(inst.t,&newobj,(cdat)&dev_identity,sizeof(identity));
@@ -328,7 +329,8 @@ int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize)
 		return __LINE__;
 
 	buffer[0] = '@';
-	for(i = 0; i < sizeof(oid)*2+1; i++)
+	buffer++;
+	for(i = 0; i < sizeof(oid); i++)
 	{
 		int c = ((char*)&header.obj.id)[i];
 		buffer[i*2] = (c >> 4) + 'a';
@@ -512,7 +514,8 @@ static identity _create_identity(cle_instance inst, st_ptr obj)
 	else
 	{
 		st_ptr pt = obj;
-		st_get(inst.t,&pt,(char*)id,sizeof(id));
+		if(st_get(inst.t,&pt,(char*)&id,sizeof(id)) != -2)
+			return 0;
 
 		id = IDMAKE(IDLEVEL(id),IDNUMBER(id) + 1);
 
@@ -626,6 +629,8 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum prope
 	{
 		_id.id = _create_identity(inst,obj);
 		_id.type = type;
+
+		st_offset(inst.t,&obj,sizeof(objectheader2));
 
 		st_insert_st(inst.t,&obj,&hostpart);
 

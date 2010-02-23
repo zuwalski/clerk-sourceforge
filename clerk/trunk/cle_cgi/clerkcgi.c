@@ -24,9 +24,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "../cle_core/cle_stream.h"
 
 ////// master fail
-void unimplm()
+void cle_panic(task* t)
 {
-	puts("failed in unimpl in clerkcgi.c");
+	puts("failed in cle_panic in clerkcgi.c");
 	exit(-1);
 }
 

@@ -26,7 +26,7 @@ void* tk_malloc(task* t, uint size)
 {
 	void* m = malloc(size);
 	if(m == 0)
-		unimplm();
+		cle_panic(t);
 
 	return m;
 }
@@ -36,7 +36,7 @@ void* tk_realloc(task* t, void* mem, uint size)
 {
 	void* m = realloc(mem,size);
 	if(m == 0)
-		unimplm();
+		cle_panic(t);
 
 	return m;
 }
@@ -113,7 +113,7 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	{
 		// found: read address of page_wrapper
 		if(st_get(t,&root_ptr,(char*)&pw,sizeof(pw)) != -1)
-			unimplm();	// panic (map corrupted)
+			cle_panic(t);	// map corrupted
 	}
 
 	// into cache
@@ -327,7 +327,8 @@ ushort tk_segment(task* t)
 
 segment tk_new_segment(task* t)
 {
-	unimplm();
+	cle_panic(t);
+	return 0;
 }
 
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
@@ -445,7 +446,7 @@ static void _tk_extptr(struct _tk_setup* setup, page_wrap* pw)
 	}
 	else if(pw->ovf->used == pw->ovf->size)
 	{
-		unimplm();
+		cle_panic(setup->t);
 	}
 
 	setup->pt_off = (pw->ovf->used >> 4) | 0x8000;

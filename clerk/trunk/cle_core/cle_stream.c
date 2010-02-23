@@ -376,7 +376,7 @@ static uint _event_mark(struct _scan_event* se, cdat cs, uint len)
 	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
 	{
 		if(st_get(0,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) != -1)
-			unimplm();	// should never happen
+			cle_panic(se->t);	// should never happen
 	}
 
 	// mark

@@ -52,9 +52,9 @@ int heapstatus = _heapchk();
 //*/
 }
 
-void unimplm()
+void cle_panic(task* t)
 {
-	puts("failed in unimpl in test_main.c");
+	puts("failed in cle_panic in test_main.c");
 	heap_check();
 	getchar();
 	exit(-1);
@@ -910,7 +910,7 @@ static uint _tk_cut2(struct _tk_setup* setup, page_wrap* pw, key* copy, key* pre
 
 	if(setup->pt_off == 0)
 	{
-		unimplm();
+		cle_panic(setup->t);
 	}
 
 	setup->pt->ptr_id = PTR_ID;
