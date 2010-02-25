@@ -103,6 +103,15 @@ void test_instance_c()
 	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
 	ASSERT(memcmp(buffer,"@abaaaaaaaaad",13) == 0);
 
+	object = object3;
+	ASSERT(cle_goto_parent(inst,&object) == 0);
+	ASSERT(object2.pg == object.pg && object2.key == object.key);
+
+	ASSERT(cle_goto_parent(inst,&object) == 0);
+	ASSERT(object1.pg == object.pg && object1.key == object.key);
+
+	ASSERT(cle_is_related_to(inst,object1,object2) != 0);
+
 	// states
 	pt = name;
 	st_update(t,&pt,state1,sizeof(state1));
@@ -112,6 +121,15 @@ void test_instance_c()
 	ASSERT(cle_create_state(inst,object2,name) == 0);
 
 	ASSERT(cle_create_state(inst,object3,name) == 0);
+
+	// but still owned by object 1
+	{
+		st_str str;
+		str.length = sizeof(state1);
+		str.string = state1; 
+		object = object3;
+		ASSERT(cle_get_property_host(inst,&object,str) == 2);
+	}
 
 	pt = name;
 	st_update(t,&pt,state2,sizeof(state2));
@@ -137,16 +155,17 @@ void test_instance_c()
 	st_insert(t,&pt,testmeth,sizeof(testmeth) - 1);
 
 	// sync-handler for start-state
-	ASSERT(cle_create_handler(inst,object1,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
+	ASSERT(cle_create_handler(inst,object2,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
-	// sync-handler for state2
+	// sync-handler for state1
 	// set state 
 	pt = name;
-	st_update(t,&pt,state2,sizeof(state2));
+	st_update(t,&pt,state1,sizeof(state2));
 
 	list.pt = name;
 
 	ASSERT(cle_create_handler(inst,object1,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
+
 /*
 	pt = oid;
 	st_update(t,&pt,"\1\2\0",3);

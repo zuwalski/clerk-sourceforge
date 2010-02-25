@@ -546,6 +546,7 @@ static uint _do_split_name(void* pctx, char* chrs, int len)
 			{
 				// from first 0 its namepart
 				ctx->in_host = 0;
+				hlen++;	// incl 0
 				break;
 			}
 		}
@@ -868,7 +869,7 @@ static int _is_related(cle_instance inst, cle_handler href, st_ptr obj)
 		if(st_get(inst.t,&obj,(char*)&header,sizeof(objectheader2)) >= 0)
 			return __LINE__;
 
-		if(memcmp(&header.id,&href.oid) == 0)
+		if(memcmp(&header.id,&href.oid,sizeof(oid)) == 0)
 			return 0;
 
 		obj = inst.root;
