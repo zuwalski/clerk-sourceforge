@@ -579,10 +579,7 @@ static int _split_name(task* t, st_ptr* name, st_ptr hostpart, st_ptr namepart)
 static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum property_type type, uchar create)
 {
 	st_ptr hostpart,namepart,tobj,pt;
-	struct {
-		identity id;
-		uchar    type;
-	} _id;
+	cle_typed_identity _id;
 
 	st_empty(inst.t,&namepart);
 	st_empty(inst.t,&hostpart);
@@ -836,7 +833,7 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 	return 0;
 }
 
-static int _get_implementation(cle_instance inst, identity id, st_ptr* obj, st_ptr* value)
+int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value)
 {
 	while(1)
 	{
@@ -893,7 +890,7 @@ int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* ha
 
 	pt = *obj;
 	// find first handler impl
-	if(_get_implementation(inst,href.handler,&pt,handler))
+	if(cle_identity_value(inst,href.handler,&pt,handler))
 		return __LINE__;
 
 	if(check_relation && _is_related(inst,href,*handler))
@@ -911,7 +908,7 @@ int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* ha
 	return st_exsist(inst.t,&pt,(cdat)&header.state,sizeof(identity)) ? 0 : 1;
 }
 
-int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname)
+int cle_get_property_host(cle_instance inst, st_ptr* obj, cdat str, uint len)
 {
 	int level = 0;
 	while(1)
@@ -923,8 +920,11 @@ int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname)
 
 		if(st_move(inst.t,&pt,(cdat)&names_identity,sizeof(identity)) == 0)
 		{
-			if(st_move(inst.t,&pt,propname.string,propname.length) == 0)
+			if(st_move(inst.t,&pt,str,len) == 0)
+			{
+				*obj = pt;
 				return level;
+			}
 		}
 
 		if(cle_goto_parent(inst,obj))
@@ -946,7 +946,10 @@ int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname)
 		if(st_move(inst.t,&pt,(cdat)&names_identity,sizeof(identity)) == 0)
 		{
 			if(st_move_st(inst.t,&pt,&propname) == 0)
+			{
+				*obj = pt;
 				return level;
+			}
 		}
 
 		if(cle_goto_parent(inst,obj))
@@ -955,3 +958,116 @@ int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname)
 	}
 }
 
+int cle_probe_identity(cle_instance inst, st_ptr* reader, cle_typed_identity* id)
+{
+	return (st_get(inst.t,reader,(char*)id,sizeof(cle_typed_identity)) != -1);
+}
+
+int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
+{
+	struct {
+		char zero;
+		char ref_type;
+	} _head;
+
+	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
+		return 1;
+
+	if(_head.ref_type == TYPE_REF)
+	{
+		oid id;
+		if(st_get(inst.t,&prop,(char*)&id,sizeof(oid)) != -1)
+			return 1;
+
+		*ref = inst.root;
+		return st_move(inst.t,ref,(cdat)&id,sizeof(oid));
+	}
+	else if(_head.ref_type == TYPE_REF_MEM)
+	{
+		st_ptr robj;
+		if(st_get(inst.t,&prop,(char*)&robj,sizeof(st_ptr)) != -1)
+			return 1;
+
+		*ref = robj;
+	}
+	else
+		return 1;
+
+	return 0;
+}
+
+int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref)
+{
+	st_ptr prop;
+	struct {
+		char zero;
+		char ref_type;
+	} _head;
+
+	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,ref))
+		return -1;
+
+	return cle_get_property_ref_value(inst,prop,ref);
+}
+
+int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl)
+{
+	st_ptr prop;
+	struct {
+		char zero;
+		char num_type;
+		double value;
+	} _num;
+
+	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
+		return 1;
+
+	if(st_get(inst.t,&prop,(char*)&_num,sizeof(_num)) != -1)
+		return 1;
+
+	if(_num.zero != 0 || _num.num_type != TYPE_NUM)
+		return 1;
+
+	*dbl = _num.value;
+	return 0;
+}
+
+int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
+{
+	return 0;
+}
+
+int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl)
+{
+	return 0;
+}
+
+enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id)
+{
+	st_ptr prop;
+	struct {
+		char zero;
+		char type;
+	} _head;
+
+	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
+		return TYPE_ILLEGAL;
+
+	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
+		return TYPE_ANY;
+
+	return (enum property_type) _head.type;
+}
+
+enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop)
+{
+	struct {
+		char zero;
+		char type;
+	} _head;
+
+	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
+		return TYPE_ANY;
+
+	return (enum property_type) _head.type;
+}

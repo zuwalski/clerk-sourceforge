@@ -106,6 +106,13 @@ typedef struct
 }
 cle_handler;
 
+typedef struct
+{
+	identity id;
+	uchar    type;
+}
+cle_typed_identity;
+
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
 void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
@@ -134,8 +141,26 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler);
 
-int cle_get_property_host(cle_instance inst, st_ptr* obj, st_str propname);
+int cle_get_property_host(cle_instance inst, st_ptr* obj, cdat str, uint length);
 
 int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname);
+
+int cle_probe_identity(cle_instance inst, st_ptr* reader, cle_typed_identity* id);
+
+int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value);
+
+int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref);
+
+int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref);
+
+int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl);
+
+int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref);
+
+int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl);
+
+enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id);
+
+enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
 
 #endif

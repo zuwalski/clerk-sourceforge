@@ -44,11 +44,10 @@ const char exprpath[] = "expr\0expr";
 void test_instance_c()
 {
 	cle_instance inst;
-	st_ptr root,name,pt,eventname,meth,oid,handler,object,empty,object1,object2,object3;
+	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3;
 	task* t = tk_create_task(0,0);
 	char buffer[100];
 	ptr_list list;
-	cle_handler href;
 
 	// setup
 	puts("\nRunning test_instance_c\n");
@@ -123,13 +122,8 @@ void test_instance_c()
 	ASSERT(cle_create_state(inst,object3,name) == 0);
 
 	// but still owned by object 1
-	{
-		st_str str;
-		str.length = sizeof(state1);
-		str.string = state1; 
-		object = object3;
-		ASSERT(cle_get_property_host(inst,&object,str) == 2);
-	}
+	pt = object3;
+	ASSERT(cle_get_property_host(inst,&pt,state1,sizeof(state1)) == 2);
 
 	pt = name;
 	st_update(t,&pt,state2,sizeof(state2));
