@@ -17,11 +17,12 @@
 */
 #include "cle_object.h"
 #include "cle_compile.h"
+#include "cle_runtime.h"
 
 // defines
-static const identity names_identity = 0;
-static const identity dev_identity = 1;
-static const identity start_state_identity = 2;
+static const identity names_identity = SYS_NAMES;
+static const identity dev_identity = SYS_DEV;
+static const identity start_state_identity = STATE_START;
 
 // helper-functions
 static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), void* ctx)
@@ -1010,17 +1011,13 @@ int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, s
 	return cle_get_property_ref_value(inst,prop,ref);
 }
 
-int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl)
+int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl)
 {
-	st_ptr prop;
 	struct {
 		char zero;
 		char num_type;
 		double value;
 	} _num;
-
-	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
-		return 1;
 
 	if(st_get(inst.t,&prop,(char*)&_num,sizeof(_num)) != -1)
 		return 1;
@@ -1030,6 +1027,16 @@ int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, d
 
 	*dbl = _num.value;
 	return 0;
+}
+
+int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl)
+{
+	st_ptr prop;
+
+	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
+		return 1;
+
+	return cle_get_property_num_value(inst,prop,dbl);
 }
 
 int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)

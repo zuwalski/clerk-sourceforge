@@ -118,4 +118,12 @@ struct _body_
 	ushort firsthandler;
 };
 
+enum fixed_identities
+{
+	SYS_NAMES = 0,
+	SYS_DEV,
+	STATE_START,
+	F_TOSTRING
+};
+
 #endif

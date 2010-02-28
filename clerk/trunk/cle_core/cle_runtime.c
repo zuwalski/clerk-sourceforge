@@ -24,9 +24,6 @@ typedef double rt_number;
 
 static const char number_format[] = "%.14g";
 
-static const char to_str_expr[] = "str\0E";
-static const char init_method[] = "init\0M";
-
 struct _rt_code
 {
 	struct _rt_code* next;
@@ -410,28 +407,39 @@ static void _rt_num_out(struct _rt_invocation* inv, struct _rt_stack* to, rt_num
 	}
 }
 
+static uint _rt_prop_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
+{
+	struct _rt_stack value;
+	rt_number num;
+
+	if(cle_identity_value(inv->hdl->inst,from->prop_id.id,&from->prop_obj,&value.single_ptr))
+		return _rt_error(inv,__LINE__);
+
+	switch(cle_get_property_type_value(inv->hdl->inst,value.single_ptr))
+	{
+	case TYPE_ANY:
+		return _rt_string_out(inv,to,&value);
+	case TYPE_NUM:
+		if(cle_get_property_num_value(inv->hdl->inst,value.single_ptr,&num))
+			return _rt_error(inv,__LINE__);
+		_rt_num_out(inv,to,num);
+		break;
+	case TYPE_REF:
+	case TYPE_REF_MEM:
+		if(cle_get_property_ref_value(inv->hdl->inst,value.single_ptr,&value.obj))
+			return _rt_error(inv,__LINE__);
+		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&value.obj,&value.ptr) == 0)
+			*sp = _rt_eval_expr(inv,to,&value);
+	}
+	return 0;
+}
+
 static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _rt_stack* to, struct _rt_stack* from)
 {
 	switch(from->type)
 	{
 	case STACK_PROP:
-		{
-			st_ptr value;
-			enum property_type type;
-
-			if(cle_identity_value(inv->hdl->inst,from->prop_id.id,from->prop_obj,&value))
-				return _rt_error(inv,__LINE__);
-
-			type = cle_get_property_type_value(inv->hdl->inst,value);
-
-
-		}
-
-
-		if(_rt_find_prop_value(inv,from))
-			break;
-//		_rt_get(inv,&from);			// TODO property is a number (other than ptr)
-//		return _rt_out(inv,sp,to,from);
+		return _rt_prop_out(inv,sp,to,from);
 	case STACK_RO_PTR:
 	case STACK_PTR:
 		return _rt_string_out(inv,to,from);
@@ -439,9 +447,9 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 		_rt_num_out(inv,to,from->num);
 		break;
 	case STACK_OBJ:
-		if(_rt_goto_name(inv,from->obj,&from->ptr,to_str_expr,sizeof(to_str_expr) - 1) == 0)
+		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,from->obj,&from->ptr) == 0)
 			*sp = _rt_eval_expr(inv,to,from);
-		break;	// no "str" expr? output nothing
+		break;	// no "tostring" expr? output nothing
 	case STACK_CODE:
 		// write out path/event to method/handler
 		if(st_move(inv->t,&from->single_ptr,"p",1) == 0)
@@ -526,156 +534,6 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 	(*sp)->type    = STACK_OUTPUT;
 	return 0;
 }
-
-////////////////////////////////////////
-
-static uint _rt_insert_objectid(struct _rt_invocation* inv, st_ptr to, st_ptr object)
-{
-	st_ptr pt = object;
-	if(st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE))
-		return _rt_error(inv,__LINE__);
-
-	if(st_offset(inv->t,&pt,sizeof(objectheader)))
-		return _rt_error(inv,__LINE__);
-
-	if(st_is_empty(&pt) == 0)
-		st_insert_st(inv->t,&to,&pt);
-	else
-	{
-		// mem-obj -> make persistent -> recursive
-		it_ptr it;
-		st_ptr obj = inv->hdl->instance;
-		st_insert(inv->t,&obj,HEAD_OID,HEAD_SIZE);
-
-		it_create(inv->t,&it,&obj);
-
-		it_new(inv->t,&it,&obj);
-
-		st_link(inv->t,&obj,&object);
-
-		st_insert(inv->t,&pt,it.kdata,it.kused);
-
-		st_insert(inv->t,&to,it.kdata,it.kused);
-
-		it_dispose(inv->t,&it);
-	}
-	return 0;
-}
-
-static uint _rt_new_object(struct _rt_invocation* inv, st_ptr* obj, cdat name, uint length)
-{
-	st_ptr ext = inv->hdl->instance;
-
-	if(st_move(inv->t,&ext,HEAD_NAMES,HEAD_SIZE) != 0)
-		return _rt_error(inv,__LINE__);
-	
-	if(st_move(inv->t,&ext,name,length) != 0)
-		return _rt_error(inv,__LINE__);
-
-	return cle_new_mem(inv->t,obj,ext)? _rt_error(inv,__LINE__) : 0;
-}
-
-static struct _rt_code _default_init = {0,0,{0,0,0},{0,0,0},{0,0,0,0,0,0}};
-
-static uint _rt_load_init(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr* obj)
-{
-	st_ptr pt;
-	if(_rt_goto_name(inv,*obj,&pt,init_method,sizeof(init_method)-1) != 0)
-		sp->code = &_default_init;
-	else
-		sp->code = _rt_load_code(inv,pt);
-
-	sp->code_obj = *obj;
-	sp->type = STACK_CODE;
-	return 0;
-}
-
-static uint _rt_find_object(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr* pt)
-{
-	switch(sp->type)
-	{
-	case STACK_OBJ:
-		*pt = sp->obj;
-		break;
-	// ref'ed by oid/name in stringform
-	case STACK_PTR:
-	case STACK_RO_PTR:
-		if(cle_goto_object(inv->hdl->inst,sp->single_ptr,pt))
-			return _rt_error(inv,__LINE__);
-		break;
-	default:
-		return _rt_error(inv,__LINE__);
-	}
-	return 0;
-}
-
-static uint _rt_obj_id(struct _rt_invocation* inv, struct _rt_stack* sp, st_ptr obj)
-{
-	char buffer[100];
-	int len = cle_get_oid(inv->t,obj,buffer,sizeof(buffer));
-	if(len == 0)
-		return _rt_error(inv,__LINE__);
-
-	st_empty(inv->t,&obj);
-	sp->single_ptr = sp->single_ptr_w = obj;
-	sp->type = STACK_PTR;
-
-	st_insert(inv->t,&obj,buffer,len);
-	return 0;
-}
-
-static uint _rt_add_objects(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
-{
-	int i;
-	if(sp[params].type != STACK_COLLECTION)
-		return _rt_error(inv,__LINE__);
-
-	for(i = params - 1; i >= 0; i--)
-	{
-		if(sp[i].type != STACK_OBJ)
-			return _rt_error(inv,__LINE__);
-		if(_rt_insert_objectid(inv,sp[params].ptr,sp[i].obj) != 0)
-			return 1;
-	}
-	return 0;
-}
-
-static uint _rt_remove_objects(struct _rt_invocation* inv, struct _rt_stack* sp, int params)
-{
-	int i;
-	if(sp[params].type != STACK_COLLECTION)
-		return _rt_error(inv,__LINE__);
-
-	for(i = params - 1; i >= 0; i--)
-	{
-		st_ptr pt;
-
-		if(_rt_find_object(inv,sp + i,&pt))
-			continue;
-
-		if(st_move(inv->t,&pt,HEAD_OID,HEAD_SIZE))
-			return _rt_error(inv,__LINE__);
-
-		if(st_offset(inv->t,&pt,sizeof(objectheader)))
-			return _rt_error(inv,__LINE__);
-
-		if(st_is_empty(&pt) == 0)
-		{
-			int len;
-			char buffer[100];
-
-			len = st_get(inv->t,&pt,buffer,sizeof(buffer));
-			if(len <= 0)
-				return _rt_error(inv,__LINE__);
-
-			// TODO st_delete with st_ptr param
-			st_delete(inv->t,&sp[params].ptr,buffer,len);
-		}
-	}
-	return 0;
-}
-
-////////////////////////////////////////
 
 // make sure its a number (load it)
 static uint _rt_num(struct _rt_invocation* inv, struct _rt_stack* sp)
