@@ -59,6 +59,10 @@ typedef struct
 	uchar   _high[OID_HIGH_SIZE];
 } oid;
 
+typedef struct
+{
+	char chrs[sizeof(oid)*2+1];
+} oid_str;
 // Bit
 // [31-22]	Level (0 == system/object)
 // [21-0]	Runningnumber (starting from 1)
@@ -115,11 +119,13 @@ cle_typed_identity;
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
-void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj);
+void cle_new_mem(task* app_instance, st_ptr extends, st_ptr* newobj);
 
 int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj);
 
-int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize);
+int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj);
+
+int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* buffer);
 
 int cle_goto_parent(cle_instance inst, st_ptr* child);
 

@@ -260,7 +260,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 	return 0;
 }
 
-void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
+void cle_new_mem(task* app_instance, st_ptr extends, st_ptr* newobj)
 {
 	objheader header;
 	st_ptr    pt;
@@ -271,7 +271,7 @@ void cle_new_mem(task* app_instance, st_ptr* extends, st_ptr* newobj)
 	pt = *newobj;
 
 	header.zero = 0;
-	header.ext  = *extends;
+	header.ext  = extends;
 
 	st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
@@ -316,17 +316,32 @@ int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 	return st_move(inst.t,obj,(cdat)&id,sizeof(oid));
 }
 
-int cle_get_oid(cle_instance inst, st_ptr obj, char* buffer, int buffersize)
+int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj)
 {
+	oid id;
+	*obj = inst.root;
+	if(st_move(inst.t,obj,HEAD_NAMES,IHEAD_SIZE) != 0)
+		return __LINE__;
+	
+	if(st_move(inst.t,obj,name,length) != 0)
+		return __LINE__;
+
+	if(st_get(inst.t,obj,(char*)&id,sizeof(oid)) != -1)
+		return __LINE__;
+
+	*obj = inst.root;
+	return st_move(inst.t,obj,(cdat)&id,sizeof(oid));
+}
+
+int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr)
+{
+	char* buffer = oidstr->chrs;
 	objheader header;
 	uint i;
 	if(st_get(inst.t,&obj,(char*)&header,sizeof(header)) >= 0)
 		return __LINE__;
 
 	if(ISMEMOBJ(header))
-		return __LINE__;
-
-	if(buffersize < sizeof(oid)*2+1)
 		return __LINE__;
 
 	buffer[0] = '@';
@@ -999,7 +1014,6 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 
 int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref)
 {
-	st_ptr prop;
 	struct {
 		char zero;
 		char ref_type;
@@ -1008,7 +1022,7 @@ int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, s
 	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,ref))
 		return -1;
 
-	return cle_get_property_ref_value(inst,prop,ref);
+	return cle_get_property_ref_value(inst,*ref,ref);
 }
 
 int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl)

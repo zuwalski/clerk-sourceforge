@@ -530,10 +530,7 @@ static void _ready_handler(event_handler* hdl, cle_instance inst, sys_handler_da
 	hdl->error = 0;
 
 	if(create_object)
-	{
-		st_ptr ext = hdl->object;
-		cle_new_mem(inst.t,&ext,&hdl->object);
-	}
+		cle_new_mem(inst.t,hdl->object,&hdl->object);
 
 	// prepare for input-stream
 	hdl->top = 0;

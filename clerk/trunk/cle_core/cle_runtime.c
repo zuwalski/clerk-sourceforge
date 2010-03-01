@@ -111,6 +111,11 @@ struct _rt_invocation
 };
 
 const static char exec_error = OP_ERROR;
+const static char exec_end = OP_END;
+
+const static struct _rt_code _empty_method = 
+	{0,(char*)&exec_end,{0,0,0},{0,0,0},
+	{0,0,0,0,0,0}};
 
 static uint _rt_error(struct _rt_invocation* inv, uint code)
 {
@@ -447,7 +452,7 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 		_rt_num_out(inv,to,from->num);
 		break;
 	case STACK_OBJ:
-		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,from->obj,&from->ptr) == 0)
+		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&from->obj,&from->ptr) == 0)
 			*sp = _rt_eval_expr(inv,to,from);
 		break;	// no "tostring" expr? output nothing
 	case STACK_CODE:
@@ -595,7 +600,7 @@ static int _rt_compare(struct _rt_invocation* inv, struct _rt_stack* op1, struct
 	return op1->num - op2->num;
 }
 
-static int _rt_test(struct _rt_stack* sp)
+static uint _rt_test(struct _rt_stack* sp)
 {
 	return ((sp->type != STACK_NULL) || (sp->type == STACK_NUM && sp->num != 0) ||
 		((sp->type == STACK_PTR || sp->type == STACK_RO_PTR) && (st_is_empty(&sp->single_ptr) == 0)));
@@ -606,6 +611,55 @@ static void _rt_free(struct _rt_invocation* inv, struct _rt_stack* var)
 	if(var->type == STACK_ITERATOR)
 		it_dispose(inv->t,&var->it);
 	var->type = STACK_NULL;
+}
+
+static uint _rt_new_obj(struct _rt_invocation* inv, struct _rt_stack* sp)
+{
+	cle_new_mem(inv->t,sp->obj,&sp->obj);
+
+	if(cle_identity_value(inv->hdl->inst,F_INIT,&sp->obj,&sp->ptr) == 0)
+		sp->code = _rt_load_code(inv,sp->ptr);
+	else
+		sp->code = &_empty_method;
+
+	sp->code_obj = sp->obj;
+	sp->type = STACK_CODE;
+	return 0;
+}
+
+static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
+{
+	st_ptr result,result_w;
+	st_empty(inv->t,&result);
+	result_w = result;
+
+	switch(sp->type)
+	{
+	case STACK_OBJ:
+		{
+			oid_str buffer;
+			if(cle_get_oid(inv->hdl->inst,sp->obj,&buffer) == 0)
+				st_insert(inv->t,&result_w,(cdat)&buffer,sizeof(buffer));
+		}
+		break;
+	case STACK_PTR:
+	case STACK_RO_PTR:
+		st_insert(inv->t,&result_w,"[struct]",9);
+		break;
+	case STACK_NUM:
+		st_insert(inv->t,&result_w,"[num]",6);
+		break;
+	case STACK_CODE:
+		st_insert(inv->t,&result_w,"[code]",7);
+		break;
+	case STACK_NULL:
+		st_insert(inv->t,&result_w,"[null]",7);
+		break;
+	case STACK_COLLECTION:
+		st_insert(inv->t,&result_w,"[collection]",13);
+	}
+
+	sp->type = STACK_PTR;
 }
 
 static void _rt_run(struct _rt_invocation* inv)
@@ -763,37 +817,46 @@ static void _rt_run(struct _rt_invocation* inv)
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			sp--;
-			if(_rt_new_object(inv,&sp->code_obj,inv->top->pc,tmp))
-				break;
-			inv->top->pc += tmp;
-			_rt_load_init(inv,sp,&sp->code_obj);
+			if(cle_goto_object_cdat(inv->hdl->inst,inv->top->pc,tmp,&sp->obj))
+				_rt_error(inv,__LINE__);
+			else
+			{
+				inv->top->pc += tmp;
+				if(_rt_new_obj(inv,sp))
+					_rt_error(inv,__LINE__);
+			}
 			break;
 		case OP_CLONE:
 			if(sp->type != STACK_OBJ)
 				_rt_error(inv,__LINE__);
-			else if(cle_new_mem(inv->t,&sp->obj,sp->obj))
-				_rt_load_init(inv,sp,&sp->obj);
+			else if(_rt_new_obj(inv,sp))
+				_rt_error(inv,__LINE__);
 			break;
 		case OP_ID:
 			sp--;
-			_rt_obj_id(inv,sp,inv->top->object);
+			sp->type = STACK_OBJ;
+			sp->obj = inv->top->object;
+			_rt_type_id(inv,sp);
 			break;
 		case OP_IDO:
-			_rt_obj_id(inv,sp,sp->obj);
+			_rt_type_id(inv,sp);
 			break;
 		case OP_FIND:
 			inv->top->pc++;
+			if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
 			{
-				st_ptr pt;
-				if(_rt_find_object(inv,sp,&pt))
+				if(cle_goto_object(inv->hdl->inst,sp->single_ptr,&sp->obj))
 					sp->type = STACK_NULL;
 				else
 				{
-					sp->ptr = sp->obj = pt;
+					sp->ptr = sp->obj;
 					sp->type = STACK_OBJ;
 				}
 			}
+			else
+				_rt_error(inv,__LINE__);
 			break;
+
 		case OP_CADD:
 			tmp = *inv->top->pc++;
 			if(inv->top->is_expr)
