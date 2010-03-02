@@ -46,8 +46,8 @@ void test_instance_c()
 	cle_instance inst;
 	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3;
 	task* t = tk_create_task(0,0);
-	char buffer[100];
 	ptr_list list;
+	oid_str oidstr;
 
 	// setup
 	puts("\nRunning test_instance_c\n");
@@ -85,22 +85,22 @@ void test_instance_c()
 	st_update(t,&pt,objone,sizeof(objone));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
-	ASSERT(memcmp(buffer,"@abaaaaaaaaab",13) == 0);
+	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
-	ASSERT(memcmp(buffer,"@abaaaaaaaaac",13) == 0);
+	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object,buffer,sizeof(buffer)) == 0);
-	ASSERT(memcmp(buffer,"@abaaaaaaaaad",13) == 0);
+	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaad",13) == 0);
 
 	object = object3;
 	ASSERT(cle_goto_parent(inst,&object) == 0);

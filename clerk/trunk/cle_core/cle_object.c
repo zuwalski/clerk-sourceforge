@@ -1053,6 +1053,11 @@ int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, d
 	return cle_get_property_num_value(inst,prop,dbl);
 }
 
+int cle_set_property_ptr(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ptr)
+{
+	return 0;
+}
+
 int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
 {
 	return 0;

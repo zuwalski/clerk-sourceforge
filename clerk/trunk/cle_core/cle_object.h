@@ -165,6 +165,8 @@ int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl);
 
 int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref);
 
+int cle_set_property_ptr(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ptr);
+
 int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl);
 
 enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id);
