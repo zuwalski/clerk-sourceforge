@@ -93,7 +93,7 @@ enum cle_opcode
 	OP_OPEN_POP,
 
 	OP_CADD,
-	OP_CGET,
+	OP_CIN,
 	OP_CREMOVE,
 	OP_ID,
 	OP_IDO,

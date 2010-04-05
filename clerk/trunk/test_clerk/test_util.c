@@ -553,8 +553,8 @@ static const char* _rt_opc_name(uint opc)
 		return "OP_OUTL";
 	case OP_CADD:
 		return "OP_CADD";
-	case OP_CGET:
-		return "OP_CGET";
+	case OP_CIN:
+		return "OP_CIN";
 	case OP_CREMOVE:
 		return "OP_CREMOVE";
 	case OP_ID:
@@ -725,7 +725,7 @@ void _rt_dump_function(task* t, st_ptr* root)
 		case OP_AVARS:
 		case OP_OVARS:
 		case OP_CADD:
-		case OP_CGET:
+		case OP_CIN:
 		case OP_CREMOVE:
 		case OP_ID:
 		case OP_IDO:

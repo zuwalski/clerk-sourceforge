@@ -391,7 +391,7 @@ int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child)
 
 // TODO: persist collections ?? or share one all the way down?
 // recursively persist this object as well as extends and ref-by-property.
-int cle_persist_object(cle_instance inst, st_ptr* obj)
+static int _persist_object(cle_instance inst, st_ptr* obj)
 {
 	objheader header;
 	st_ptr    newobj,ext,pt = *obj;
@@ -414,7 +414,7 @@ int cle_persist_object(cle_instance inst, st_ptr* obj)
 	st_dataupdate(inst.t,obj,(cdat)&header.obj.id,sizeof(oid));
 
 	// check and persist extends (if needed)
-	if(cle_persist_object(inst,&ext))
+	if(_persist_object(inst,&ext))
 		return __LINE__;
 
 	// get ext-id
@@ -450,7 +450,7 @@ int cle_persist_object(cle_instance inst, st_ptr* obj)
 			return __LINE__;
 
 		// persist property object...
-		if(cle_persist_object(inst,&memobj))
+		if(_persist_object(inst,&memobj))
 			return __LINE__;
 
 		// update ref
@@ -1012,6 +1012,11 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 	return 0;
 }
 
+int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
+{
+	return 0;
+}
+
 int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref)
 {
 	struct {
@@ -1043,6 +1048,26 @@ int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl)
 	return 0;
 }
 
+int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl)
+{
+	st_ptr val;
+	struct {
+		char zero;
+		char num_type;
+		double value;
+	} _num;
+
+	if(_new_value(inst,obj,id.id,&val))
+		return 1;
+
+	_num.zero = 0;
+	_num.num_type = TYPE_NUM;
+	_num.value = dbl;
+
+	st_append(inst.t,&val,(cdat)&_num,sizeof(_num));
+	return 0;
+}
+
 int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl)
 {
 	st_ptr prop;
@@ -1055,17 +1080,12 @@ int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, d
 
 int cle_set_property_ptr(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ptr)
 {
-	return 0;
-}
+	st_ptr val;
 
-int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
-{
-	return 0;
-}
+	if(_new_value(inst,obj,id.id,&val))
+		return 1;
 
-int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl)
-{
-	return 0;
+	return st_copy_st(inst.t,&val,ptr);
 }
 
 enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id)
@@ -1096,4 +1116,39 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop)
 		return TYPE_ANY;
 
 	return (enum property_type) _head.type;
+}
+
+int cle_collection_add_object(cle_instance inst, st_ptr collection, st_ptr ref)
+{
+	objheader header;
+
+	if(_persist_object(inst,&ref))
+		return 1;
+
+	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+		return 1;
+
+	st_insert(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid));
+	return 0;
+}
+
+int cle_collection_remove_object(cle_instance inst, st_ptr collection, st_ptr ref)
+{
+	objheader header;
+
+	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+		return 1;
+
+	st_delete(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid));
+	return 0;
+}
+
+int cle_collection_test_object(cle_instance inst, st_ptr collection, st_ptr ref)
+{
+	objheader header;
+
+	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+		return 1;
+
+	return (st_exsist(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid)) == 0);
 }

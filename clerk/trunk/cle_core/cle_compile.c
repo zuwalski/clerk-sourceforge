@@ -181,12 +181,12 @@ static const struct _cmp_buildin buildins[] = {
 
 	{"id",OP_ID,OP_IDO,0,0},			// get objectid in stringid format
 	{"object",OP_FIND,0,1,1},			// lookup object using name or id
-	{"validate",OP_NULL,OP_NULL,0,1},	// validate object (in state) (current or ref)
+	{"valid",OP_NULL,OP_NULL,0,1},		// is object valid (run validation)? (in state) (current or ref)
 //	{"delete",0,OP_NULL,0,1},			// delete object or delete sub-tree
 
 	{"add",0,OP_CADD,1,255},			// collection: add object(s) to collection (refs)
 	{"remove",0,OP_CREMOVE,1,255},		// collection: remove object(s) from collection (ids or refs)
-	{"get",0,OP_CGET,1,1},				// collection: get object from collection (id or ref) null if not in
+	{"in",0,OP_CIN,1,255},				// collection: test if object(s) are in collection
 	{"gt",0,OP_NULL,1,1},				// collection: add greater-than criteria
 	{"gte",0,OP_NULL,1,1},				// collection: add greater-or-equal criteria
 	{"lt",0,OP_NULL,1,1},				// collection: add less-than criteria

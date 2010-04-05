@@ -257,6 +257,9 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		*sp = inv->top->sp;
 		break;
 	case TYPE_DEPENDENCY:
+		// geting from within objectcontext or external?
+		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+			return;
 		//(*sp)->obj = inv->hdl->inst.root;
 		//if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
 		//	return;
@@ -661,6 +664,29 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	sp->type = STACK_PTR;
 }
 
+static int _rt_collection_do_objects(struct _rt_invocation* inv, struct _rt_stack* sp, uint params, int(*coll_fun)(cle_instance, st_ptr, st_ptr))
+{
+	if(sp[params].type != STACK_COLLECTION)
+		_rt_error(inv,__LINE__);
+	else
+	{
+		st_ptr coll = sp[params].ptr;
+
+		while(params-- != 0)
+		{
+			if(sp[params].type != STACK_OBJ)
+			{
+				_rt_error(inv,__LINE__);
+				break;
+			}
+
+			if(coll_fun(inv->hdl->inst,coll,sp[params].obj))
+				return 1;
+		}
+	}
+	return 0;
+}
+
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
@@ -861,34 +887,26 @@ static void _rt_run(struct _rt_invocation* inv)
 			tmp = *inv->top->pc++;
 			if(inv->top->is_expr)
 				_rt_error(inv,__LINE__);
-			else _rt_add_objects(inv,sp,tmp);
+			else if(_rt_collection_do_objects(inv,sp,tmp,cle_collection_add_object))
+				_rt_error(inv,__LINE__);
 			sp += tmp;
 			break;
 		case OP_CREMOVE:
 			tmp = *inv->top->pc++;
 			if(inv->top->is_expr)
 				_rt_error(inv,__LINE__);
-			else _rt_remove_objects(inv,sp,tmp);
+			else if(_rt_collection_do_objects(inv,sp,tmp,cle_collection_remove_object))
+				_rt_error(inv,__LINE__);
 			sp += tmp;
 			break;
-		case OP_CGET:
-			if(sp[1].type != STACK_COLLECTION)
-				_rt_error(inv,__LINE__);
-			else if(sp->type == STACK_PTR || sp->type == STACK_RO_PTR)
+		case OP_CIN:
+			tmp = *inv->top->pc++;
 			{
-				if(cle_goto_object(inv->hdl->inst,sp->single_ptr,&sp->obj) == 0)
-				{
-					sp->ptr = sp->obj;
-					st_offset(inv->t,&sp->ptr,sizeof(objectheader2));
-					sp->type = STACK_OBJ;
-				}
+				int res = _rt_collection_do_objects(inv,sp,tmp,cle_collection_test_object);
+				sp += tmp;
+				sp->type = STACK_NUM;
+				sp->num = (res == 0);
 			}
-			
-			// TODO: move to object.c
-			if(sp->type == STACK_OBJ)
-			{
-			}
-			sp++;
 			break;
 
 		case OP_IT:
@@ -1239,9 +1257,10 @@ static void _rt_run(struct _rt_invocation* inv)
 		case OP_OUTL:
 			// TODO: stream out structures
 		case OP_OUT:	// stream out string
-			if(sp[1].type == STACK_REF && _rt_ref_out(inv,&sp,sp + 1))
-				;
-			else _rt_out(inv,&sp,sp + 1,sp);
+			if(sp[1].type == STACK_REF)
+				_rt_ref_out(inv,&sp,sp + 1);
+			else
+				_rt_out(inv,&sp,sp + 1,sp);
 			sp++;
 			break;
 
@@ -1361,6 +1380,8 @@ static void _rt_next(event_handler* hdl)
 		inv->top->sp--;
 		inv->top->sp->single_ptr = hdl->root;
 		inv->top->sp->type = STACK_RO_PTR;
+
+		_rt_run(inv);
 	}
 	else
 	{
@@ -1369,12 +1390,9 @@ static void _rt_next(event_handler* hdl)
 		var->single_ptr = hdl->root;
 		var->type = STACK_RO_PTR;
 
-		if(--inv->params_before_run != 0)
-			return;
+		if(--inv->params_before_run == 0)
+			_rt_run(inv);
 	}
-
-	_rt_run(inv);
-
 	cle_standard_next_done(hdl);
 }
 

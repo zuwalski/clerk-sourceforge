@@ -131,8 +131,6 @@ int cle_goto_parent(cle_instance inst, st_ptr* child);
 
 int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child);
 
-int cle_persist_object(cle_instance inst, st_ptr* obj);
-
 int cle_delete_name(cle_instance inst, st_ptr name);
 
 int cle_create_state(cle_instance inst, st_ptr obj, st_ptr newstate);
@@ -172,5 +170,11 @@ int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, d
 enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id);
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
+
+int cle_collection_add_object(cle_instance inst, st_ptr collection, st_ptr ref);
+
+int cle_collection_remove_object(cle_instance inst, st_ptr collection, st_ptr ref);
+
+int cle_collection_test_object(cle_instance inst, st_ptr collection, st_ptr ref);
 
 #endif
