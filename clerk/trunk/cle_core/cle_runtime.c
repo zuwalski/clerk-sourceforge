@@ -234,9 +234,12 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 	switch(id.type)
 	{
-	case TYPE_METHOD:
-	case TYPE_HANDLER:
 	//case TYPE_STATE:	// validator-code
+	case TYPE_HANDLER:
+		// geting from within objectcontext or external?
+		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
+			return;
+	case TYPE_METHOD:
 		if(cle_identity_value(inv->hdl->inst,id.id,&top.obj,&top.ptr))
 			return;
 

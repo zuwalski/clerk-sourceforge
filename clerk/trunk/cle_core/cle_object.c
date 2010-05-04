@@ -1014,6 +1014,47 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 
 int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
 {
+	objheader header,header_ref;
+	st_ptr val;
+	struct {
+		char zero;
+		char ref_type;
+	} _head;
+
+	if(st_get(inst.t,&obj,(char*)&header,sizeof(header)) != -2)
+		cle_panic(inst.t);
+
+	if(st_get(inst.t,&ref,(char*)&header_ref,sizeof(header_ref)) != -2)
+		return 1;
+
+	if(_new_value(inst,obj,id.id,&val))
+		return 1;
+
+	_head.zero = 0;
+
+	if(ISMEMOBJ(header_ref))
+	{
+		if(ISMEMOBJ(header))
+		{
+			_head.ref_type = TYPE_REF_MEM;
+			st_append(inst.t,&val,(cdat)&_head,sizeof(_head));
+			st_append(inst.t,&val,(cdat)&ref,sizeof(st_ptr));
+
+			return 0;
+		}
+		else
+		{
+			if(_persist_object(inst,&ref))
+				return 1;
+
+			if(st_get(inst.t,&ref,(char*)&header_ref,sizeof(header_ref)) >= 0 || ISMEMOBJ(header_ref))
+				cle_panic(inst.t);
+		}
+	}
+
+	_head.ref_type = TYPE_REF;
+	st_append(inst.t,&val,(cdat)&_head,sizeof(_head));
+	st_append(inst.t,&val,(cdat)&header_ref.obj.id,sizeof(oid));
 	return 0;
 }
 
