@@ -356,6 +356,12 @@ int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr)
 	return 0;
 }
 
+static int _goto_id(cle_instance inst, st_ptr* child, oid id)
+{
+	*child = inst.root;
+	return (id._low == 0 || st_move(inst.t,child,(cdat)&id,sizeof(oid)));
+}
+
 int cle_goto_parent(cle_instance inst, st_ptr* child)
 {
 	objheader header;
@@ -364,29 +370,23 @@ int cle_goto_parent(cle_instance inst, st_ptr* child)
 		return __LINE__;
 
 	if(ISMEMOBJ(header))
-		*child = header.ext;
-	else if(header.obj.ext._low != 0)
 	{
-		*child = inst.root;
-		if(st_move(inst.t,child,(cdat)&header.obj.ext,sizeof(oid)))
-			return __LINE__;
+		*child = header.ext;
+		return 0;
 	}
-	else
-		return __LINE__;
-	return 0;
+
+	return _goto_id(inst,child,header.obj.ext);
 }
 
 int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child)
 {
-	while(1)
+	do
 	{
 		// same
 		if(parent.pg == child.pg && parent.key == child.key)
 			return 1;
-
-		if(cle_goto_parent(inst,&child))
-			return 0;
-	}
+	}while(cle_goto_parent(inst,&child) == 0);
+	return 0;
 }
 
 // TODO: persist collections ?? or share one all the way down?
@@ -596,6 +596,7 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum prope
 {
 	st_ptr hostpart,namepart,tobj,pt;
 	cle_typed_identity _id;
+	objheader header;
 
 	st_empty(inst.t,&namepart);
 	st_empty(inst.t,&hostpart);
@@ -605,10 +606,8 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum prope
 
 	// lookup host-object
 	tobj = obj;
-	while(1)
+	do
 	{
-		objheader header;
-
 		pt = tobj;
 		if(st_get(inst.t,&pt,(char*)&header,sizeof(header)) != -2)
 			return 0;
@@ -632,11 +631,8 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, enum prope
 				return 0;
 			break;
 		}
-
-		tobj = inst.root;
-		if(st_move(inst.t,&tobj,(cdat)&header.obj.ext,sizeof(oid)) != 0)
-			return 0;
 	}
+	while(_goto_id(inst,&tobj,header.obj.ext) == 0);
 
 	// get or create identity for name
 	if(create != 0)
@@ -851,77 +847,74 @@ int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr e
 
 int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value)
 {
-	while(1)
+	do
 	{
-		objectheader2 header;
 		st_ptr pt = *obj;
 
-		if(st_get(inst.t,&pt,(char*)&header,sizeof(objectheader2)) >= 0)
-			return __LINE__;
+		if(st_offset(inst.t,&pt,sizeof(objectheader2)) != 0)
+			break;
 
-		if(st_move(inst.t,&pt,(cdat)&id,sizeof(identity)) != 0)
+		if(st_move(inst.t,&pt,(cdat)&id,sizeof(identity)) == 0)
 		{
 			*value = pt;
 			return 0;
 		}
-
-		if(header.ext._low == 0)
-			return __LINE__;
-
-		*obj = inst.root;
-		if(st_move(inst.t,obj,(cdat)&header.ext,sizeof(oid)) != 0)
-			return __LINE__;
 	}
+	while(cle_goto_parent(inst,obj) == 0);
+
+	return __LINE__;
 }
 
-static int _is_related(cle_instance inst, cle_handler href, st_ptr obj)
+static int _is_handler_allowed(cle_instance inst, cle_handler href, st_ptr handler, objectheader2* header, uint check_relation)
 {
-	while(1)
+	// check if handler is allowed in current state
+	if(st_move(inst.t,&handler,"S",1))
+		return __LINE__;
+
+	if(st_exsist(inst.t,&handler,(cdat)&header->state,sizeof(identity)) != 0)
+		return __LINE__;
+
+	// finish relation check if needed
+	while(check_relation)
 	{
-		objectheader2 header;
-		if(st_get(inst.t,&obj,(char*)&header,sizeof(objectheader2)) >= 0)
+		if(st_get(inst.t,&handler,(char*)header,sizeof(objectheader2)) >= 0)
 			return __LINE__;
 
-		if(memcmp(&header.id,&href.oid,sizeof(oid)) == 0)
-			return 0;
+		if(memcmp(&header->id,&href.oid,sizeof(oid)) == 0)
+			break;
 
-		obj = inst.root;
-		if(header.ext._low == 0 || st_move(inst.t,&obj,(cdat)&header.ext,sizeof(oid)))
+		if(_goto_id(inst,&handler,header->ext) != 0)
 			return __LINE__;
 	}
+	return 0;
 }
 
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler)
 {
 	objectheader2 header;
-	st_ptr pt;
-	uint check_relation = obj->pg != 0;
+	uint check_relation = (obj->pg != 0);
 
-	if(obj->pg == 0)
+	if(check_relation == 0 && _goto_id(inst,obj,href.oid) != 0)
+		return __LINE__;
+
+	do
 	{
-		*obj = inst.root;
-		if(st_move(inst.t,obj,(cdat)&href.oid,sizeof(oid)) != 0)
+		if(st_get(inst.t,obj,(char*)&header,sizeof(objectheader2)) >= 0)
 			return __LINE__;
+
+		if(st_move(inst.t,obj,(cdat)&href.handler,sizeof(identity)) == 0)
+		{
+			*handler = *obj;
+
+			return _is_handler_allowed(inst,href,*handler,&header,check_relation);
+		}
+
+		if(check_relation && memcmp(&header.id,&href.oid,sizeof(oid)) == 0)
+			check_relation = 0;
 	}
+	while(_goto_id(inst,obj,header.ext) == 0);
 
-	pt = *obj;
-	// find first handler impl
-	if(cle_identity_value(inst,href.handler,&pt,handler))
-		return __LINE__;
-
-	if(check_relation && _is_related(inst,href,*handler))
-		return __LINE__;
-
-	// check if handler is allowed in current state
-	pt = *obj;
-	if(st_get(inst.t,&pt,(char*)&header,sizeof(objectheader2)) >= 0)
-		return __LINE__;
-
-	pt = *handler;
-	if(st_move(inst.t,&pt,"S",1))
-		return __LINE__;
-
-	return st_exsist(inst.t,&pt,(cdat)&header.state,sizeof(identity)) ? 0 : 1;
+	return __LINE__;
 }
 
 int cle_get_property_host(cle_instance inst, st_ptr* obj, cdat str, uint len)
@@ -1065,7 +1058,7 @@ int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, s
 		char ref_type;
 	} _head;
 
-	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,ref))
+	if(cle_identity_value(inst,id.id,&obj,ref))
 		return -1;
 
 	return cle_get_property_ref_value(inst,*ref,ref);
@@ -1113,7 +1106,7 @@ int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, d
 {
 	st_ptr prop;
 
-	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
+	if(cle_identity_value(inst,id.id,&obj,&prop))
 		return 1;
 
 	return cle_get_property_num_value(inst,prop,dbl);
@@ -1137,7 +1130,7 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_type
 		char type;
 	} _head;
 
-	if(id.type != TYPE_ANY || cle_identity_value(inst,id.id,&obj,&prop))
+	if(cle_identity_value(inst,id.id,&obj,&prop))
 		return TYPE_ILLEGAL;
 
 	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)

@@ -34,7 +34,7 @@ const char state_start[] = "start";
 
 const char testevent[] = "some\0event";
 
-const char testmeth[] = "() 'hallo world'";
+const char testmeth[] = "() 'hello world'";
 
 const char prop1[] = "prop1";
 const char prop2[] = "prop2";
@@ -44,10 +44,12 @@ const char exprpath[] = "expr\0expr";
 void test_instance_c()
 {
 	cle_instance inst;
-	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3;
+	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3,propname;
+	cle_typed_identity id1,id2;
 	task* t = tk_create_task(0,0);
 	ptr_list list;
 	oid_str oidstr;
+	double dbl;
 
 	// setup
 	puts("\nRunning test_instance_c\n");
@@ -160,68 +162,44 @@ void test_instance_c()
 
 	ASSERT(cle_create_handler(inst,object1,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
-/*
-	pt = oid;
-	st_update(t,&pt,"\1\2\0",3);
+	// PROPERTIES
 
-	object.pg = 0;
-	// objtwo does not handle testevent (not in correct state)
-	ASSERT(cle_get_handler(t,root,oid,&handler,&object,testevent,sizeof(testevent),SYNC_REQUEST_HANDLER) < 0);
+	st_empty(t,&propname);
+	pt = propname;
+	st_update(t,&pt,(cdat)prop1,sizeof(prop1));
 
-	// set state
-	ASSERT(cle_set_state(t,root,objtwo,sizeof(objtwo),name) == 0);
+	ASSERT(cle_create_property(inst,object1,propname) == 0);
 
-	// objtwo now handles the event...
-	ASSERT(cle_get_handler(t,root,oid,&handler,&object,testevent,sizeof(testevent),SYNC_REQUEST_HANDLER) == 0);
+	pt = object1;
+	ASSERT(cle_get_property_host(inst,&pt,(cdat)prop1,sizeof(prop1)) == 0);
 
-	// property-testing
-	pt = name;
-	st_update(t,&pt,prop1,sizeof(prop1));
+	ASSERT(cle_probe_identity(inst,&pt,&id1) == 0);
 
-	// property-1 to objone
-	ASSERT(cle_set_property(t,root,objone,sizeof(objone),name) == 0);
+	ASSERT(id1.type == TYPE_ANY);
 
-	pt = name;
-	st_update(t,&pt,prop2,sizeof(prop2));
+	ASSERT(cle_set_property_num(inst,object1,id1,5) == 0);
 
-	// property-2 to objtwo
-	ASSERT(cle_set_property(t,root,objtwo,sizeof(objtwo),name) == 0);
+	ASSERT(cle_get_property_num(inst,object1,id1,&dbl) == 0);
 
-	// property-2 not found in objone
-	ASSERT(cle_get_property(t,root,objone,sizeof(objone),name,&object) != 0);
+	ASSERT(dbl == 5);
 
-	// property-2 found in objtwo
-	ASSERT(cle_get_property(t,root,objtwo,sizeof(objtwo),name,&object) == 0);
+	ASSERT(cle_get_property_num(inst,object3,id1,&dbl) == 0);
 
-	// value "prop2"
-	//ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop2));
-	//ASSERT(memcmp(prop2,buffer,sizeof(prop2)) == 0);
+	ASSERT(dbl == 5);
 
-	// property-2 found in objthree
-	ASSERT(cle_get_property(t,root,objthree,sizeof(objthree),name,&object) == 0);
+	ASSERT(cle_set_property_num(inst,object2,id1,10) == 0);
 
-	// value "prop2"
-	//ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop2));
-	//ASSERT(memcmp(prop2,buffer,sizeof(prop2)) == 0);
+	ASSERT(cle_get_property_num(inst,object2,id1,&dbl) == 0);
 
-	pt = name;
-	st_update(t,&pt,prop1,sizeof(prop1));
+	ASSERT(dbl == 10);
 
-	// property-1 also found in objthree
-	ASSERT(cle_get_property(t,root,objthree,sizeof(objthree),name,&object) == 0);
+	ASSERT(cle_get_property_num(inst,object3,id1,&dbl) == 0);
 
-	// value "prop1"
-	//ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop1));
-	//ASSERT(memcmp(prop1,buffer,sizeof(prop1)) == 0);
+	ASSERT(dbl == 10);
 
-	// property-1 found in objone
-	ASSERT(cle_get_property(t,root,objone,sizeof(objone),name,&object) == 0);
+	ASSERT(cle_get_property_type(inst,object1,id1) == TYPE_NUM);
 
-	// value "prop1"
-	//ASSERT(st_get(t,&object,buffer,sizeof(buffer)) == sizeof(prop1));
-	//ASSERT(memcmp(prop1,buffer,sizeof(prop1)) == 0);
-*/
-	// testing Expr's
+	// EXPRS
 	pt = name;
 	st_update(t,&pt,exprpath,sizeof(exprpath));
 
