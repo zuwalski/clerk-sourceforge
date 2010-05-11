@@ -1184,7 +1184,12 @@ static void _rt_run(struct _rt_invocation* inv)
 						if(cle_set_property_ptr(inv->hdl->inst,sp[1].prop_obj,sp[1].prop_id,&sp[1].ptr))
 							_rt_error(inv,__LINE__);
 						st_copy_st(inv->t,&sp[1].ptr,&sp->single_ptr);
-					}
+						break;
+					}	// or null
+				default:
+					// empty / null
+					if(cle_set_property_ptr(inv->hdl->inst,sp[1].prop_obj,sp[1].prop_id,&sp[1].ptr))
+						_rt_error(inv,__LINE__);
 				}
 			}
 			sp += 2;

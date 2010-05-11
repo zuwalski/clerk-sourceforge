@@ -44,11 +44,11 @@ const char exprpath[] = "expr\0expr";
 void test_instance_c()
 {
 	cle_instance inst;
-	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3,propname;
-	cle_typed_identity id1,id2;
+	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3,propname,mobj1,mobj2;
+	cle_typed_identity id1;
 	task* t = tk_create_task(0,0);
 	ptr_list list;
-	oid_str oidstr;
+	oid_str oidstr,oidstr2;
 	double dbl;
 
 	// setup
@@ -198,6 +198,48 @@ void test_instance_c()
 	ASSERT(dbl == 10);
 
 	ASSERT(cle_get_property_type(inst,object1,id1) == TYPE_NUM);
+
+	// PERSISTENCE
+
+	cle_new_mem(inst.t,object1,&object);
+
+	ASSERT(cle_get_oid(inst,object,&oidstr) != 0);
+
+	cle_new_mem(inst.t,object,&mobj1);
+
+	ASSERT(cle_get_oid(inst,mobj1,&oidstr) != 0);
+
+	cle_new_mem(inst.t,object2,&mobj2);
+
+	ASSERT(cle_get_oid(inst,mobj2,&oidstr) != 0);
+
+	// mobj to mobj doesn't persist
+	ASSERT(cle_set_property_ref(inst,object,id1,mobj1) == 0);
+
+	ASSERT(cle_get_oid(inst,object,&oidstr) != 0);
+
+	ASSERT(cle_get_oid(inst,mobj1,&oidstr) != 0);
+
+	ASSERT(cle_get_property_ref(inst,object,id1,&pt) == 0);
+
+	ASSERT(pt.pg == mobj1.pg && pt.key == mobj1.key && pt.offset == mobj1.offset);
+	
+	// make object persistent by ass. to object1
+
+	ASSERT(cle_set_property_ref(inst,object1,id1,object) == 0);
+
+	ASSERT(cle_get_oid(inst,mobj1,&oidstr) == 0);
+
+	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+
+	ASSERT(cle_get_property_ref(inst,object1,id1,&pt) == 0);
+
+	ASSERT(cle_get_oid(inst,pt,&oidstr2) == 0);
+
+	// same id - but not same ptr
+	ASSERT(memcmp(&oidstr,&oidstr2,sizeof(oidstr)) == 0);
+
+	// COLLECTIONS
 
 	// EXPRS
 	pt = name;
