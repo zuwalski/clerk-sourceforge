@@ -77,10 +77,14 @@ static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 			return;
 		}
 
-		id = md->root;
+		memcpy(md->root,pg,pg->used);
+		md->root->id = ROOT_ID;
 	}
-
-	memcpy(id,pg,pg->used);
+	else
+	{
+		memcpy(id,pg,pg->used);
+		((page*)id)->id = id;
+	}
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id)
@@ -208,6 +212,8 @@ static void file_write_page(cle_psrc_data pd, cle_pageid pid, page* pg)
 
 		pid = (cle_pageid)sizeof(struct _file_pager_header);
 	}
+	else
+		pg->id = pid;
 
 	if(_lseek(fd->fh,(long)pid,SEEK_SET) == -1)
 		return;

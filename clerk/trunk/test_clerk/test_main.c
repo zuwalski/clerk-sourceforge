@@ -567,6 +567,96 @@ void test_task_c()
 	tk_drop_task(t);
 }
 
+void test_task_c_2()
+{
+	clock_t start,stop;
+
+	st_ptr root,tmp;
+	it_ptr it;
+	task* t;
+	int i;
+	uchar keystore[100];
+
+	cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+
+	puts("\nRunning mempager: Multi-commit-test\n");
+	page_size = 0;
+	resize_count = 0;
+	overflow_size = 0;
+/*
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		//  new task
+		t = tk_create_task(psource,pdata);
+
+		// set pagesource-root
+		tk_root_ptr(t,&root);
+
+		tk_commit_task(t);
+	}
+	stop = clock();
+
+	printf("Multi-commit (no-data) Time %d\n",stop - start);
+*/
+	start = clock();
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		//  new task
+		t = tk_create_task(psource,pdata);
+
+		// set pagesource-root
+		tk_root_ptr(t,&root);
+
+/*		if(i == 5120)
+		{
+			st_prt_distribution(&root,t);
+		}
+*/
+		if(i > 0)
+		{
+			int pi = i - 1;
+			if(st_exsist(t,&root,(cdat)&pi,sizeof(pi)) == 0)
+			{
+				st_prt_distribution(&root,t);
+			}
+		}
+
+		//ASSERT(st_insert(t,&root,(cdat)&i,sizeof(int)));
+
+		memcpy(keystore,(char*)&i,sizeof(int));
+		st_insert(t,&root,(cdat)keystore,sizeof(keystore));
+//		st_insert(t,&root,(cdat)keystore,10);	// mem-bug!!!
+
+		tk_commit_task(t);
+	}
+	stop = clock();
+
+	printf("Multi-commit Time %d\n",stop - start);
+
+	//  new task
+	t = tk_create_task(psource,pdata);
+
+	// should not happen.. but
+	ASSERT(t);
+
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	printf("Multi-commit pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+
+	st_prt_distribution(&root,t);
+
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
+	{
+		if(st_exsist(t,&root,(cdat)&i,sizeof(int)) == 0)
+			i = i;
+	}
+
+	tk_drop_task(t);
+}
+
 void test_task_c_filepager()
 {
 	clock_t start,stop;
@@ -1241,6 +1331,8 @@ void test_measure2()
 
 int main(int argc, char* argv[])
 {
+	test_task_c_2();
+
 	test_instance_c();
 
 	heap_check();

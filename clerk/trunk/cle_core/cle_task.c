@@ -183,18 +183,22 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 {
-	ptr* pt = (ptr*)me;
-	if(pt->koffset != 0)
+	do
 	{
-		*pg = (page_wrap*)pt->pg;
-		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
+		ptr* pt = (ptr*)me;
+		if(pt->koffset != 0)
+		{
+			*pg = (page_wrap*)pt->pg;
+			me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
+		}
+		else
+		{
+			*pg = _tk_load_page(t,*pg,pt->pg);
+			/* go to root-key */
+			me = GOKEY(*pg,sizeof(page));
+		}
 	}
-	else
-	{
-		*pg = _tk_load_page(t,*pg,pt->pg);
-		/* go to root-key */
-		me = GOKEY(*pg,sizeof(page));
-	}
+	while(ISPTR(me));	// TODO should not happen ... but does
 	return me;
 }
 
@@ -226,8 +230,8 @@ void tk_root_ptr(task* t, st_ptr* pt)
 	pt->pg = _tk_load_page(t,0,ROOT_ID);
 	pt->key = sizeof(page);
 	pt->offset = 0;
-	k = GOOFF(pt->pg,pt->key);
-	if(ISPTR(k))
+	k = GOKEY(pt->pg,sizeof(page));
+	while(ISPTR(k))
 	{
 		k = _tk_get_ptr(t,&pt->pg,k);
 		pt->key = (ushort)((char*)k - (char*)pt->pg->pg);
@@ -665,7 +669,7 @@ int tk_commit_task(task* t)
 				// pick up parent and rebuild from there (if not root)
 				if(pgw->parent != 0)
 				{
-					setup.id = pg->id;
+					setup.id = pgw->ext_pageid;
 					setup.pg = pgw;
 					pgw = pgw->parent;
 				}
