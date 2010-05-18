@@ -268,7 +268,7 @@ static void _st_write(struct _st_lkup_res* rt)
 
 uint st_empty(task* t, st_ptr* pt)
 {
-	key* nk = tk_alloc(t,sizeof(key) + 2,&pt->pg);	// dont use alloc (8-byte alignes) and wase 2 bytes here
+	key* nk = tk_alloc(t,sizeof(key) + 2,&pt->pg);	// dont use alloc (8-byte alignes) and waste 2 bytes here
 
 	pt->key = (char*)nk - (char*)pt->pg->pg;
 	pt->offset = 0;

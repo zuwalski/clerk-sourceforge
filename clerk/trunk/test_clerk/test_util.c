@@ -221,6 +221,11 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 
 			filling[(int)(((float)pw->pg->used / (float)pw->pg->size) * 8.0)]++;
 
+			if(pw->pg->used > pw->pg->size)
+			{
+				printf("p overflow ");
+			}
+
 			//printf("%p\n",pw);
 
 			//if(pw == (page_wrap*)0x003b4c88)
@@ -256,6 +261,11 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 
 		if(me->offset <= offset)
 		{
+			st_ptr tmp;
+			tmp.key = sizeof(page);
+			tmp.offset = 0;
+			tmp.pg = pg;
+			st_prt_page(&tmp);
 			printf("oops");
 		}
 	}

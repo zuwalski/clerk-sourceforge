@@ -100,7 +100,7 @@ static void mem_remove_page(cle_psrc_data pd, cle_pageid id)
 		free(md->root);
 		md->root = 0;
 		md->pagecount = 0;
-	}	
+	}
 }
 
 static void mem_unref_page(cle_psrc_data pd, page* pg)
