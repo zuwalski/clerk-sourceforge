@@ -633,26 +633,13 @@ void test_task_c_2()
 */
 
 	start = clock();
-	for(i = 0; i < 5200; i++)
+	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		//  new task
 		t = tk_create_task(psource,pdata);
 
 		// set pagesource-root
 		tk_root_ptr(t,&root);
-
-		if(i > 0)
-		{
-			int pi = i - 1;
-			if(st_exsist(t,&root,(cdat)&pi,sizeof(pi)) == 0)
-			{
-				st_prt_page(&root);
-				st_exsist(t,&root,(cdat)&pi,sizeof(pi));
-				st_prt_distribution(&root,t);
-			}
-		}
-
-		//ASSERT(st_insert(t,&root,(cdat)&i,sizeof(int)));
 
 		tmp = root;
 		memcpy(keystore,(char*)&i,sizeof(int));
@@ -678,11 +665,14 @@ void test_task_c_2()
 
 	st_prt_distribution(&root,t);
 
+	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
-		if(st_exsist(t,&root,(cdat)&i,sizeof(int)) == 0)
-			i = i;
+		ASSERT(st_exsist(t,&root,(cdat)&i,sizeof(int)));
 	}
+	stop = clock();
+
+	printf("Multi-commit Time validate %d\n",stop - start);
 
 	tk_drop_task(t);
 }
@@ -1379,9 +1369,9 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_measure2();
+	//test_measure2();
 
-	heap_check();
+	//heap_check();
 
 	test_struct_c();
 

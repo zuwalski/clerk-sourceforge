@@ -197,8 +197,7 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
 			/* go to root-key */
 			me = GOKEY(*pg,sizeof(page));
 		}
-	}
-	while(ISPTR(me));	// TODO should not happen ... but does
+	}while(ISPTR(me));		// REMOVE!!
 	return me;
 }
 
@@ -231,7 +230,7 @@ void tk_root_ptr(task* t, st_ptr* pt)
 	pt->key = sizeof(page);
 	pt->offset = 0;
 	k = GOKEY(pt->pg,sizeof(page));
-	while(ISPTR(k))
+	while(ISPTR(k))		// back to IF
 	{
 		k = _tk_get_ptr(t,&pt->pg,k);
 		pt->key = (ushort)((char*)k - (char*)pt->pg->pg);
@@ -256,47 +255,43 @@ void _tk_write_copy(task* t, page_wrap* pg)
 	pg->pg = npg;
 }
 
-void _tk_stack_new(task* t)
+static page_wrap* _tk_new_page(task* t, uint page_size)
 {
-	/* put a new page on the task stack */
-	page* pg;
-	page_wrap* tmp = (page_wrap*)tk_malloc(t,PAGE_SIZE + sizeof(page_wrap));
+	page_wrap* tmp = (page_wrap*)tk_malloc(t,page_size + sizeof(page_wrap));
+	page* pg = (page*)(tmp + 1);
 
-	pg = (page*)(tmp + 1);
 	pg->id = 0;
-	pg->size = PAGE_SIZE;
+	pg->size = page_size;
 	pg->used = sizeof(page);
 	pg->waste = 0;
 
-	tmp->next = t->stack;
 	tmp->ext_pageid = 0;
 	tmp->refcount = 1;
 	tmp->ovf = 0;
 	tmp->pg = pg;
+	return tmp;
+}
+
+void _tk_stack_new(task* t)
+{
+	page_wrap* tmp = _tk_new_page(t,PAGE_SIZE);
+	// put a new page on the task stack 
+	tmp->next = t->stack;
 	t->stack = tmp;
 }
 
 void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 {
-	uint offset;
 	page* pg = t->stack->pg;
+	page_wrap* tmp;
+	uint offset;
+
 	if(pg->used + size + 7 > PAGE_SIZE)
 	{
 		if(size > PAGE_SIZE - sizeof(page))
 		{
 			// big chunk - alloc specific
-			page_wrap* tmp = (page_wrap*)tk_malloc(t,size + sizeof(page_wrap) + sizeof(page));
-
-			pg = (page*)(tmp + 1);
-			pg->id = 0;
-			pg->size = size;
-			pg->used = sizeof(page) + size;
-			pg->waste = 0;
-
-			tmp->ext_pageid = 0;
-			tmp->refcount = 1;
-			tmp->ovf = 0;
-			tmp->pg = pg;
+			page_wrap* tmp = _tk_new_page(t,size + sizeof(page));
 
 			// push behind (its full)
 			tmp->next = t->stack->next;
@@ -304,13 +299,13 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 
 			if(pgref != 0)
 				*pgref = tmp;
-			return (void*)((char*)pg + sizeof(page));
+			return (void*)((char*)tmp->pg + sizeof(page));
 		}
 
 		_tk_stack_new(t);
+		pg = t->stack->pg;
 	}
 
-	pg = t->stack->pg;
 	if(pg->used & 7)
 		pg->used += 8 - (pg->used & 7);
 
@@ -406,7 +401,7 @@ void tk_drop_task(task* t)
 	}
 }
 
-/////////////////////////////// Commit v2 /////////////////////////////////
+/////////////////////////////// Commit v3 /////////////////////////////////
 struct _tk_setup
 {
 	void* id;
@@ -437,7 +432,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 			setup->o_pt = next;
 		}
 
-		if(ISPTR(k))	// pointer
+		while(ISPTR(k))	// pointer
 		{
 			ptr* pt = (ptr*)k;
 			if(pt->koffset != 0)
@@ -599,9 +594,9 @@ static uint _tk_cut_key(struct _tk_setup* setup, page_wrap* pw, key* copy, key* 
 	return (sizeof(ptr)*8);
 }
 
-static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, key* k)
+static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, key* k)
 {
-	uint size = (k->next == 0)? 0 : _tk_measure2(setup,pw,parent,GOOFF(pw,k->next));
+	uint size = (k->next == 0)? 0 : _tk_measure(setup,pw,parent,GOOFF(pw,k->next));
 
 	// parent over k->offset
 	if(parent != 0)
@@ -618,9 +613,9 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 		ptr* pt = (ptr*)k;
 		uint subsize;
 		if(pt->koffset != 0)
-			subsize = _tk_measure2(setup,(page_wrap*)pt->pg,0,GOOFF((page_wrap*)pt->pg,pt->koffset));
+			subsize = _tk_measure(setup,(page_wrap*)pt->pg,0,GOOFF((page_wrap*)pt->pg,pt->koffset));
 		else if(setup->id == pt->pg)
-			subsize = _tk_measure2(setup,setup->pg,0,GOOFF(setup->pg,sizeof(page)));
+			subsize = _tk_measure(setup,setup->pg,0,GOOFF(setup->pg,sizeof(page)));
 		else
 			subsize = (sizeof(ptr)*8);
 
@@ -628,20 +623,22 @@ static uint _tk_measure2(struct _tk_setup* setup, page_wrap* pw, key* parent, ke
 	}
 	else	// cut k below limit (length | sub->offset)
 	{
-		uint subsize = (k->sub == 0)? 0 : _tk_measure2(setup,pw,k,GOOFF(pw,k->sub));
+		uint subsize = (k->sub == 0)? 0 : (_tk_measure(setup,pw,k,GOOFF(pw,k->sub)) );// + size);
 
 		while(1)
 		{
-			int cut_offset = subsize + k->length + (sizeof(key)*8) - setup->halfsize;
+			int cut_offset = subsize + k->length + ((sizeof(key)+1)*8) - setup->halfsize;
+//			int cut_offset = subsize + k->length + (sizeof(key)*8) - setup->fullsize;
 			if(cut_offset < 0)
 				break;
-			subsize = _tk_cut_key(setup,pw,k,0,cut_offset);
+			subsize = _tk_cut_key(setup,pw,k,0,cut_offset);// + size;
 		}
 
 		size += subsize;
+//		size = subsize;
 	}
 
-	return size + k->length + (sizeof(key)*8);
+	return size + k->length + ((sizeof(key)+1)*8);
 }
 
 int tk_commit_task(task* t)
@@ -649,7 +646,7 @@ int tk_commit_task(task* t)
 	page_wrap* pgw = t->wpages;
 	int ret = 0;
 	int have_pages_written = 0;
-	ushort sub;
+
 	while(pgw != 0)
 	{
 		page_wrap* tmp = pgw->next;
@@ -670,6 +667,7 @@ int tk_commit_task(task* t)
 
 				setup.fullsize = (pg->size - sizeof(page)) << 3;
 				setup.halfsize = setup.fullsize >> 1;
+				setup.fullsize -= setup.halfsize >> 1;
 
 				setup.t = t;
 
@@ -681,6 +679,8 @@ int tk_commit_task(task* t)
 					pgw = pgw->parent;
 
 					// make parent writable
+					//if(pgw->pg->id != 0)
+						//_tk_write_copy(t,pgw);
 				}
 				else
 				{
@@ -688,27 +688,36 @@ int tk_commit_task(task* t)
 					setup.pg = 0;
 				}
 
-				_tk_measure2(&setup,pgw,0,GOKEY(pgw,sizeof(page)));
+				_tk_measure(&setup,pgw,0,GOKEY(pgw,sizeof(page)));
 
 				while(1)
 				{
 					// reset and copy remaing rootpage
-					sub = 0;
+					ushort sub = 0;
 					setup.dest->used = sizeof(page);
 					_tk_compact_copy(&setup,pgw,0,&sub,sizeof(page),0);
 
+					// dont rebuild again
+					pgw->pg->id = pgw->ext_pageid;
+
 					// reset is 'too small' (less than quater page) [prevents ptr-to-ptr]
-					if(setup.dest->used < (setup.halfsize/16) && pgw->parent != 0)
+					if(setup.dest->used < (setup.halfsize/16) && pgw->parent != 0 && 
+						pgw->parent->pg->used + setup.dest->used - sizeof(ptr) - sizeof(page) < setup.dest->size)
 					{
 						setup.id = pgw->ext_pageid;
 						setup.pg = pgw;
 
+						if(pgw->pg->id != 0)
+							pgw->pg = (page*)tk_alloc(t,setup.dest->used,0);
+
 						memcpy(pgw->pg,setup.dest,setup.dest->used);
 
 						// mem-pager: destroys pgw->pg ... make-writable (see prev note)
-						//t->ps->remove_page(t->psrc_data,setup.id);
+//						t->ps->remove_page(t->psrc_data,setup.id);
 
 						pgw = pgw->parent;
+						if(pgw->pg->id != 0)
+							_tk_write_copy(t,pgw);
 					}
 					else break;
 				}
@@ -716,8 +725,8 @@ int tk_commit_task(task* t)
 				t->ps->write_page(t->psrc_data,pgw->ext_pageid,setup.dest);
 
 				// release old (now rebuilded) page (if we found parent)
-				if(setup.id != 0)
-					t->ps->remove_page(t->psrc_data,setup.id);
+//				if(setup.id != 0)
+//					t->ps->remove_page(t->psrc_data,setup.id);
 
 				tk_mfree(t,setup.dest);
 			}

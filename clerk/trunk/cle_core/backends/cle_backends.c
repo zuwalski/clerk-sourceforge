@@ -48,6 +48,10 @@ static cle_pageid mem_new_page(cle_psrc_data pd, page* data)
 	page* pg = malloc(data->size);
 	if(pg == 0)
 		return 0;
+	if(data->used > data->size)
+	{
+		printf("not good");
+	}
 	memcpy(pg,data,data->used);
 	pg->id = pg;
 	md->pagecount++;
@@ -67,6 +71,10 @@ static page* mem_read_page(cle_psrc_data pd, cle_pageid id)
 
 static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg)
 {
+	if(pg->used > pg->size)
+	{
+		printf("not good");
+	}
 	if(id == ROOT_ID)
 	{
 		struct _mem_psrc_data* md = (struct _mem_psrc_data*)pd;
