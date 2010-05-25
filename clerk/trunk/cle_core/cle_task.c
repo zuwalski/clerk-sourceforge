@@ -20,6 +20,8 @@
 #include "cle_clerk.h"
 #include "cle_struct.h"
 
+// TODO cle_task.c : from recursive commit/free to looping
+
 /* mem-manager */
 // TODO: should not be used outside task.c -> make private
 void* tk_malloc(task* t, uint size)
@@ -122,6 +124,68 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	return pw;
 }
 
+void _tk_write_copy(task* t, page_wrap* pg)
+{
+	/* copy to new (internal) page */
+	page* npg = (page*)tk_malloc(t,pg->pg->size);
+	memcpy(npg,pg->pg,pg->pg->used);
+	npg->id = 0;
+
+	/* swap pages */
+	t->ps->unref_page(t->psrc_data,pg->pg);
+	pg->pg = npg;
+
+	// add to pagemap
+}
+
+key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
+{
+	ptr* pt = (ptr*)me;
+	if(pt->koffset != 0)
+	{
+		*pg = (page_wrap*)pt->pg;
+		me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
+	}
+	else
+	{
+		*pg = _tk_load_page(t,*pg,pt->pg);
+		/* go to root-key */
+		me = GOKEY(*pg,sizeof(page));
+	}
+	return me;
+}
+
+ushort _tk_alloc_ptr(task* t, page_wrap* pg)
+{
+	overflow* ovf = pg->ovf;
+	ushort    nkoff;
+
+	if(ovf == 0)	/* alloc overflow-block */
+	{
+		ovf = (overflow*)tk_malloc(t,OVERFLOW_GROW);
+
+		ovf->size = OVERFLOW_GROW;
+		ovf->used = 16;
+
+		pg->ovf = ovf;
+	}
+	else if(ovf->used == ovf->size)	/* resize overflow-block */
+	{
+		ovf->size += OVERFLOW_GROW;
+
+		ovf = (overflow*)tk_realloc(t,ovf,ovf->size);
+
+		pg->ovf = ovf;
+	}
+
+	/* make pointer */
+	nkoff = (ovf->used >> 4) | 0x8000;
+	ovf->used += 16;
+	
+	pg->refcount++;
+	return nkoff;
+}
+
 static void _tk_release_page(page_wrap* wp)
 {
 	/* unref linked pages */
@@ -181,26 +245,6 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 	}
 }
 
-key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
-{
-	do
-	{
-		ptr* pt = (ptr*)me;
-		if(pt->koffset != 0)
-		{
-			*pg = (page_wrap*)pt->pg;
-			me = GOKEY(*pg,pt->koffset);	/* points to a key - not an ovf-ptr */
-		}
-		else
-		{
-			*pg = _tk_load_page(t,*pg,pt->pg);
-			/* go to root-key */
-			me = GOKEY(*pg,sizeof(page));
-		}
-	}while(ISPTR(me));		// REMOVE!!
-	return me;
-}
-
 void tk_unref(task* t, page_wrap* pg)
 {
 	if(pg->ext_pageid == 0)
@@ -230,7 +274,7 @@ void tk_root_ptr(task* t, st_ptr* pt)
 	pt->key = sizeof(page);
 	pt->offset = 0;
 	k = GOKEY(pt->pg,sizeof(page));
-	while(ISPTR(k))		// back to IF
+	if(ISPTR(k))
 	{
 		k = _tk_get_ptr(t,&pt->pg,k);
 		pt->key = (ushort)((char*)k - (char*)pt->pg->pg);
@@ -241,18 +285,6 @@ void tk_dup_ptr(st_ptr* to, st_ptr* from)
 {
 	*to = *from;
 	to->pg->refcount++;
-}
-
-void _tk_write_copy(task* t, page_wrap* pg)
-{
-	/* copy to new (internal) page */
-	page* npg = (page*)tk_malloc(t,pg->pg->size);
-	memcpy(npg,pg->pg,pg->pg->used);
-	npg->id = 0;
-
-	/* swap pages */
-	t->ps->unref_page(t->psrc_data,pg->pg);
-	pg->pg = npg;
 }
 
 static page_wrap* _tk_new_page(task* t, uint page_size)
@@ -514,22 +546,8 @@ static ushort _tk_link_and_create_page(struct _tk_setup* setup, page_wrap* pw, i
 	}
 	else
 	{
-		// create new ovf-ptr
-		if(pw->ovf == 0)
-		{
-			pw->ovf = (overflow*)tk_malloc(setup->t,OVERFLOW_GROW);
-
-			pw->ovf->size = OVERFLOW_GROW;
-			pw->ovf->used = 16;
-		}
-		else if(pw->ovf->used == pw->ovf->size)
-		{
-			cle_panic(setup->t);
-		}
-
-		pt_offset = (pw->ovf->used >> 4) | 0x8000;
-		pt = (ptr*)((char*)pw->ovf + pw->ovf->used);
-		pw->ovf->used += 16;
+		pt_offset = _tk_alloc_ptr(setup->t,pw);	// might change ptr-adresses!
+		pt = (ptr*)GOPTR(pw,pt_offset);
 	}
 
 	pt->offset  = ptr_offset;
@@ -594,9 +612,11 @@ static uint _tk_cut_key(struct _tk_setup* setup, page_wrap* pw, key* copy, key* 
 	return (sizeof(ptr)*8);
 }
 
-static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, key* k)
+static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, ushort kptr)
 {
-	uint size = (k->next == 0)? 0 : _tk_measure(setup,pw,parent,GOOFF(pw,k->next));
+	key* k = GOOFF(pw,kptr);
+	uint size = (k->next == 0)? 0 : _tk_measure(setup,pw,parent,k->next);
+	k = GOOFF(pw,kptr);	//if mem-ptr _ptr_alloc might have changed it
 
 	// parent over k->offset
 	if(parent != 0)
@@ -613,9 +633,9 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, key
 		ptr* pt = (ptr*)k;
 		uint subsize;
 		if(pt->koffset != 0)
-			subsize = _tk_measure(setup,(page_wrap*)pt->pg,0,GOOFF((page_wrap*)pt->pg,pt->koffset));
+			subsize = _tk_measure(setup,(page_wrap*)pt->pg,0,pt->koffset);
 		else if(setup->id == pt->pg)
-			subsize = _tk_measure(setup,setup->pg,0,GOOFF(setup->pg,sizeof(page)));
+			subsize = _tk_measure(setup,setup->pg,0,sizeof(page));
 		else
 			subsize = (sizeof(ptr)*8);
 
@@ -623,7 +643,7 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, key
 	}
 	else	// cut k below limit (length | sub->offset)
 	{
-		uint subsize = (k->sub == 0)? 0 : (_tk_measure(setup,pw,k,GOOFF(pw,k->sub)) );// + size);
+		uint subsize = (k->sub == 0)? 0 : _tk_measure(setup,pw,k,k->sub);// + size);
 
 		while(1)
 		{
@@ -688,7 +708,8 @@ int tk_commit_task(task* t)
 					setup.pg = 0;
 				}
 
-				_tk_measure(&setup,pgw,0,GOKEY(pgw,sizeof(page)));
+				_tk_measure(&setup,pgw,0,sizeof(page));
+				//_tk_measure(&setup,pgw,0,GOKEY(pgw,sizeof(page)));
 
 				while(1)
 				{
@@ -702,7 +723,8 @@ int tk_commit_task(task* t)
 
 					// reset is 'too small' (less than quater page) [prevents ptr-to-ptr]
 					if(setup.dest->used < (setup.halfsize/16) && pgw->parent != 0 && 
-						pgw->parent->pg->used + setup.dest->used - sizeof(ptr) - sizeof(page) < setup.dest->size)
+						pgw->parent->pg->used - pgw->parent->pg->waste + setup.dest->used - sizeof(ptr) - sizeof(page)
+						< setup.dest->size)
 					{
 						setup.id = pgw->ext_pageid;
 						setup.pg = pgw;

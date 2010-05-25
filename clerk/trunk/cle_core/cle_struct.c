@@ -96,72 +96,54 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 	return (rt->length == 0);
 }
 
-/*
-	ovf -> ovf to to-page. add list of ovf-ptrs
-*/
+static uint _prev_offset(page_wrap* pg, key* prev)
+{
+	return (pg->ovf != 0 && (char*)prev > (char*)pg->ovf && (char*)prev < (char*)pg->ovf + pg->ovf->size)?
+		(char*)prev - (char*)pg->ovf : 0;
+}
+
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size)
 {
-	overflow* ovf = rt->pg->ovf;
-	ptr*      pt;
-	ushort    nkoff;
+	ptr* pt;
 
-	if(ovf == 0)	/* alloc overflow-block */
-	{
-		ovf = (overflow*)tk_malloc(rt->t,OVERFLOW_GROW);
+	// rt->prev might move in _tk_alloc_ptr
+	uint prev_offset = _prev_offset(rt->pg,rt->prev); 
 
-		ovf->size = OVERFLOW_GROW;
-		ovf->used = 16;
+	// allocate pointer
+	ushort ptr_off = _tk_alloc_ptr(rt->t,rt->pg);
 
-		rt->pg->ovf = ovf;
-	}
-	else if(ovf->used == ovf->size)	/* resize overflow-block */
-	{
-		/* as ovf may change and prev might point inside it .. */
-		uint prev_offset = 
-		((char*)rt->prev > (char*)ovf && (char*)rt->prev < (char*)ovf + ovf->size)?
-			(char*)rt->prev - (char*)ovf : 0;
+	/* rebuild prev-pointer in (possibly) new ovf */
+	if(prev_offset)
+		rt->prev = (key*)((char*)rt->pg->ovf + prev_offset);
 
-		ovf->size += OVERFLOW_GROW;
-
-		ovf = (overflow*)tk_realloc(rt->t,ovf,ovf->size);
-
-		rt->pg->ovf = ovf;
-		/* rebuild prev-pointer in (possibly) new ovf */
-		if(prev_offset)
-			rt->prev = (key*)((char*)ovf + prev_offset);
-	}
-
-	// +1 make sure it can be aligned as well
+	// +1 make sure new data can be aligned as well
 	if(size + rt->t->stack->pg->used + (rt->t->stack->pg->used & 1) > rt->t->stack->pg->size)
 		_tk_stack_new(rt->t);
 
-	/* make pointer */
-	nkoff = (ovf->used >> 4) | 0x8000;
-	pt = (ptr*)((char*)ovf + ovf->used);
-	ovf->used += 16;
-
-	if(rt->prev)
-	{
-		pt->next = rt->prev->next;
-		rt->prev->next = nkoff;
-	}
-	else /* sub MUST be there */
-	{
-		pt->next = rt->sub->sub;
-		rt->sub->sub = nkoff;
-	}
+	// init mem-pointer
+	pt = (ptr*)GOPTR(rt->pg,ptr_off);
 
 	pt->pg = rt->t->stack;
 	pt->koffset = rt->t->stack->pg->used + (rt->t->stack->pg->used & 1);
 	pt->offset = rt->diff;
 	pt->ptr_id = PTR_ID;
 
+	if(rt->prev)
+	{
+		pt->next = rt->prev->next;
+		rt->prev->next = ptr_off;
+	}
+	else /* sub MUST be there */
+	{
+		pt->next = rt->sub->sub;
+		rt->sub->sub = ptr_off;
+	}
+
 	/* reset values */
 	rt->pg = rt->t->stack;
 	rt->prev = rt->sub = 0;
-	
-	rt->pg->refcount++;
-	return pt;	// for update to manipulate pointer
+
+	return pt;
 }
 
 /* make a writable copy of external pages before write */
@@ -991,86 +973,3 @@ ptr_list* ptr_list_reverse(ptr_list* e)
 	while(e != 0);
 	return link;
 }
-
-/*
-// ------ USED? ----------------------
-
-// FIXME 
-uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length)
-{
-	struct _st_lkup_res rt;
-	key* me,*nxt = 0;
-	ushort waste = 0, k = 0;
-
-	rt.path   = path;
-	rt.length = length << 3;
-	rt.pg     = pt->pg;
-	rt.prev   = 0;
-	me = rt.sub = GOKEY(pt->pg,pt->key);
-	rt.diff   = rt.sub->length == 1? 1 : pt->offset;
-
-	if(pt->offset > 0 && me->sub)
-	{
-		nxt = GOOFF(rt.pg,me->sub);
-		while(nxt->offset < pt->offset)
-		{
-			rt.prev = nxt;
-			if(nxt->next == 0)
-				break;
-			nxt = GOOFF(rt.pg,nxt->next);
-		}
-
-		k = nxt->next;
-		nxt->next = 0;
-	}
-	else
-	{
-		k = me->sub;
-		me->sub = 0;
-	}
-
-	_st_write(&rt);	// write new
-
-	if(k && nxt == 0)
-	{
-		rt.sub->sub = k;	// attach sub-tree
-		nxt = GOKEY(pt->pg,k);
-		nxt->offset = rt.sub->length;
-	}
-	
-	if((me->length & 0xFFF8) > pt->offset)	// rest? (not just append)
-	{
-		const uint dec = pt->offset & 0xFFF8;
-		waste = me->length + 7 - dec;
-
-		rt.path   = KDATA(me) + (pt->offset >> 3);
-		rt.length = (me->length + 7 >> 3) - (pt->offset >> 3);
-		rt.diff   = length << 3;
-		rt.prev   = 0;	// sub updated from last write
-
-		_st_write(&rt,t);	// write rest
-
-		if(pt->pg != rt.pg) 
-			exit(-1);
-
-		rt.sub->sub = k;	// move subs
-		while(dec && k)
-		{
-			nxt = GOKEY(pt->pg,k);
-			nxt->offset -= dec;
-			k = nxt->next;
-		}
-	}
-
-	me->length = (pt->offset > 0)? pt->offset : 1;
-
-	waste >>= 3;
-	if(waste > 0 && pt->pg->page_adr)	// should we care about cleanup?
-	{
-		pt->pg->pg.waste += waste;
-		_tk_remove_tree(t,pt->pg,0);
-	}
-
-	return 0;
-}
-*/

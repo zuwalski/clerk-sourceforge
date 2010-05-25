@@ -24,7 +24,7 @@
 
 #define PAGE_SIZE 1024
 
-#define OVERFLOW_GROW (16*64)
+#define OVERFLOW_GROW (16*8)
 
 #define IT_GROW_SIZE 32
 
@@ -93,6 +93,7 @@ struct task
 #define ISPTR(k) ((k)->length == PTR_ID)
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
+ushort _tk_alloc_ptr(task* t, page_wrap* pg);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
 void _tk_write_copy(task* t, page_wrap* pg);
