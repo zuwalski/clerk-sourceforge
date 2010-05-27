@@ -69,7 +69,7 @@ struct _rt_stack
 		struct
 		{
 			st_ptr prop_obj;
-			cle_typed_identity prop_id;
+			identity prop_id;
 		};
 		struct
 		{
@@ -226,7 +226,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 	if(cle_probe_identity(inv->hdl->inst,&top.ptr,&id) != 0)
 	{
-		(*sp)->type = STACK_OBJ;
+		(*sp)->type = STACK_OBJ;	// already and always this val anyway ...
 		return;
 	}
 
@@ -263,30 +263,28 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		// geting from within objectcontext or external?
 		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
-		//(*sp)->obj = inv->hdl->inst.root;
-		//if(st_move(inv->t,&(*sp)->obj,HEAD_OID,HEAD_SIZE) != 0)
-		//	return;
-		//// copy_move sp-obj , top.ptr
-		//if(st_move_st(inv->t,&(*sp)->obj,&top.ptr) != 0)
-		//	return;
-		//(*sp)->ptr = (*sp)->obj;
-		//(*sp)->type = STACK_OBJ;
-		break;
-	case TYPE_COLLECTION:	// collection
-		// geting from within objectcontext or external?
-		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
-			return;
+
 		if(cle_identity_value(inv->hdl->inst,id.id,&top.obj,&top.ptr))
 			return;
-		(*sp)->obj = top.obj;
-		(*sp)->ptr = top.ptr;
-		(*sp)->type = STACK_COLLECTION;
+
+		// TODO: try context-lookup
+
+		// last try: is it a named object?
+		if(cle_goto_object(inv->hdl->inst,top.ptr,&(*sp)->obj))
+		{
+			// name not bound exception
+			_rt_error(inv,__LINE__);
+			return;
+		}
+
+		(*sp)->ptr = (*sp)->obj;
+		(*sp)->type = STACK_OBJ;
 		break;
 	case TYPE_ANY:	// property
 		// geting from within objectcontext or external?
 		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
-		(*sp)->prop_id = id;
+		(*sp)->prop_id = id.id;
 		(*sp)->prop_obj = top.obj;
 		(*sp)->type = STACK_PROP;
 	}
@@ -307,7 +305,7 @@ static uint _rt_move(struct _rt_invocation* inv, struct _rt_stack** sp, cdat mv,
 			return _rt_error(inv,__LINE__);
 		break;
 	case STACK_PROP:
-		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id.id,&(*sp)->prop_obj,&(*sp)->ptr))
+		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,&(*sp)->prop_obj,&(*sp)->ptr))
 			return _rt_error(inv,__LINE__);
 
 		if(st_move(inv->t,&(*sp)->ptr,mv,length) == 0)
@@ -345,7 +343,7 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 			return _rt_error(inv,__LINE__);
 		break;
 	case STACK_PROP:
-		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id.id,&(*sp)->prop_obj,&(*sp)->ptr))
+		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,&(*sp)->prop_obj,&(*sp)->ptr))
 			return _rt_error(inv,__LINE__);
 
 		if(st_move_st(inv->t,&(*sp)->ptr,mv) == 0)
@@ -370,6 +368,9 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 
 static struct _rt_stack* _rt_eval_expr(struct _rt_invocation* inv, struct _rt_stack* target, struct _rt_stack* expr)
 {
+//			if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&value.obj,&value.ptr) == 0)
+//			*sp = _rt_eval_expr(inv,to,&value);
+
 	inv->top = _rt_newcall(inv,_rt_load_code(inv,expr->ptr),&expr->obj,1);
 	inv->top->sp--;
 	*inv->top->sp = *target;
@@ -423,7 +424,7 @@ static uint _rt_prop_out(struct _rt_invocation* inv, struct _rt_stack** sp, stru
 	struct _rt_stack value;
 	rt_number num;
 
-	if(cle_identity_value(inv->hdl->inst,from->prop_id.id,&from->prop_obj,&value.single_ptr))
+	if(cle_identity_value(inv->hdl->inst,from->prop_id,&from->prop_obj,&value.single_ptr))
 		return _rt_error(inv,__LINE__);
 
 	switch(cle_get_property_type_value(inv->hdl->inst,value.single_ptr))
@@ -441,6 +442,10 @@ static uint _rt_prop_out(struct _rt_invocation* inv, struct _rt_stack** sp, stru
 			return _rt_error(inv,__LINE__);
 		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&value.obj,&value.ptr) == 0)
 			*sp = _rt_eval_expr(inv,to,&value);
+		break;
+	case TYPE_COLLECTION:
+		// TODO: output collection
+		break;
 	}
 	return 0;
 }
@@ -465,6 +470,11 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 		// write out path/event to method/handler
 		if(st_move(inv->t,&from->single_ptr,"p",1) == 0)
 			return _rt_string_out(inv,to,from);
+		break;
+	case STACK_ITERATOR:
+	case STACK_ITERATOR_COL:
+		// output iterator
+		break;
 	}
 	return 0;
 }
@@ -661,15 +671,18 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	case STACK_NULL:
 		st_insert(inv->t,&result_w,"[null]",7);
 		break;
-	case STACK_COLLECTION:
-		st_insert(inv->t,&result_w,"[collection]",13);
+	case STACK_PROP:
+		//cle_get_property_ref() and out id
+		st_insert(inv->t,&result_w,"[property]",13);
 	}
 	sp->type = STACK_PTR;
 }
 
 static int _rt_collection_do_objects(struct _rt_invocation* inv, struct _rt_stack* sp, uint params, int(*coll_fun)(cle_instance, st_ptr, st_ptr))
 {
-	if(sp[params].type != STACK_COLLECTION)
+	if(sp[params].type == STACK_OBJ)
+		;	// try invoke add/remove/in on object
+	else if(sp[params].type != STACK_COLLECTION)
 		_rt_error(inv,__LINE__);
 	else
 	{
@@ -917,6 +930,9 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp--;
 			switch(sp[1].type)
 			{
+			case STACK_PROP:
+				// try to start iterator on value
+				break;
 			case STACK_COLLECTION:
 				it_create(inv->t,&sp->it,&sp[1].ptr);
 				sp->type = STACK_ITERATOR_COL;
@@ -1149,10 +1165,11 @@ static void _rt_run(struct _rt_invocation* inv)
 				switch(sp->type)
 				{
 				case STACK_PROP:
-					if(cle_identity_value(inv->hdl->inst,sp->prop_id.id,&sp->prop_obj,&sp->ptr))
+					if(cle_identity_value(inv->hdl->inst,sp->prop_id,&sp->prop_obj,&sp->ptr))
 						_rt_error(inv,__LINE__);
 					if(cle_set_property_ptr(inv->hdl->inst,sp[1].prop_obj,sp[1].prop_id,&sp[1].ptr))
 						_rt_error(inv,__LINE__);
+					// might not be a good idea if prop-val is a mem-ref
 					st_copy_st(inv->t,&sp[1].ptr,&sp->ptr);
 					break;
 				case STACK_RO_PTR:
@@ -1419,7 +1436,7 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 
 		_rt_run(inv);
 
-		// retire 'read': then this is not needed
+		// retire 'read': then this is not needed // or loop and return null to task until it gives up
 		if(hdl->error == 0)
 			cle_stream_fail(hdl,"runtime:end",12);
 	}

@@ -177,7 +177,7 @@ static const struct _cmp_buildin buildins[] = {
 	{"parent",OP_NULL,0,0,0},
 	{"user",OP_NULL,0,0,0},
 	{"request",OP_NULL,0,0,0},
-	{"session",OP_NULL,0,0,0},
+//	{"session",OP_NULL,0,0,0},
 
 	{"id",OP_ID,OP_IDO,0,0},			// get objectid in stringid format
 	{"object",OP_FIND,0,1,1},			// lookup object using name or id

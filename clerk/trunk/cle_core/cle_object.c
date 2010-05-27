@@ -24,18 +24,22 @@ static const identity names_identity = SYS_NAMES;
 static const identity dev_identity = SYS_DEV;
 static const identity start_state_identity = STATE_START;
 
+struct _head
+{
+	char zero;
+	char type;
+};
+
 struct _new_ref
 {
-	uchar zero;
-	uchar head;
-	oid   ref;
+	struct _head;
+	char ref[sizeof(oid)];
 };
 
 struct _mem_ref
 {
-	uchar zero;
-	uchar head;
-	st_ptr ptr;
+	struct _head;
+	char ptr[sizeof(st_ptr)];
 };
 
 // helper-functions
@@ -290,6 +294,14 @@ void cle_new_mem(task* app_instance, st_ptr extends, st_ptr* newobj)
 	st_append(app_instance,&pt,(cdat)&header,sizeof(header));
 }
 
+static uint _is_memobj(cle_instance inst, st_ptr obj)
+{
+	ushort zero;
+	if(st_get(inst.t,&obj,(char*)&zero,sizeof(zero)) >= 0)
+		cle_panic(inst.t);
+	return (zero == 0);
+}
+
 int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 {
 	st_ptr tname = name;
@@ -403,8 +415,8 @@ int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child)
 	return 0;
 }
 
-// recursively persist this object as well as extends and ref-by-property.
-static int _persist_object(cle_instance inst, st_ptr* obj)
+// recursively persist this object and all refs
+static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid)
 {
 	objheader header;
 	st_ptr    newobj,ext,pt = *obj;
@@ -415,23 +427,22 @@ static int _persist_object(cle_instance inst, st_ptr* obj)
 
 	// object needs persisting?
 	if(ISMEMOBJ(header) == 0)
+	{
+		*newid = header.obj.id;
 		return 0;
+	}
 
 	// save extends-ptr
 	ext = header.ext;
 
 	// get an id for this object
-	header.obj.id = _new_oid(inst,&newobj);
+	*newid = header.obj.id = _new_oid(inst,&newobj);
 
 	// write it to prevent endless recursions (obj <-> ext-obj)
 	st_dataupdate(inst.t,obj,(cdat)&header.obj.id,sizeof(oid));
 
 	// check and persist extends (if needed)
-	if(_persist_object(inst,&ext))
-		return __LINE__;
-
-	// get ext-id
-	if(st_get(inst.t,&ext,(char*)&header.obj.ext,sizeof(oid)) != -2)
+	if(_persist_object(inst,&ext,&header.obj.ext))
 		return __LINE__;
 
 	// state = start
@@ -450,24 +461,54 @@ static int _persist_object(cle_instance inst, st_ptr* obj)
 	while(it_next(inst.t,&pt,&it,PROPERTY_SIZE))
 	{
 		st_ptr upd = pt;
-		struct _mem_ref mem_ref;
+		struct _head _head;
 
-		if(st_get(inst.t,&pt,(char*)&mem_ref,sizeof(mem_ref)) == -1 &&
-			mem_ref.zero == 0 && mem_ref.head == TYPE_REF_MEM)
+		if(st_get(inst.t,&pt,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
+			continue;
+
+		if(_head.type == TYPE_REF_MEM)
 		{
+			st_ptr mem_ref;
 			struct _new_ref new_ref;
 
-			// persist property object...
-			if(_persist_object(inst,&mem_ref.ptr))
+			if(st_get(inst.t,&pt,(char*)&mem_ref,sizeof(mem_ref)) != -1)
 				return __LINE__;
 
-			// update ref
-			if(st_get(inst.t,&mem_ref.ptr,(char*)&new_ref.ref,sizeof(oid)) != -2)
+			// persist property object...
+			if(_persist_object(inst,&mem_ref,(oid*)&new_ref.ref))
 				return __LINE__;
 
 			new_ref.zero = 0;
-			new_ref.head = TYPE_REF;
+			new_ref.type = TYPE_REF;
 			st_update(inst.t,&upd,(cdat)&new_ref,sizeof(new_ref));
+		}
+		else if(_head.type == TYPE_COLLECTION)
+		{
+			it_ptr colit;
+			st_ptr newcollection;
+
+			// iterate mem-collection (prevents update from removing pages)
+			it_create(inst.t,&colit,&pt);
+
+			// remove mem-collection
+			st_update(inst.t,&upd,(cdat)&_head,sizeof(_head));
+			newcollection = upd;
+
+			// persist all objects in collection
+			while(it_next(inst.t,0,&colit,sizeof(st_ptr)))
+			{
+				oid _id;
+				st_ptr tmp = *((st_ptr*)it.kdata);
+
+				if(_persist_object(inst,&tmp,&_id))
+					return __LINE__;
+
+				tmp = newcollection;
+				st_insert(inst.t,&tmp,(cdat)&_id,sizeof(_id));
+			}
+
+			// and release ref to old collection
+			it_dispose(inst.t,&colit);
 		}
 	}
 
@@ -703,10 +744,10 @@ int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state)
 	return 0;
 }
 
-int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname)
+int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, identity* id)
 {
-	identity id = _identify(inst,obj,propertyname,TYPE_ANY,1);
-	return (id == 0)? __LINE__ : 0;
+	*id = _identify(inst,obj,propertyname,TYPE_ANY,1);
+	return (*id == 0)? __LINE__ : 0;
 }
 
 static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr, char source_prefix)
@@ -762,12 +803,6 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 			_record_source_and_path(inst.t,obj,path,expr,'(');
 			// call compiler
 			return cmp_method(inst.t,&obj,&expr,response,data,0);
-		case '[':	// collection (expr as index-spec?)
-			id = _identify(inst,obj,path,TYPE_COLLECTION,1);
-			if(id == 0)
-				return __LINE__;
-
-			return _new_value(inst,obj,id,&obj);
 		case ' ':
 		case '\t':
 		case '\r':
@@ -982,6 +1017,16 @@ int cle_probe_identity(cle_instance inst, st_ptr* reader, cle_typed_identity* id
 	return (st_get(inst.t,reader,(char*)id,sizeof(cle_typed_identity)) != -1);
 }
 
+static void _write_prop(task* t, st_ptr* pt, enum property_type type, cdat val, uint valsize)
+{
+	struct _head h;
+	h.zero = 0;
+	h.type = type;
+
+	st_insert(t,pt,(cdat)&h,sizeof(h));
+	st_append(t,pt,val,valsize);
+}
+
 int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 {
 	union {
@@ -993,66 +1038,42 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 		reftype.mref.zero != 0)
 		return 1;
 
-	if(reftype.mref.head == TYPE_REF)
-		return _goto_id(inst,ref,reftype.nref.ref);
+	if(reftype.mref.type == TYPE_REF)
+		return _goto_id(inst,ref,*((oid*)reftype.nref.ref));
 
-	if(reftype.mref.head != TYPE_REF_MEM)
+	if(reftype.mref.type != TYPE_REF_MEM)
 		return 1;
 
-	*ref = reftype.mref.ptr;
+	*ref = *((st_ptr*)reftype.mref.ptr);
 	return 0;
 }
 
-int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref)
+int cle_set_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr ref)
 {
-	objheader header_ref;
 	st_ptr val;
-	struct _new_ref new_ref;
 
-	val = ref;	// to throw away
-	if(st_get(inst.t,&val,(char*)&header_ref,sizeof(header_ref)) >= 0)
+	if(_new_value(inst,obj,id,&val))
 		return 1;
 
-	if(_new_value(inst,obj,id.id,&val))
-		return 1;
-
-	if(ISMEMOBJ(header_ref))
+	if(_is_memobj(inst,obj))
 	{
-		objheader header;
-
-		if(st_get(inst.t,&obj,(char*)&header,sizeof(header)) >= 0)
-			cle_panic(inst.t);
-
-		if(ISMEMOBJ(header))
-		{
-			struct _mem_ref mem_ref;
-			mem_ref.zero = 0;
-			mem_ref.head = TYPE_REF_MEM;
-			mem_ref.ptr = ref;
-			st_append(inst.t,&val,(cdat)&mem_ref,sizeof(mem_ref));
-			return 0;
-		}
-		else
-		{
-			if(_persist_object(inst,&ref))
-				return 1;
-
-			if(st_get(inst.t,&ref,(char*)&header_ref,sizeof(header_ref)) >= 0)
-				cle_panic(inst.t);
-		}
+		_write_prop(inst.t,&val,TYPE_REF_MEM,(cdat)&ref,sizeof(ref));
 	}
+	else
+	{
+		oid id;
+		if(_persist_object(inst,&ref,&id))
+			return 1;
 
-	new_ref.zero = 0;
-	new_ref.head = TYPE_REF;
-	new_ref.ref = header_ref.obj.id;
-	st_append(inst.t,&val,(cdat)&new_ref,sizeof(new_ref));
+		_write_prop(inst.t,&val,TYPE_REF,(cdat)&id,sizeof(id));
+	}
 	return 0;
 }
 
-int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref)
+int cle_get_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr* ref)
 {
-	if(cle_identity_value(inst,id.id,&obj,ref))
-		return -1;
+	if(cle_identity_value(inst,id,&obj,ref))
+		return 1;
 
 	return cle_get_property_ref_value(inst,*ref,ref);
 }
@@ -1062,7 +1083,7 @@ int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl)
 	struct {
 		char zero;
 		char num_type;
-		double value;
+		char value[sizeof(double)];
 	} _num;
 
 	if(st_get(inst.t,&prop,(char*)&_num,sizeof(_num)) != -1)
@@ -1071,54 +1092,41 @@ int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl)
 	if(_num.zero != 0 || _num.num_type != TYPE_NUM)
 		return 1;
 
-	*dbl = _num.value;
+	*dbl = *((double*)_num.value);
 	return 0;
 }
 
-int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl)
+int cle_set_property_num(cle_instance inst, st_ptr obj, identity id, double dbl)
 {
 	st_ptr val;
-	struct {
-		char zero;
-		char num_type;
-		double value;
-	} _num;
-
-	if(_new_value(inst,obj,id.id,&val))
+	if(_new_value(inst,obj,id,&val))
 		return 1;
 
-	_num.zero = 0;
-	_num.num_type = TYPE_NUM;
-	_num.value = dbl;
-
-	st_append(inst.t,&val,(cdat)&_num,sizeof(_num));
+	_write_prop(inst.t,&val,TYPE_NUM,(cdat)&dbl,sizeof(dbl));
 	return 0;
 }
 
-int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl)
+int cle_get_property_num(cle_instance inst, st_ptr obj, identity id, double* dbl)
 {
 	st_ptr prop;
 
-	if(cle_identity_value(inst,id.id,&obj,&prop))
+	if(cle_identity_value(inst,id,&obj,&prop))
 		return 1;
 
 	return cle_get_property_num_value(inst,prop,dbl);
 }
 
-int cle_set_property_ptr(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ptr)
+int cle_set_property_ptr(cle_instance inst, st_ptr obj, identity id, st_ptr* ptr)
 {
-	return _new_value(inst,obj,id.id,ptr);
+	return _new_value(inst,obj,id,ptr);
 }
 
-enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id)
+enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity id)
 {
 	st_ptr prop;
-	struct {
-		char zero;
-		char type;
-	} _head;
+	struct _head _head;
 
-	if(cle_identity_value(inst,id.id,&obj,&prop))
+	if(cle_identity_value(inst,id,&obj,&prop))
 		return TYPE_ILLEGAL;
 
 	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
@@ -1129,10 +1137,7 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_type
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop)
 {
-	struct {
-		char zero;
-		char type;
-	} _head;
+	struct _head _head;
 
 	if(st_get(inst.t,&prop,(char*)&_head,sizeof(_head)) != -2 || _head.zero != 0)
 		return TYPE_ANY;
@@ -1140,37 +1145,95 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop)
 	return (enum property_type) _head.type;
 }
 
-int cle_collection_add_object(cle_instance inst, st_ptr collection, st_ptr ref)
+static int _collection_ready(cle_instance inst, st_ptr obj, identity id, st_ptr* coll, const uint create)
 {
-	objheader header;
+	struct _head _head;
 
-	if(_persist_object(inst,&ref))
+	*coll = obj;
+	if(st_offset(inst.t,coll,sizeof(objectheader2)) != 0)
 		return 1;
 
-	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+	if(st_move(inst.t,coll,(cdat)&id,sizeof(identity)) != 0)
+	{
+		if(create == 0 || _new_value(inst,obj,id,coll) != 0)
+			return 1;
+
+		_head.zero = 0;
+		_head.type = TYPE_COLLECTION;
+		st_append(inst.t,coll,(cdat)&_head,sizeof(_head));
+	}
+	else if(st_get(inst.t,coll,(char*)&_head,sizeof(_head)) >= 0)
+		return 1;
+	else if(_head.zero != 0 || _head.type != TYPE_COLLECTION)
 		return 1;
 
-	st_insert(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid));
 	return 0;
 }
 
-int cle_collection_remove_object(cle_instance inst, st_ptr collection, st_ptr ref)
+int cle_collection_add_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref)
 {
-	objheader header;
+	st_ptr coll;
 
-	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+	if(_collection_ready(inst,obj,id,&coll,1))
 		return 1;
 
-	st_delete(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid));
+	if(_is_memobj(inst,obj))
+	{
+		st_insert(inst.t,&coll,(cdat)&ref,sizeof(ref));
+	}
+	else
+	{
+		oid _id;
+		if(_persist_object(inst,&ref,&_id))
+			return 1;
+
+		st_insert(inst.t,&coll,(cdat)&_id,sizeof(oid));
+	}
 	return 0;
 }
 
-int cle_collection_test_object(cle_instance inst, st_ptr collection, st_ptr ref)
+int cle_collection_remove_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref)
 {
-	objheader header;
+	st_ptr coll;
 
-	if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
-		return 1;
+	if(_collection_ready(inst,obj,id,&coll,0))
+		return 0;
 
-	return (st_exsist(inst.t,&collection,(cdat)&header.obj.id,sizeof(oid)) == 0);
+	if(_is_memobj(inst,obj))
+	{
+		st_delete(inst.t,&coll,(cdat)&ref,sizeof(ref));
+	}
+	else
+	{
+		objheader header;
+
+		if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+			return 0;
+
+		st_delete(inst.t,&coll,(cdat)&header.obj.id,sizeof(oid));
+	}
+
+	return 0;
+}
+
+int cle_collection_test_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref)
+{
+	st_ptr coll;
+
+	if(_collection_ready(inst,obj,id,&coll,0))
+		return 0;
+
+	if(_is_memobj(inst,obj))
+	{
+		return st_exsist(inst.t,&coll,(cdat)&ref,sizeof(ref));
+	}
+	else
+	{
+		objheader header;
+
+		if(st_get(inst.t,&ref,(char*)&header,sizeof(header)) >= 0 || ISMEMOBJ(header))
+			return 0;
+
+		return st_exsist(inst.t,&coll,(cdat)&header.obj.id,sizeof(oid));
+	}
 }

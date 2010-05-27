@@ -231,6 +231,33 @@ void test_struct_c()
 
 	ASSERT(st_move(t,&tmp2,test1x2,sizeof(test1x2)) == 0);
 
+	st_empty(t,&root);
+
+	tmp = root;
+	st_insert(t,&tmp,"1234",4);
+
+	ASSERT(st_exsist(t,&root,"1245",4) == 0);
+
+	tmp = root;
+	st_insert(t,&tmp,"1245",4);
+
+	tmp = root;
+	st_delete(t,&tmp,"1234",4);
+
+	ASSERT(st_exsist(t,&root,"12",2));
+	ASSERT(st_exsist(t,&root,"1245",4));
+	ASSERT(st_exsist(t,&root,"1234",4) == 0);
+
+	st_prt_page(&root);
+
+	tmp = root;
+	st_delete(t,&tmp,"12",2);
+
+	st_prt_page(&root);
+
+	ASSERT(st_exsist(t,&root,"12",2) == 0);
+	ASSERT(st_exsist(t,&root,"1245",4) == 0);
+
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);
@@ -852,9 +879,7 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
-	test_task_c_2();
-
-	test_task_c();
+	test_struct_c();
 
 	heap_check();
 
@@ -866,11 +891,17 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_compile_c();
+	test_task_c_2();
 
 	heap_check();
 
-	test_struct_c();
+	test_task_c();
+
+	heap_check();
+
+	test_compile_c();
+
+	heap_check();
 
 	time_struct_c();
 

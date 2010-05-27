@@ -21,6 +21,7 @@
 #include "cle_struct.h"
 
 // TODO cle_task.c : from recursive commit/free to looping
+// TODO - : map-cache should only hold written pages
 
 /* mem-manager */
 // TODO: should not be used outside task.c -> make private
@@ -338,6 +339,7 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref)
 		pg = t->stack->pg;
 	}
 
+	// align 8 (avoidable? dont use real pointers from here - eg. always copy?)
 	if(pg->used & 7)
 		pg->used += 8 - (pg->used & 7);
 
@@ -358,7 +360,7 @@ ushort tk_segment(task* t)
 
 segment tk_new_segment(task* t)
 {
-	cle_panic(t);
+	cle_panic(t);	// not impl yet - will delegate to pagesource
 	return 0;
 }
 

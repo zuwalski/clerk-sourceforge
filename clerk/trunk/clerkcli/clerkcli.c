@@ -87,7 +87,8 @@ static uint _data(void* v,cdat c,uint u)
 	//{
 	//	printf("%c",c[i]);
 	//}
-	printf("%.*s",u,c);
+	//printf("%.*s",u,c);
+	fwrite(c,1,u,stdout);
 	return 0;
 }
 static void _submit(void* v,task* t,st_ptr* st)

@@ -633,11 +633,11 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 
 		if(rt.prev)
 		{
-			waste  = rt.sub->length - rt.diff;
+			waste  = rt.sub->length - rt.prev->offset;
 			remove = rt.prev->next;
 			rm_pg  = rt.pg;
 
-			rt.sub->length = rt.diff;
+			rt.sub->length = rt.prev->offset;
 			rt.prev->next = 0;
 		}
 		else
@@ -662,8 +662,8 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 			}
 			else
 			{
-				waste = rt.sub->length - rt.diff;
-				rt.sub->length = rt.diff;
+				waste = rt.sub->length;
+				rt.sub->length = 0;
 				rm_pg = rt.pg;
 			}
 		}

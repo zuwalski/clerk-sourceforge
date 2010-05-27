@@ -137,7 +137,7 @@ int cle_create_state(cle_instance inst, st_ptr obj, st_ptr newstate);
 
 int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state);
 
-int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname);
+int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, identity* id);
 
 int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
@@ -153,28 +153,28 @@ int cle_probe_identity(cle_instance inst, st_ptr* reader, cle_typed_identity* id
 
 int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value);
 
-int cle_get_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ref);
+int cle_get_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr* ref);
 
 int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref);
 
-int cle_get_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double* dbl);
+int cle_get_property_num(cle_instance inst, st_ptr obj, identity id, double* dbl);
 
 int cle_get_property_num_value(cle_instance inst, st_ptr prop, double* dbl);
 
-int cle_set_property_ref(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr ref);
+int cle_set_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
-int cle_set_property_ptr(cle_instance inst, st_ptr obj, cle_typed_identity id, st_ptr* ptr);
+int cle_set_property_ptr(cle_instance inst, st_ptr obj, identity id, st_ptr* ptr);
 
-int cle_set_property_num(cle_instance inst, st_ptr obj, cle_typed_identity id, double dbl);
+int cle_set_property_num(cle_instance inst, st_ptr obj, identity id, double dbl);
 
-enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, cle_typed_identity id);
+enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity id);
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
 
-int cle_collection_add_object(cle_instance inst, st_ptr collection, st_ptr ref);
+int cle_collection_add_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
-int cle_collection_remove_object(cle_instance inst, st_ptr collection, st_ptr ref);
+int cle_collection_remove_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
-int cle_collection_test_object(cle_instance inst, st_ptr collection, st_ptr ref);
+int cle_collection_test_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
 #endif

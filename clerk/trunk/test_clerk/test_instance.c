@@ -38,6 +38,7 @@ const char testmeth[] = "() 'hello world'";
 
 const char prop1[] = "prop1";
 const char prop2[] = "prop2";
+const char propColl[] = "propC";
 
 const char exprpath[] = "expr\0expr";
 
@@ -45,7 +46,7 @@ void test_instance_c()
 {
 	cle_instance inst;
 	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3,propname,mobj1,mobj2;
-	cle_typed_identity id1;
+	cle_typed_identity id1,id2;
 	task* t = tk_create_task(0,0);
 	ptr_list list;
 	oid_str oidstr,oidstr2;
@@ -168,7 +169,7 @@ void test_instance_c()
 	pt = propname;
 	st_update(t,&pt,(cdat)prop1,sizeof(prop1));
 
-	ASSERT(cle_create_property(inst,object1,propname) == 0);
+	ASSERT(cle_create_property(inst,object1,propname,&id2.id) == 0);
 
 	pt = object1;
 	ASSERT(cle_get_property_host(inst,&pt,(cdat)prop1,sizeof(prop1)) == 0);
@@ -177,27 +178,29 @@ void test_instance_c()
 
 	ASSERT(id1.type == TYPE_ANY);
 
-	ASSERT(cle_set_property_num(inst,object1,id1,5) == 0);
+	ASSERT(id1.id == id2.id);
 
-	ASSERT(cle_get_property_num(inst,object1,id1,&dbl) == 0);
+	ASSERT(cle_set_property_num(inst,object1,id1.id,5) == 0);
 
-	ASSERT(dbl == 5);
-
-	ASSERT(cle_get_property_num(inst,object3,id1,&dbl) == 0);
+	ASSERT(cle_get_property_num(inst,object1,id1.id,&dbl) == 0);
 
 	ASSERT(dbl == 5);
 
-	ASSERT(cle_set_property_num(inst,object2,id1,10) == 0);
+	ASSERT(cle_get_property_num(inst,object3,id1.id,&dbl) == 0);
 
-	ASSERT(cle_get_property_num(inst,object2,id1,&dbl) == 0);
+	ASSERT(dbl == 5);
+
+	ASSERT(cle_set_property_num(inst,object2,id1.id,10) == 0);
+
+	ASSERT(cle_get_property_num(inst,object2,id1.id,&dbl) == 0);
 
 	ASSERT(dbl == 10);
 
-	ASSERT(cle_get_property_num(inst,object3,id1,&dbl) == 0);
+	ASSERT(cle_get_property_num(inst,object3,id1.id,&dbl) == 0);
 
 	ASSERT(dbl == 10);
 
-	ASSERT(cle_get_property_type(inst,object1,id1) == TYPE_NUM);
+	ASSERT(cle_get_property_type(inst,object1,id1.id) == TYPE_NUM);
 
 	// PERSISTENCE
 
@@ -214,25 +217,25 @@ void test_instance_c()
 	ASSERT(cle_get_oid(inst,mobj2,&oidstr) != 0);
 
 	// mobj to mobj doesn't persist
-	ASSERT(cle_set_property_ref(inst,object,id1,mobj1) == 0);
+	ASSERT(cle_set_property_ref(inst,object,id1.id,mobj1) == 0);
 
 	ASSERT(cle_get_oid(inst,object,&oidstr) != 0);
 
 	ASSERT(cle_get_oid(inst,mobj1,&oidstr) != 0);
 
-	ASSERT(cle_get_property_ref(inst,object,id1,&pt) == 0);
+	ASSERT(cle_get_property_ref(inst,object,id1.id,&pt) == 0);
 
 	ASSERT(pt.pg == mobj1.pg && pt.key == mobj1.key && pt.offset == mobj1.offset);
 	
 	// make object persistent by ass. to object1
 
-	ASSERT(cle_set_property_ref(inst,object1,id1,object) == 0);
+	ASSERT(cle_set_property_ref(inst,object1,id1.id,object) == 0);
 
 	ASSERT(cle_get_oid(inst,mobj1,&oidstr) == 0);
 
 	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
 
-	ASSERT(cle_get_property_ref(inst,object1,id1,&pt) == 0);
+	ASSERT(cle_get_property_ref(inst,object1,id1.id,&pt) == 0);
 
 	ASSERT(cle_get_oid(inst,pt,&oidstr2) == 0);
 
@@ -240,6 +243,32 @@ void test_instance_c()
 	ASSERT(memcmp(&oidstr,&oidstr2,sizeof(oidstr)) == 0);
 
 	// COLLECTIONS
+	{
+		// can not override other types with collection
+		ASSERT(cle_collection_add_object(inst,object1,id1.id,object1));
+
+		st_empty(t,&propname);
+		pt = propname;
+		st_update(t,&pt,(cdat)propColl,sizeof(propColl));
+
+		ASSERT(cle_create_property(inst,object1,propname,&id2.id) == 0);
+
+		ASSERT(cle_collection_add_object(inst,object1,id2.id,object1) == 0);
+		ASSERT(cle_collection_add_object(inst,object1,id2.id,object2) == 0);
+
+		// are they in
+		ASSERT(cle_collection_test_object(inst,object1,id2.id,object1));
+		ASSERT(cle_collection_test_object(inst,object1,id2.id,object2));
+		// object3 not in
+		ASSERT(cle_collection_test_object(inst,object1,id2.id,object3) == 0);
+
+		st_prt_page(&object1);
+		// delete 2
+		ASSERT(cle_collection_remove_object(inst,object1,id2.id,object2) == 0);
+
+		ASSERT(cle_collection_test_object(inst,object1,id2.id,object1));
+		ASSERT(cle_collection_test_object(inst,object1,id2.id,object2) == 0);
+	}
 
 	// EXPRS
 	pt = name;
