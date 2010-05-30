@@ -231,6 +231,7 @@ void test_struct_c()
 
 	ASSERT(st_move(t,&tmp2,test1x2,sizeof(test1x2)) == 0);
 
+	// Testing st_delete
 	st_empty(t,&root);
 
 	tmp = root;
@@ -241,22 +242,45 @@ void test_struct_c()
 	tmp = root;
 	st_insert(t,&tmp,"1245",4);
 
-	tmp = root;
-	st_delete(t,&tmp,"1234",4);
+	st_delete(t,&root,"1234",4);
 
 	ASSERT(st_exsist(t,&root,"12",2));
 	ASSERT(st_exsist(t,&root,"1245",4));
 	ASSERT(st_exsist(t,&root,"1234",4) == 0);
 
-	st_prt_page(&root);
-
-	tmp = root;
-	st_delete(t,&tmp,"12",2);
-
-	st_prt_page(&root);
+	st_delete(t,&root,"12",2);
 
 	ASSERT(st_exsist(t,&root,"12",2) == 0);
 	ASSERT(st_exsist(t,&root,"1245",4) == 0);
+
+	ASSERT(st_is_empty(&root));
+
+	tmp = root;
+	st_insert(t,&tmp,"1234567",7);
+
+	ASSERT(st_exsist(t,&root,"1234567",7));
+
+	st_delete(t,&root,"1",1);
+
+	ASSERT(st_is_empty(&root));
+
+	tmp = root;
+	st_insert(t,&tmp,"1234567",7);
+
+	tmp = root;
+	st_insert(t,&tmp,"1233567",7);
+
+	tmp = root;
+	st_insert(t,&tmp,"1235567",7);
+
+	tmp = root;
+	st_insert(t,&tmp,"123456789",9);
+
+	st_prt_page(&root);
+
+	st_delete(t,&root,"123456789",9);
+
+	st_prt_page(&root);
 
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 

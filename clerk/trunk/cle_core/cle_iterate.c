@@ -608,11 +608,41 @@ static uint _st_remove_key(page_wrap* rm_pg, key* sub, key* prev)
 	return remove;
 }
 
+static ushort _zap_all(st_ptr* pt)
+{
+	key* rm = GOOFF(pt->pg,pt->key);
+	ushort remove = 0;
+	rm->length = pt->offset;
+
+	if(rm->sub)
+	{
+		key* nxt = GOOFF(pt->pg,rm->sub);
+		key* prev = 0;
+		while(nxt->next && nxt->offset < pt->offset)
+		{
+			prev = nxt;
+			nxt = GOOFF(pt->pg,nxt->next);
+		}
+
+		if(prev)
+		{
+			remove = prev->next;
+			prev->next = 0;
+		}
+		else
+		{
+			remove = rm->sub;
+			rm->sub = 0;
+		}
+	}
+	return remove;
+}
+
 // TODO st_delete with st_ptr param
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_it_res rt;
-	page_wrap* rm_pg;
+	page_wrap* rm_pg = 0;
 	uint waste  = 0;
 	uint remove = 0;
 
@@ -650,58 +680,28 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 					rt.high = 0;
 			}
 
-			if(rt.low)
+			if(rt.low && rt.low_diff < rt.diff)
 			{
 				rm_pg = rt.low_pg;
 				remove = _st_remove_key(rm_pg,rt.low,rt.low_prev);
 			}
-			else if(rt.high)
+			else if(rt.high && rt.high_diff < rt.diff)
 			{
 				rm_pg = rt.high_pg;
 				remove = _st_remove_key(rm_pg,rt.high,rt.high_prev);
 			}
 			else
-			{
-				waste = rt.sub->length;
-				rt.sub->length = 0;
-				rm_pg = rt.pg;
-			}
+				remove = _zap_all(pt);
 		}
 	}
 	else
-	{
-		waste = rt.sub->length - rt.diff;
-		rt.sub->length = rt.diff;
-		rm_pg = rt.pg;
+		remove = _zap_all(pt);
 
-		if(rt.sub->sub)
-		{
-			key* nxt = GOOFF(rt.pg,rt.sub->sub);
-			rt.prev = 0;
-			while(nxt->next && nxt->offset < pt->offset)
-			{
-				rt.prev = nxt;
-				nxt = GOOFF(rt.pg,nxt->next);
-			}
-
-			if(rt.prev)
-			{
-				remove = rt.prev->next;
-				rt.prev->next = 0;
-			}
-			else
-			{
-				remove = rt.sub->sub;
-				rt.sub->sub = 0;
-			}
-		}
-	}
-
-	if(rm_pg->pg->id)
-	{
-		rm_pg->pg->waste += waste >> 3;
-		_tk_remove_tree(t,rm_pg,remove);
-	}
+//	if(rm_pg->pg->id)
+//	{
+//		rm_pg->pg->waste += waste >> 3;
+//		_tk_remove_tree(t,rm_pg,remove);
+//	}
 
 	return 0;
 }
