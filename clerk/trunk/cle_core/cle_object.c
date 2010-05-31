@@ -529,7 +529,7 @@ int cle_delete_name(cle_instance inst, st_ptr name)
 	if(st_move(inst.t,&obj,(cdat)&dev_identity,sizeof(identity)) != 0)
 		return __LINE__;
 
-	st_delete(inst.t,&obj,0,0);
+	st_update(inst.t,&obj,0,0);
 
 	obj = inst.root;
 	if(st_move(inst.t,&obj,HEAD_NAMES,IHEAD_SIZE) != 0)
@@ -720,7 +720,7 @@ static int _new_value(cle_instance inst, st_ptr obj, identity id, st_ptr* value)
 		return __LINE__;
 
 	st_insert(inst.t,value,(cdat)&id,sizeof(identity));
-	st_delete(inst.t,value,0,0);
+	st_update(inst.t,value,0,0);
 	return 0;
 }
 

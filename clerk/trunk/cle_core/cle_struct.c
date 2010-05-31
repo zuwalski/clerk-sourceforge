@@ -22,8 +22,11 @@ struct _st_lkup_res
 {
 	task* t;
 	page_wrap* pg;
+	page_wrap* d_pg;
 	key*  prev;
 	key*  sub;
+	key*  d_prev;
+	key*  d_sub;
 	cdat  path;
 	uint  length;
 	uint  diff;
@@ -33,6 +36,7 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 {
 	key* me   = rt->sub;
 	cdat ckey = KDATA(me) + (rt->diff >> 3);
+	rt->d_sub = 0;
 
 	while(1)
 	{
@@ -88,10 +92,18 @@ static uint _st_lookup(struct _st_lkup_res* rt)
 		if(me->offset != rt->diff)
 			break;
 
+		// for st_delete
+		if(rt->sub->length != me->offset || (rt->d_sub == 0 && rt->sub->length != 0))
+		{
+			rt->d_pg   = rt->pg;
+			rt->d_sub  = rt->sub;
+			rt->d_prev = rt->prev;
+		}
+
 		if(ISPTR(me))
 			me = _tk_get_ptr(rt->t,&rt->pg,me);
 		ckey = KDATA(me);
-		rt->diff = 0;
+		rt->diff = 0;		
 	}
 	return (rt->length == 0);
 }
@@ -246,6 +258,13 @@ static void _st_write(struct _st_lkup_res* rt)
 	while(size);	
 }
 
+static void _pt_move(st_ptr* pt, struct _st_lkup_res* rt)
+{
+	pt->pg  = rt->pg;
+	pt->key = (char*)rt->sub - (char*)rt->pg->pg;
+	pt->offset = rt->diff;
+}
+
 /* Interface-functions */
 
 uint st_empty(task* t, st_ptr* pt)
@@ -299,11 +318,8 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length)
 	rt.diff   = pt->offset;
 
 	if(_st_lookup(&rt))
-	{
-		pt->pg  = rt.pg;
-		pt->key = (char*)rt.sub - (char*)rt.pg->pg;
-		pt->offset = rt.diff;
-	}
+		_pt_move(pt,&rt);
+
 	return (rt.length != 0);
 }
 
@@ -321,9 +337,7 @@ uint st_insert(task* t, st_ptr* pt, cdat path, uint length)
 		_st_write(&rt);
 	else rt.path = 0;
 
-	pt->pg     = rt.pg;
-	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
-	pt->offset = rt.diff;
+	_pt_move(pt,&rt);
 	return (rt.path != 0);
 }
 
@@ -403,9 +417,71 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 		_tk_remove_tree(t,rt.pg,pu.remove);
 	}
 
-	pt->pg     = rt.pg;
-	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
-	pt->offset = rt.diff;
+	_pt_move(pt,&rt);
+	return 0;
+}
+
+uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
+{
+	struct _st_lkup_res rt;
+	rt.t      = t;
+	rt.path   = path;
+	rt.length = length << 3;
+	rt.pg     = pt->pg;
+	rt.sub    = GOOFF(pt->pg,pt->key);
+	rt.diff   = pt->offset;
+
+	if(_st_lookup(&rt) == 0)
+		return 1;
+
+	if(rt.prev == 0 && rt.sub->sub)
+	{
+		key* k = GOOFF(rt.pg,rt.sub->sub);
+		while(k->offset < rt.diff)
+		{
+			rt.prev = k;
+			if(k->next == 0)
+				break;
+			k = GOOFF(rt.pg,k->next);
+		}
+	}
+
+	if(rt.prev)
+	{
+		if(rt.pg->pg->id)
+			_st_make_writable(&rt);
+		//waste  = rt.sub->length - rt.prev->offset;
+		//remove = rt.prev->next;
+		//rm_pg  = rt.pg;
+
+		rt.sub->length = rt.prev->offset;
+		rt.prev->next = 0;
+	}
+	else if(rt.d_sub)
+	{
+		if(rt.d_pg->pg->id)
+			_st_make_writable(&rt);
+
+		if(rt.d_prev)
+		{
+			key* k = GOOFF(rt.d_pg,rt.d_prev->next);
+			rt.d_prev->next = k->next;
+
+			if(k->offset == rt.d_sub->length)
+				rt.d_sub->length = rt.d_prev->offset;
+		}
+		else
+		{
+			key* k = GOOFF(rt.d_pg,rt.d_sub->sub);
+			rt.d_sub->sub = k->next;
+
+			if(k->offset == rt.d_sub->length)
+				rt.d_sub->length = 0;
+		}
+	}
+	else
+		_st_prepare_update(&rt,t,pt);
+
 	return 0;
 }
 
@@ -528,9 +604,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length)
 
 	_st_write(&rt);
 
-	pt->pg     = rt.pg;
-	pt->key    = (char*)rt.sub - (char*)rt.pg->pg;
-	pt->offset = rt.diff;
+	_pt_move(pt,&rt);
 	return 0;
 }
 
@@ -756,9 +830,7 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str)
 	if(ret = st_map_st(t,str,_mv_st,_dont_use,_dont_use,&rt))
 		return ret;
 
-	mv->pg  = rt.pg;
-	mv->key = (char*)rt.sub - (char*)rt.pg->pg;
-	mv->offset = rt.diff;
+	_pt_move(mv,&rt);
 	return 0;
 }
 
@@ -812,9 +884,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from)
 	if(ret = st_map_st(t,from,_ins_st,_dont_use,_dont_use,&sins))
 		return ret;
 
-	to->pg  = sins.rt.pg;
-	to->key = (char*)sins.rt.sub - (char*)sins.rt.pg->pg;
-	to->offset = sins.rt.diff;
+	_pt_move(to,&sins.rt);
 	return 0;
 }
 

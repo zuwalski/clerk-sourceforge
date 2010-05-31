@@ -262,7 +262,6 @@ void test_instance_c()
 		// object3 not in
 		ASSERT(cle_collection_test_object(inst,object1,id2.id,object3) == 0);
 
-		st_prt_page(&object1);
 		// delete 2
 		ASSERT(cle_collection_remove_object(inst,object1,id2.id,object2) == 0);
 

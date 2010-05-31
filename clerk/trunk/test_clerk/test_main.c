@@ -268,10 +268,10 @@ void test_struct_c()
 	st_insert(t,&tmp,"1234567",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1233567",7);
+	st_insert(t,&tmp,"1233333",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1235567",7);
+	st_insert(t,&tmp,"1235555",7);
 
 	tmp = root;
 	st_insert(t,&tmp,"123456789",9);

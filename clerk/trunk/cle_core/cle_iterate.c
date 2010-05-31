@@ -639,7 +639,7 @@ static ushort _zap_all(st_ptr* pt)
 }
 
 // TODO st_delete with st_ptr param
-uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
+uint st_delete_XX(task* t, st_ptr* pt, cdat path, uint length)
 {
 	struct _st_lkup_it_res rt;
 	page_wrap* rm_pg = 0;
