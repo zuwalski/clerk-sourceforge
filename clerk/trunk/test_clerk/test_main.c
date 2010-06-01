@@ -276,13 +276,37 @@ void test_struct_c()
 	tmp = root;
 	st_insert(t,&tmp,"123456789",9);
 
-	st_prt_page(&root);
-
 	st_delete(t,&root,"123456789",9);
 
-	st_prt_page(&root);
+	ASSERT(st_exsist(t,&root,"1233333",7));
+	ASSERT(st_exsist(t,&root,"1235555",7));
+	ASSERT(st_exsist(t,&root,"1234567",7) == 0);
+	ASSERT(st_exsist(t,&root,"123456789",9) == 0);
 
-	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
+	st_delete(t,&root,"1233333",7);
+
+	ASSERT(st_exsist(t,&root,"1233333",7) == 0);
+	ASSERT(st_exsist(t,&root,"1235555",7));
+
+	st_delete(t,&root,"1235555",7);
+
+	ASSERT(st_exsist(t,&root,"1235555",7) == 0);
+	ASSERT(st_is_empty(&root));
+
+	tmp = root;
+	st_insert(t,&tmp,"1234567",7);
+
+	tmp = root;
+	st_insert(t,&tmp,"1233333",7);
+
+	tmp = root;
+	st_insert(t,&tmp,"1235555",7);
+
+	st_delete(t,&root,"1235555",7);
+
+	ASSERT(st_exsist(t,&root,"1233333",7));
+	ASSERT(st_exsist(t,&root,"1234567",7));
+	ASSERT(st_exsist(t,&root,"1235555",7) == 0);
 
 	tk_drop_task(t);
 }
@@ -480,14 +504,14 @@ void time_struct_c()
 	start = clock();
 	for(counter = 1; counter <= HIGH_ITERATION_COUNT; counter++)
 	{
-//		st_delete(t,&root,(cdat)&counter,sizeof(counter));
+		st_delete(t,&root,(cdat)&counter,sizeof(counter));
 	}
 	stop = clock();
 
 	printf("delete %d items. Time %d\n",HIGH_ITERATION_COUNT, stop - start);
 
 	// collection now empty again
-	//ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(&root));
 
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	tk_drop_task(t);
@@ -907,23 +931,11 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_instance_c();
-
-	heap_check();
-
-	test_stream_c();
-
-	heap_check();
-
-	test_task_c_2();
-
-	heap_check();
-
 	test_task_c();
 
 	heap_check();
 
-	test_compile_c();
+	test_instance_c();
 
 	heap_check();
 
@@ -937,7 +949,21 @@ int main(int argc, char* argv[])
 
 	test_iterate_c();
 
+	heap_check();
+
 	test_iterate_fixedlength();
+
+	heap_check();
+
+	test_stream_c();
+
+	heap_check();
+
+	test_task_c_2();
+
+	heap_check();
+
+	test_compile_c();
 
 	heap_check();
 
