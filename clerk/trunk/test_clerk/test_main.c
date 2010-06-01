@@ -513,6 +513,19 @@ void time_struct_c()
 	// collection now empty again
 	ASSERT(st_is_empty(&root));
 
+	notfound = 0;
+	start = clock();
+	for(counter = 1; counter <= HIGH_ITERATION_COUNT; counter++)
+	{
+		if(st_exsist(t,&root,(cdat)&counter,sizeof(counter)) == 0)
+			notfound++;
+	}
+	stop = clock();
+
+	ASSERT(notfound == HIGH_ITERATION_COUNT);
+
+	printf("exsist (empty) %d items. Time %d\n",HIGH_ITERATION_COUNT, stop - start);
+
 	printf("pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 	tk_drop_task(t);
 }
