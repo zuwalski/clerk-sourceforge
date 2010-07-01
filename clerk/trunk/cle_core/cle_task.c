@@ -390,9 +390,9 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data)
 	t->pagemap_root_key = p->used;
 
 	k = (key*)((char*)p + p->used);
-	memset(k,0,sizeof(key) + 2);
+	memset(k,0,sizeof(key));
 
-	p->used += sizeof(key) + 2;
+	p->used += sizeof(key);
 
 	// pagecache
 	memset(t->cache,0,sizeof(t->cache));

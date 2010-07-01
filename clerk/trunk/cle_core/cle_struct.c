@@ -840,6 +840,7 @@ struct _del_ctx
 	st_ptr from;
 };
 
+// TODO: this will not work as expected...
 static uint _del_st(struct _del_ctx* ctx, cdat txt, uint len)
 {
 	return st_delete(ctx->t,&ctx->from,txt,len);

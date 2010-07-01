@@ -940,6 +940,11 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
+	test_instance_c();
+
+	heap_check();
+
+
 	test_struct_c();
 
 	heap_check();
@@ -948,9 +953,6 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_instance_c();
-
-	heap_check();
 
 	time_struct_c();
 

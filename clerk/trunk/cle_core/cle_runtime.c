@@ -678,6 +678,7 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	sp->type = STACK_PTR;
 }
 
+// add identity to fun-args
 static int _rt_collection_do_objects(struct _rt_invocation* inv, struct _rt_stack* sp, uint params, int(*coll_fun)(cle_instance, st_ptr, st_ptr))
 {
 	if(sp[params].type == STACK_OBJ)
@@ -851,7 +852,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			sp--;
 			sp->type = STACK_OBJ;
 			sp->ptr = sp->obj = inv->top->object;
-			st_offset(inv->t,&sp->ptr,sizeof(objectheader2));
+			cle_skip_header(inv->hdl->inst,&sp->ptr);
 			break;
 
 		case OP_NEW:
@@ -891,7 +892,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				else
 				{
 					sp->ptr = sp->obj;
-					st_offset(inv->t,&sp->ptr,sizeof(objectheader2));
+					cle_skip_header(inv->hdl->inst,&sp->ptr);
 					sp->type = STACK_OBJ;
 				}
 			}
@@ -1010,7 +1011,7 @@ static void _rt_run(struct _rt_invocation* inv)
 					st_ptr pt = inv->hdl->inst.root;
 					st_move(inv->t,&pt,sp->it.kdata,sizeof(oid));
 					sp->ptr = sp->obj = pt;
-					st_offset(inv->t,&sp->ptr,sizeof(objectheader2));
+					cle_skip_header(inv->hdl->inst,&sp->ptr);
 					sp->type = STACK_OBJ;
 				}
 				else
@@ -1034,7 +1035,7 @@ static void _rt_run(struct _rt_invocation* inv)
 			{
 				inv->top->pc += tmp;
 				sp->ptr = sp->obj;
-				st_offset(inv->t,&sp->ptr,sizeof(objectheader2));
+				cle_skip_header(inv->hdl->inst,&sp->ptr);
 				_rt_get(inv,&sp);
 			}
 			break;

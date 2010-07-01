@@ -62,6 +62,7 @@ typedef struct
 typedef struct
 {
 	task*  t;
+	void*  ctx;
 	st_ptr root;
 } cle_instance;
 
@@ -171,7 +172,5 @@ ptr_list* ptr_list_reverse(ptr_list* e);
 /* test */
 
 void cle_panic(task* t);
-
-void unimplm();
 
 #endif

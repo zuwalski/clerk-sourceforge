@@ -69,39 +69,6 @@ typedef struct
 typedef ulong identity;
 // identity == 0 => not valid!
 
-#define IDLEVEL(id)  ((id) >> 22)
-#define IDNUMBER(id) ((id) & 0x3FFFFF)
-#define IDMAKE(level,number) (((level) << 22) | IDNUMBER(number))
-
-// later: mark-sweep of persisten objects. Flip first bit from mark to mark.
-#define IDMARK(id) ((id) & 1)
-
-typedef struct
-{
-	oid       id;
-	oid       ext;
-	identity  state;
-}
-objectheader2;
-// followed by object-content
-
-typedef union
-{
-	struct
-	{
-		segment zero;
-		st_ptr  ext;
-	};
-	objectheader2 obj;
-}
-objheader;
-
-#define ISMEMOBJ(header) ((header).zero == 0)
-// DEV-hdr: (next)identity
-// ... followed by optional name
-
-#define PROPERTY_SIZE (sizeof(identity))
-
 typedef struct
 {
 	oid      oid;
@@ -117,6 +84,13 @@ typedef struct
 }
 cle_typed_identity;
 
+typedef struct
+{
+	st_ptr write;
+	oid newoid;
+} 
+cle_context;
+
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
 void cle_new_mem(task* app_instance, st_ptr extends, st_ptr* newobj);
@@ -128,6 +102,8 @@ int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj)
 int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* buffer);
 
 int cle_goto_parent(cle_instance inst, st_ptr* child);
+
+int cle_skip_header(cle_instance inst, st_ptr* obj);
 
 int cle_is_related_to(cle_instance inst, st_ptr parent, st_ptr child);
 

@@ -51,58 +51,62 @@ void test_instance_c()
 	ptr_list list;
 	oid_str oidstr,oidstr2;
 	double dbl;
+	cle_context ctx;
 
 	// setup
 	puts("\nRunning test_instance_c\n");
 
 	st_empty(t,&root);
 	st_empty(t,&name);
+	st_empty(t,&ctx.write);
+	ctx.newoid._low = 0;
 
 	inst.t = t;
 	inst.root = root;
+	inst.ctx = &ctx;
 	empty.pg = 0;
 
 	// create object-family One <- Two <- Three
 	pt = name;
 	st_insert(t,&pt,objone,sizeof(objone));
 
-	ASSERT(cle_new(inst,name,empty,0) == 0);
+	ASSERT(cle_new(inst,name,empty,&object1) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object1) == 0);
+	ASSERT(cle_goto_object(inst,name,&object1) != 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 
-	ASSERT(cle_new(inst,name,object1,0) == 0);
+	ASSERT(cle_new(inst,name,object1,&object2) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object2) == 0);
+	ASSERT(cle_goto_object(inst,name,&object2) != 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 
-	ASSERT(cle_new(inst,name,object2,0) == 0);
+	ASSERT(cle_new(inst,name,object2,&object3) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object3) == 0);
+	ASSERT(cle_goto_object(inst,name,&object3) != 0);
 
 	pt = name;
 	st_update(t,&pt,objone,sizeof(objone));
-	ASSERT(cle_goto_object(inst,name,&object) == 0);
+	ASSERT(cle_goto_object(inst,name,&object) != 0);
 
-	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(cle_get_oid(inst,object1,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
-	ASSERT(cle_goto_object(inst,name,&object) == 0);
+	ASSERT(cle_goto_object(inst,name,&object) != 0);
 
-	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(cle_get_oid(inst,object2,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
-	ASSERT(cle_goto_object(inst,name,&object) == 0);
+	ASSERT(cle_goto_object(inst,name,&object) != 0);
 
-	ASSERT(cle_get_oid(inst,object,&oidstr) == 0);
+	ASSERT(cle_get_oid(inst,object3,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaad",13) == 0);
 
 	object = object3;
