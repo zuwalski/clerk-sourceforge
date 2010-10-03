@@ -1,0 +1,33 @@
+dev.new.object dk.lsz.test
+
+dev.new.dk.lsz.test dk.lsz.extest
+
+dev.set.property.dk.lsz.test prop1
+
+dev.set.handler.sync.dk.lsz.test start dk.event !>(:test) "dk.event says: " :test <!
+
+dk.event hello world
+
+dev.set.handler.reqs.dk.lsz.test start dk.event !>
+	() "Req start> " read() " <Req end" 
+<!
+
+dev.set.handler.resp.dk.lsz.test start dk.event !>
+()
+	var :ipt = read();
+	'Resp start> '
+
+	while :ipt do
+		' ( ' :ipt ' ) '; :ipt = read();
+	end
+
+	' <resp end'
+<!
+
+dk.event !>hello world<!
+
+dev.set.handler.sync.dk.lsz.test start dk !>
+	(:test) "dk alone says: " :test 
+<!
+
+dk.event !>hello world 3<!

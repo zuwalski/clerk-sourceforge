@@ -1,0 +1,8 @@
+
+dev.new.object dk.lsz.test3
+
+dev.set.handler.sync.dk.lsz.test3 start dk.event !>(:test) "dk.event says: " :test <!
+
+dev.set.handler.sync.dk.lsz.test3 start dk.opentest !>(:test) open 'dk.event' do :test end <!
+
+dk.opentest hello
