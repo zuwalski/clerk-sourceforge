@@ -164,7 +164,7 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref);
 void tk_unref(task* t, struct page_wrap* pg);
 
 void tk_ref_ptr(st_ptr* ptr);
-void tk_free_ptr(st_ptr* ptr);
+void tk_free_ptr(task* t, st_ptr* ptr);
 
 void tk_root_ptr(task* t, st_ptr* pt);
 

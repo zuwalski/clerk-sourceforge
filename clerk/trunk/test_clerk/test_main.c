@@ -23,14 +23,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <malloc.h>
+//#include <malloc.h>
+#include <memory.h>
 #include <errno.h>
 #include <string.h>
 #include "test.h"
 
 void heap_check()
 {
-///*
+/*
 int heapstatus = _heapchk();
    switch( heapstatus )
    {
@@ -49,7 +50,7 @@ int heapstatus = _heapchk();
    default:
       printf( "ERROR - other\n" );
    }
-//*/
+*/
 }
 
 void cle_panic(task* t)
@@ -771,7 +772,7 @@ void test_task_c_filepager()
 	
 	puts("\nRunning filepager\n");
 	// remove old test-database first
-	_unlink(testdbfilename);
+	unlink(testdbfilename);
 	
 	pdata = util_create_filepager(testdbfilename);
 

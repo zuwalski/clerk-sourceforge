@@ -19,11 +19,12 @@
 #include <stdlib.h>
 
 #include <stdio.h>
-#include <io.h>
+//#include <io.h>
 #include <fcntl.h>
-#include <share.h>
+//#include <share.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 /*
 	simple mem pager
@@ -172,11 +173,17 @@ static cle_pageid file_new_page(cle_psrc_data pd, page* pg)
 	fd->header.pagecount += 1;
 	pg->id = (cle_pageid)(fd->header.pagecount * fd->header.pagesize + sizeof(struct _file_pager_header));
 
-	if(_lseek(fd->fh,(long)pg->id,SEEK_SET) == -1)
+	if(lseek(fd->fh,(off_t)pg->id,SEEK_SET) == -1){
+		fprintf(stdout,"errno %d\n", errno);
+		fflush(stdout);
 		return 0;
+	}
 
-	if(_write(fd->fh,pg,pg->used) == -1)
+	if(write(fd->fh,pg,pg->used) == -1){
+		fprintf(stdout,"errno %d\n", errno);
+		fflush(stdout);
 		return 0;
+	}
 
 	return pg->id;
 }
@@ -194,12 +201,12 @@ static page* file_read_page(cle_psrc_data pd, cle_pageid pid)
 		pid = (cle_pageid)sizeof(struct _file_pager_header);
 	}
 
-	if(_lseek(fd->fh,(long)pid,SEEK_SET) == -1)
+	if(lseek(fd->fh,(long)pid,SEEK_SET) == -1)
 		return 0;
 
 	pg = (page*)malloc(fd->header.pagesize);
 
-	if(_read(fd->fh,pg,fd->header.pagesize) == -1)
+	if(read(fd->fh,pg,fd->header.pagesize) == -1)
 	{
 		free(pg);
 		return 0;
@@ -223,10 +230,10 @@ static void file_write_page(cle_psrc_data pd, cle_pageid pid, page* pg)
 	else
 		pg->id = pid;
 
-	if(_lseek(fd->fh,(long)pid,SEEK_SET) == -1)
+	if(lseek(fd->fh,(long)pid,SEEK_SET) == -1)
 		return;
 
-	_write(fd->fh,pg,pg->used);
+	write(fd->fh,pg,pg->used);
 }
 
 static void file_remove_page(cle_psrc_data pd, cle_pageid pid)
@@ -255,13 +262,14 @@ static int file_pager_commit(cle_psrc_data pd)
 
 	fd->header.version += 1;
 
-	if(_lseek(fd->fh,0,SEEK_SET) == -1)
+	if(lseek(fd->fh,0,SEEK_SET) == -1)
 		return -1;
 
-	if(_write(fd->fh,&fd->header,sizeof(struct _file_pager_header)) == -1)
+	if(write(fd->fh,&fd->header,sizeof(struct _file_pager_header)) == -1)
 		return -1;
 
-	return _commit(fd->fh);
+	return 0;
+//	return commit(fd->fh);
 }
 
 // not really implemented
@@ -273,7 +281,7 @@ static int file_pager_rollback(cle_psrc_data pd)
 static int file_pager_close(cle_psrc_data pd)
 {
 	struct _file_psrc_data* fd = (struct _file_psrc_data*)pd;
-	_close(fd->fh);
+	close(fd->fh);
 	free(fd);
 	return 0;
 }
@@ -285,7 +293,7 @@ static cle_psrc_data file_pager_clone(cle_psrc_data pd)
 	if(new_fd == 0)
 		return 0;
 
-	new_fd->fh = _dup(fd->fh);
+	new_fd->fh = dup(fd->fh);
 	new_fd->header = fd->header;
 
 	return new_fd;
@@ -306,16 +314,19 @@ cle_psrc_data util_create_filepager(const char* filename)
 		return 0;
 
 //	err = _sopen_s(&fd->fh,filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
-	fd->fh = _sopen(filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
+	fd->fh = open(filename,O_RDWR|O_CREAT|O_TRUNC,S_IRWXU);
+//	fd->fh = _sopen(filename,_O_BINARY|_O_CREAT|_O_RANDOM|_O_RDWR, _SH_DENYWR, _S_IREAD|_S_IWRITE);
 
-	if(err != 0)
+	if(fd->fh == -1)
 	{
+		int e = errno;
+		fprintf(stdout,"errno %d\n",e);
 		free(fd);
 		return 0;
 	}
 
 	// read header 
-	if(_read(fd->fh,&fd->header,sizeof(struct _file_pager_header)) != sizeof(struct _file_pager_header))
+	if(read(fd->fh,&fd->header,sizeof(struct _file_pager_header)) != sizeof(struct _file_pager_header))
 	{
 		// create
 		fd->header.magic = PAGER_MAGIC;
@@ -324,7 +335,7 @@ cle_psrc_data util_create_filepager(const char* filename)
 		fd->header.pagecount = 0;
 		fd->header.version = 0;
 
-		if(_write(fd->fh,&fd->header,sizeof(struct _file_pager_header)) == -1)
+		if(write(fd->fh,&fd->header,sizeof(struct _file_pager_header)) == -1)
 		{
 			file_pager_close(fd);
 			return 0;

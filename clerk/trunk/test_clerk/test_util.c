@@ -313,7 +313,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 		int ovf_free = 0;
 		int stack_pages = 0;
 
-		pw = t->stack;
+		pw = tsk->stack;
 		while(pw)
 		{
 			stack_pages++;
@@ -331,7 +331,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk)
 			pw = pw->next;
 		}
 
-		pw = t->wpages;
+		pw = tsk->wpages;
 		while(pw)
 		{
 			pages_written++;

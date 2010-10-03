@@ -24,6 +24,7 @@
 // TODO - : map-cache should only hold written pages
 
 /* mem-manager */
+// TODO: call external allocator
 // TODO: should not be used outside task.c -> make private
 void* tk_malloc(task* t, uint size)
 {
@@ -49,11 +50,20 @@ void tk_mfree(task* t, void* mem)
 	free(mem);
 }
 
+static void _page_ptr(task* t, st_ptr* pt)
+{
+	pt->key = t->pagemap_root_key;
+	pt->pg  = t->pagemap_root_wrap;
+	pt->offset = 0;
+}
+
+static void _tk_release_page(page_wrap* wp);
+
 static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid)
 {
 	cle_pageid firstpid = pid;
-	int i;
-	for(i = 0; i < PID_CACHE_SIZE; i++)
+	uint i;
+	for(i = 0; i < PID_CACHE_SIZE && pid != 0; i++)
 	{
 		page_wrap* twrap = t->cache[i].wrapper;
 		cle_pageid tid = t->cache[i].pid;
@@ -61,11 +71,33 @@ static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid)
 		t->cache[i].wrapper = wrapper;
 		t->cache[i].pid = pid;
 
-		if(tid == 0 || tid == firstpid)
-			break;
+		if(tid == firstpid)
+			return;	// cache-entries just reordered. No ref adjust
 
 		pid = tid;
 		wrapper = twrap;
+	}
+
+	// entry is new in cache
+	t->cache[0].wrapper->refcount++;
+
+	// this entry is pushed out of the cache
+	if(pid != 0)
+	{
+		wrapper->refcount--;
+
+		// if its not unused make sure the wrapper is stored
+		if(wrapper->refcount != 0 || wrapper->pg->id == 0)
+		{
+			st_ptr root_ptr;
+			_page_ptr(t,&root_ptr);
+
+			if(st_insert(t,&root_ptr,(cdat)&pid,sizeof(pid)))
+				// insert pw into pagemap
+				st_append(t,&root_ptr,(cdat)&wrapper,sizeof(wrapper));
+		}
+		else
+			_tk_release_page(wrapper);
 	}
 }
 
@@ -74,7 +106,7 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	/* have a wrapper? */
 	st_ptr root_ptr;
 	page_wrap* pw;
-	int i;
+	uint i;
 
 	// try cache..
 	for(i = 0; i < PID_CACHE_SIZE && t->cache[i].pid != 0; i++)
@@ -88,12 +120,10 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 	}
 
 	// not found in cache...
-	root_ptr.key = t->pagemap_root_key;
-	root_ptr.pg  = t->pagemap_root_wrap;
-	root_ptr.offset = 0;
+	_page_ptr(t,&root_ptr);
 
 	// find pid in pagemap
-	if(st_insert(t,&root_ptr,(cdat)&pid,sizeof(pid)))
+	if(st_move(t,&root_ptr,(cdat)&pid,sizeof(pid)))
 	{
 		/* not found: call pager to get page */
 		page* npage = t->ps->read_page(t->psrc_data,pid);
@@ -101,23 +131,18 @@ static page_wrap* _tk_load_page(task* t, page_wrap* parent, cle_pageid pid)
 		/* create wrapper and add to w-list */
 		pw = (page_wrap*)tk_alloc(t,sizeof(page_wrap),0);
 		pw->ext_pageid = pid;
-		pw->ovf = 0;
+		pw->ovf = 0;	// inc by cache_pushdown
 		pw->pg = npage;
-		pw->refcount = 1;
+		pw->refcount = 0;
 		pw->parent = parent;
 
+		// TODO remove
 		pw->next = t->wpages;
 		t->wpages = pw;
-
-		// insert pw into pagemap
-		st_append(t,&root_ptr,(cdat)&pw,sizeof(pw));
 	}
-	else
-	{
-		// found: read address of page_wrapper
-		if(st_get(t,&root_ptr,(char*)&pw,sizeof(pw)) != -1)
-			cle_panic(t);	// map corrupted
-	}
+	// found: read address of page_wrapper
+	else if(st_get(t,&root_ptr,(char*)&pw,sizeof(pw)) != -1)
+		cle_panic(t);	// map corrupted
 
 	// into cache
 	_cache_pushdown(t,pw,pid);
@@ -135,8 +160,6 @@ void _tk_write_copy(task* t, page_wrap* pg)
 	/* swap pages */
 	t->ps->unref_page(t->psrc_data,pg->pg);
 	pg->pg = npg;
-
-	// add to pagemap
 }
 
 key* _tk_get_ptr(task* t, page_wrap** pg, key* me)
@@ -248,19 +271,29 @@ void _tk_remove_tree(task* t, page_wrap* pg, ushort off)
 
 void tk_unref(task* t, page_wrap* pg)
 {
-	if(pg->ext_pageid == 0)
+	/* dead page ? */
+	if (pg->refcount == 1)
 	{
-		pg->refcount--;
+		if(pg->ext_pageid != 0)
+		{
+			if(pg->pg->id != 0)
+			{
+				st_ptr root_ptr;
+				_page_ptr(t,&root_ptr);
 
-		/* internal dead page ? */
-		if(pg->refcount == 0)
+				st_delete(t,&root_ptr,(cdat)&pg->ext_pageid,sizeof(pg->ext_pageid));
+			}
+		}
+		else
 			_tk_release_page(pg);
 	}
+	else
+		pg->refcount--;
 }
 
-void tk_free_ptr(st_ptr* ptr)
+void tk_free_ptr(task* t, st_ptr* ptr)
 {
-	tk_unref(0,ptr->pg);
+	tk_unref(t,ptr->pg);
 }
 
 void tk_ref_ptr(st_ptr* ptr)

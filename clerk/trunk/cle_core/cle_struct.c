@@ -716,7 +716,6 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 	page_wrap* pg = pt->pg;
 	key* me       = GOOFF(pt->pg,pt->key);
 	key* nxt;
-	cdat ckey     = KDATA(me) + (pt->offset >> 3);
 	uint klen;
 
 	nxt = _trace_nxt(pt);
@@ -734,7 +733,6 @@ uint st_offset(task* t, st_ptr* pt, uint offset)
 		if(offset > 0 && nxt && nxt->offset == me->length)
 		{
 			me = (ISPTR(nxt))?_tk_get_ptr(t,&pg,nxt):nxt;
-			ckey = KDATA(me);
 			if(me->sub)
 			{
 				nxt = GOOFF(pg,me->sub);

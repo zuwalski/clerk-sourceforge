@@ -64,13 +64,13 @@ struct _head
 
 struct _new_ref
 {
-	struct _head;
+	struct _head hd;
 	char ref[sizeof(oid)];
 };
 
 struct _mem_ref
 {
-	struct _head;
+	struct _head hd;
 	char ptr[sizeof(st_ptr)];
 };
 
@@ -139,7 +139,7 @@ struct _val_ctx
 static int _mv(void* p, char* buffer, int len)
 {
 	struct _val_ctx* ctx = (struct _val_ctx*)p;
-	return st_move(ctx->t,ctx->ptr,buffer,len);
+	return st_move(ctx->t,ctx->ptr,(cdat)buffer,len);
 }
 
 static int _ins(void* p, char* buffer, int len)
@@ -546,8 +546,8 @@ static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid)
 			if(_persist_object(inst,&mem_ref,(oid*)&new_ref.ref))
 				return __LINE__;
 
-			new_ref.zero = 0;
-			new_ref.type = TYPE_REF;
+			new_ref.hd.zero = 0;
+			new_ref.hd.type = TYPE_REF;
 			st_update(inst.t,&upd,(cdat)&new_ref,sizeof(new_ref));
 		}
 		else if(_head.type == TYPE_COLLECTION)
@@ -1167,13 +1167,13 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref)
 	} reftype;
 
 	if((st_get(inst.t,&prop,(char*)&reftype,sizeof(reftype)) & 0xFE) == 0 ||
-		reftype.mref.zero != 0)
+		reftype.mref.hd.zero != 0)
 		return 1;
 
-	if(reftype.mref.type == TYPE_REF)
+	if(reftype.mref.hd.type == TYPE_REF)
 		return _goto_id(inst,ref,*((oid*)reftype.nref.ref));
 
-	if(reftype.mref.type != TYPE_REF_MEM)
+	if(reftype.mref.hd.type != TYPE_REF_MEM)
 		return 1;
 
 	*ref = *((st_ptr*)reftype.mref.ptr);
