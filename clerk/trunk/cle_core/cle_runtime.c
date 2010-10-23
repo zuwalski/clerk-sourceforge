@@ -531,14 +531,16 @@ static uint _rt_do_open(struct _rt_invocation* inv, struct _rt_stack** sp)
 
 	outtask = tk_clone_task(inv->t);
 
-	ipt = cle_start(
+/*	FIXME
+ * ipt = cle_start(
 		outtask,
 		inv->hdl->eventdata->config,
 		(*sp)->single_ptr,
 		inv->hdl->eventdata->userid,
+
 		inv->hdl->eventdata->userroles,
 		response,resp_data);
-
+*/
 	if(ipt == 0)
 	{
 		tk_drop_task(outtask);

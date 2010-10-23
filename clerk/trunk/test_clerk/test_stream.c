@@ -222,7 +222,8 @@ void test_stream_c()
 			pt = eventname;
 			st_insert(app_inst,&pt,test_events[i],10);
 
-			ipt = cle_start(app_inst,config_root,eventname,dummy_user,dummy_userroles,&_test_pipe2,0);
+			//FIXME
+			//ipt = cle_start(app_inst,config_root,eventname,dummy_user,dummy_userroles,&_test_pipe2,0);
 
 			if(ipt != 0)
 			{

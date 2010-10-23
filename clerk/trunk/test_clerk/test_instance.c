@@ -51,19 +51,19 @@ void test_instance_c()
 	ptr_list list;
 	oid_str oidstr,oidstr2;
 	double dbl;
-	cle_context ctx;
+	//cle_context ctx;
 
 	// setup
 	puts("\nRunning test_instance_c\n");
 
 	st_empty(t,&root);
 	st_empty(t,&name);
-	st_empty(t,&ctx.write);
-	ctx.newoid._low = 0;
+	//st_empty(t,&ctx.write);
+	//ctx.newoid._low = 0;
 
 	inst.t = t;
 	inst.root = root;
-	inst.ctx = &ctx;
+	//inst.ctx = &ctx;
 	empty.pg = 0;
 
 	// create object-family One <- Two <- Three

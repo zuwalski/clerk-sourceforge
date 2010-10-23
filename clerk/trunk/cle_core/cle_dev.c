@@ -170,7 +170,7 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 
 	_create_state = cle_create_simple_handler(0,_create_state_next,0,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_create_state_name,sizeof(_create_state_name),&_create_state);
-
+/* FIXME
 	_set_handler_sync = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_sync_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_sync,sizeof(_set_handler_name_sync),&_set_handler_sync);
 
@@ -182,4 +182,5 @@ void dev_register_handlers(task* config_t, st_ptr* config_root)
 
 	_set_handler_reqs = cle_create_simple_handler(0,cle_collect_params_next,_set_handler_reqs_end,SYNC_REQUEST_HANDLER);
 	cle_add_sys_handler(config_t,*config_root,_set_handler_name_reqs,sizeof(_set_handler_name_reqs),&_set_handler_reqs);
+	*/
 }

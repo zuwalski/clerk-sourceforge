@@ -230,7 +230,7 @@ static void _tk_release_page(page_wrap* wp)
 	}
 
 	/* release page */
-	tk_mfree(0,wp->pg);
+	//tk_mfree(0,wp->pg);
 }
 
 void _tk_remove_tree(task* t, page_wrap* pg, ushort off)

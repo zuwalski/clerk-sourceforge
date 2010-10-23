@@ -24,29 +24,34 @@
 */
 
 /* TODO: 
+		handle end: make sure all receive the event
+		debugger id in event-string e.g. path.path[#objid][@debuggerId]
 		kill submit or rework st_link etc.
-		Share: handlers on "same" object should have ref to same instance (not new each time)
+		share ptr_list free-list across task-handlers
 */
 
 // error-messages
 static char input_underflow[] = "stream:input underflow";
+static char input_incomplete[] = "stream:input incomplete";
 static char event_not_allowed[] = "stream:event not allowed";
 
 // structs
 struct _ipt_internal
 {
 	event_handler* event_chain_begin;
+
 	sys_handler_data sys;
+
+	uint depth;
 };
 
 // nil output-handler
 static void _nil1(void* v){}
-static uint _nil1x(void* v){return 0;}
 static void _nil2(void* v,cdat c,uint u){}
 static uint _nil2x(void* v,cdat c,uint u){return 0;}
 static uint _nil2y(void* v,cdat c,uint u){return 1;}
 static void _nil3(void* v,task* t,st_ptr* st){}
-static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1x,_nil1,_nil2x,_nil3};
+static cle_pipe _nil_out = {_nil1,_nil1,_nil2,_nil1,_nil1,_nil2x,_nil3};
 
 // async output-handler
 static int _async_end(event_handler* hdl, cdat c, uint clen)
@@ -59,27 +64,24 @@ static int _async_end(event_handler* hdl, cdat c, uint clen)
 	return 0;
 }
 
-static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1x,_nil1,_nil2x,_nil3};
+static cle_pipe _async_out = {_nil1,_nil1,_async_end,_nil1,_nil1,_nil2x,_nil3};
 
 // convenience functions for implementing the cle_pipe-interface
-uint cle_standard_pop(event_handler* hdl)
+void cle_standard_pop(event_handler* hdl)
 {
 	ptr_list* elm = hdl->top;
-	if(hdl->top->link == 0)
-		return 1;
 	hdl->top = hdl->top->link;
 
-	elm->link = hdl->eventdata->free;
-	hdl->eventdata->free = elm;
-	return 0;
+	elm->link = hdl->free;
+	hdl->free = elm;
 }
 
 static ptr_list* _alloc_elem(event_handler* hdl)
 {
-	if(hdl->eventdata->free)
+	if(hdl->free)
 	{
-		ptr_list* elm = hdl->eventdata->free;
-		hdl->eventdata->free = elm->link;
+		ptr_list* elm = hdl->free;
+		hdl->free = elm->link;
 		return elm;
 	}
 
@@ -110,7 +112,7 @@ uint cle_standard_data(event_handler* hdl, cdat data, uint length)
 void cle_standard_submit(event_handler* hdl, task* t, st_ptr* from)
 {
 	// toplevel?
-	if(hdl->top->link == 0 && hdl->top->pt.offset == hdl->root.offset && hdl->top->pt.key == hdl->root.key && hdl->top->pt.pg == hdl->root.pg)
+	if(hdl->top->link == 0)
 		hdl->root = hdl->top->pt = *from;	// subst
 	else
 		st_link(t,&hdl->top->pt,from);
@@ -127,16 +129,14 @@ void cle_standard_next_done(event_handler* hdl)
 }
 
 // pipeline activate All handlers
-static uint _pa_pop(event_handler* hdl)
+static void _pa_pop(event_handler* hdl)
 {
 	do
 	{
-		if(cle_standard_pop(hdl))
-			return 1;
+		cle_standard_pop(hdl);
 		hdl = hdl->next;
 	}
 	while(hdl != 0);
-	return 0;
 }
 
 static void _pa_push(event_handler* hdl)
@@ -153,8 +153,7 @@ static uint _pa_data(event_handler* hdl, cdat data, uint length)
 {
 	do
 	{
-		if(cle_standard_data(hdl,data,length))
-			return 1;
+		cle_standard_data(hdl,data,length);
 		hdl = hdl->next;
 	}
 	while(hdl != 0);
@@ -179,7 +178,7 @@ static cle_pipe _pipeline_all = {cle_notify_start,cle_notify_next,cle_notify_end
 static void _cpy_start(event_handler* hdl) {hdl->response->start(hdl->respdata);}
 static void _cpy_next(event_handler* hdl) {hdl->response->next(hdl->respdata);}
 static void _cpy_end(event_handler* hdl,cdat c,uint u) {hdl->response->end(hdl->respdata,c,u);}
-static uint _cpy_pop(event_handler* hdl) {return hdl->response->pop(hdl->respdata);}
+static void _cpy_pop(event_handler* hdl) {hdl->response->pop(hdl->respdata);}
 static void _cpy_push(event_handler* hdl) {hdl->response->push(hdl->respdata);}
 static uint _cpy_data(event_handler* hdl,cdat c,uint u) {return hdl->response->data(hdl->respdata,c,u);}
 static void _cpy_submit(event_handler* hdl,task* t,st_ptr* s) {hdl->response->submit(hdl->respdata,t,s);}
@@ -191,13 +190,13 @@ void cle_stream_leave(event_handler* hdl)
 	hdl->thehandler = &_copy_handler;
 }
 
-static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1x,_nil1,_nil2y,_nil3},0};
+static cle_syshandler _nil_handler = {0,{_nil1,_nil1,_nil2,_nil1,_nil1,_nil2y,_nil3},0};
 
 void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 {
 	hdl->thehandler = &_nil_handler;
 
-	hdl->error = (msglen == 0)? "" : msg;
+	hdl->error = msg;
 	hdl->errlength = msglen;
 
 	hdl->response->end(hdl->respdata,msg,msglen);
@@ -205,7 +204,38 @@ void cle_stream_fail(event_handler* hdl, cdat msg, uint msglen)
 
 void cle_stream_end(event_handler* hdl)
 {
-	cle_stream_fail(hdl,0,0);
+	cle_stream_fail(hdl,"",0);
+}
+
+cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
+{
+	cle_syshandler hdl;
+	hdl.next_handler = 0;
+	hdl.input.start = start == 0 ? _nil1 : start;
+	hdl.input.next = next == 0 ? _nil1 : next;
+	hdl.input.end = end == 0 ? _nil2 : end;
+	hdl.input.pop = cle_standard_pop;
+	hdl.input.push = cle_standard_push;
+	hdl.input.data = cle_standard_data;
+	hdl.input.submit = cle_standard_submit;
+	hdl.systype = type;
+	return hdl;
+}
+
+static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
+{
+	event_handler* hdl = (event_handler*)tk_alloc(app_instance,sizeof(struct event_handler),0);
+
+	hdl->next = hdlists[type];
+	hdlists[type] = hdl;
+	hdl->thehandler = syshandler;
+	hdl->object = *object;
+	hdl->handler_data = 0;
+
+	if(handler == 0)
+		hdl->handler.pg = 0;
+	else
+		hdl->handler = *handler;
 }
 
 /* system event-handler setup */
@@ -226,40 +256,6 @@ void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, 
 	st_update(config_task,&config_root,(cdat)&handler,sizeof(cle_syshandler*));
 }
 
-cle_syshandler cle_create_simple_handler(void (*start)(void*),void (*next)(void*),void (*end)(void*,cdat,uint),enum handler_type type)
-{
-	cle_syshandler hdl;
-	hdl.next_handler = 0;
-	hdl.input.start = start == 0 ? _nil1 : start;
-	hdl.input.next = next == 0 ? _nil1 : next;
-	hdl.input.end = end == 0 ? _nil2 : end;
-	hdl.input.pop = cle_standard_pop;
-	hdl.input.push = cle_standard_push;
-	hdl.input.data = cle_standard_data;
-	hdl.input.submit = cle_standard_submit;
-	hdl.systype = type;
-	return hdl;
-}
-
-uint cle_obj_from_event(event_handler* hdl, uint sizeofname, st_ptr* obj)
-{
-	*obj = hdl->eventdata->eventid;
-	st_offset(hdl->inst.t,obj,sizeofname);
-
-	return cle_goto_object(hdl->inst,*obj,obj);
-}
-
-void cle_collect_params_next(event_handler* hdl)
-{
-	ptr_list* list = (ptr_list*)tk_alloc(hdl->inst.t,sizeof(ptr_list),0);
-
-	list->pt = hdl->root;
-	list->link = (ptr_list*)hdl->handler_data;
-	hdl->handler_data = list;
-
-	cle_standard_next_done(hdl);
-}
-
 /* control role-access */
 void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {
@@ -267,7 +263,7 @@ void cle_allow_role(task* app_instance, st_ptr root, cdat eventmask, uint mask_l
 	if(role_length > 255)
 		return;
 
-	st_insert(app_instance,&root,HEAD_EVENT,IHEAD_SIZE);
+	st_insert(app_instance,&root,HEAD_EVENT,HEAD_SIZE);
 
 	st_insert(app_instance,&root,eventmask,mask_length);
 
@@ -282,23 +278,178 @@ void cle_revoke_role(task* app_instance, st_ptr app_root, cdat eventmask, uint m
 void cle_give_role(task* app_instance, st_ptr app_root, cdat eventmask, uint mask_length, cdat role, uint role_length)
 {}
 
+static void _ready_handler(event_handler* hdl, task* inst_tk, st_ptr* instance, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint targetset)
+{
+	hdl->inst.t = inst_tk;
+	hdl->inst.root = *instance;
+
+	//TODO copy event and user data
+	hdl->eventdata = sysdata;
+
+	// set output-handler
+	hdl->response = response;
+	hdl->respdata = respdata;
+
+	hdl->errlength = 0;
+	hdl->error = 0;
+/* FIXME
+	if(targetset == 0 && hdl->handler.pg != 0)
+		cle_new_mem(inst_tk,&hdl->object,hdl->object);
+*/
+	// prepare for input-stream
+	hdl->top = hdl->free = 0;
+	cle_standard_push(hdl);
+}
+
+// sync-handler-chain
+struct _sync_chain
+{
+	event_handler* synch;
+	ptr_list*      input;
+	cle_pipe*      real_out;
+	void*          real_out_data;
+	char           create_object;
+	char           started;
+	char           failed;
+};
+
+static void _sync_start_rs(struct _sync_chain* hdl)
+{
+	if(hdl->started == 0)
+	{
+		hdl->started = 1;
+		hdl->real_out->start(hdl->real_out_data);
+	}
+}
+
+static void _sync_end_rs(struct _sync_chain* hdl,cdat c,uint u)
+{
+	if(u > 0)
+	{
+		hdl->failed = 1;
+		hdl->real_out->end(hdl->real_out_data,c,u);
+	}
+}
+
+static void _sync_next_rs(struct _sync_chain* hdl) {hdl->real_out->next(hdl->real_out_data);}
+static void _sync_pop_rs(struct _sync_chain* hdl) {hdl->real_out->pop(hdl->real_out_data);}
+static void _sync_push_rs(struct _sync_chain* hdl) {hdl->real_out->push(hdl->real_out_data);}
+static uint _sync_data_rs(struct _sync_chain* hdl,cdat c,uint u) {return hdl->real_out->data(hdl->real_out_data,c,u);}
+static void _sync_submit_rs(struct _sync_chain* hdl,task* t,st_ptr* s) {hdl->real_out->submit(hdl->real_out_data,t,s);}
+
+static cle_pipe _sync_response = {_sync_start_rs,_sync_next_rs,_sync_end_rs,_sync_pop_rs,_sync_push_rs,_sync_data_rs,_sync_submit_rs};
+
+// startup chain of sync-handlers
+static void _sync_start(event_handler* hdl)
+{
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+
+	sc->real_out = hdl->response;
+	sc->real_out_data = hdl->respdata;
+
+	_ready_handler(sc->synch,hdl->inst.t,&hdl->inst.root,hdl->eventdata,&_sync_response,sc,sc->create_object);
+	// start first handler
+	sc->synch->thehandler->input.start(sc->synch);
+}
+
+static void _sync_next(event_handler* hdl)
+{
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+	if(sc->failed == 0)
+	{
+		ptr_list* elm = _alloc_elem(hdl);
+		// save input
+		elm->pt = hdl->root;
+		// push
+		elm->link = sc->input;
+		sc->input = elm;
+		// next first handler
+		sc->synch->root = hdl->root;
+		sc->synch->thehandler->input.next(sc->synch);
+	}
+}
+
+static void _sync_end(event_handler* hdl, cdat c, uint u)
+{
+	struct _sync_chain* sc = (struct _sync_chain*)hdl->handler_data;
+	event_handler* chn = sc->synch->next;
+
+	// end first
+	sc->synch->thehandler->input.end(sc->synch,c,u);
+
+	// replay data on sync-chain
+	sc->input = ptr_list_reverse(sc->input);
+	do
+	{
+		ptr_list* now = sc->input;
+
+		_ready_handler(chn,hdl->inst.t,&hdl->inst.root,hdl->eventdata,&_sync_response,sc,sc->create_object);
+
+		chn->thehandler->input.start(chn);
+		while(now != 0 && sc->failed == 0)
+		{
+			chn->thehandler->input.submit(chn,hdl->inst.t,&now->pt);
+			chn->thehandler->input.next(chn);
+			now = now->link;
+		}
+
+		if(sc->failed != 0)
+			return;
+
+		chn->thehandler->input.end(chn,c,u);
+
+		chn = chn->next;
+	}
+	while(chn != 0);
+
+	// call real response-end
+	hdl->response->end(hdl->respdata,c,u);
+}
+
+static cle_syshandler _sync_chain_handler = {0,{_sync_start,_sync_next,_sync_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};
+
 // input-functions
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
-struct _mark_chain
+static int _validate_eventid(cdat eventid, uint event_len, char* ievent)
 {
-	struct _mark_chain* next;
-	cle_syshandler* syshdl;
-	st_ptr eventpt;
-};
+	uint i,state = 0,to = 0;
+	for(i = 0; i < event_len; i++)
+	{
+		switch(eventid[i])
+		{
+		case '.':
+		case '/':
+		case '\\':
+		case 0:
+			if(state != 1)
+				return -1;
+			ievent[to++] = 0;
+			state = 2;
+			break;
+		case '!':
+		case '@':
+			if(state != 1)
+				return -1;
+			ievent[to++] = 0;
+			return to;
+		case ' ':
+		case '\n':
+		case '\t':
+		case '\r':
+			break;
+		default:
+			// illegal character?
+			if(eventid[i] < '0' || eventid[i] > 'z' || (eventid[i] > 'Z' && eventid[i] < 'a') || (eventid[i] > '9' && eventid[i] < 'A'))
+				return -1;
 
-struct _scan_event
-{
-	task* t;
-	struct _mark_chain* first, *last;
-	st_ptr eventpt, syspt, eventid;
-	uint allowed, state, oid_begin, trace_begin, index;
-};
+			ievent[to++] = eventid[i];
+			state = 1;
+		}
+	}
+	ievent[to++] = 0;
+	return (state == 1)? to : -1;
+}
 
 static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 {
@@ -336,371 +487,265 @@ static uint _access_check(task* app_instance, st_ptr pt, char* user_roles[])
 	return 0;
 }
 
-static uint _event_move(struct _scan_event* se, cdat cs, uint l)
+/**
+* TODO: eventid type -> st_ptr, user_roles type -> st_ptr
+*/
+_ipt* cle_start(st_ptr config, cdat eventid, uint event_len,
+				cdat userid, uint userid_len, char* user_roles[],
+					cle_pipe* response, void* responsedata, task* app_instance)
 {
-	// lookup event-part (module-level)
-	if(se->eventpt.pg != 0 && st_move(se->t,&se->eventpt,cs,l) != 0)
-		se->eventpt.pg = 0;
-
-	if(se->syspt.pg != 0 && st_move(0,&se->syspt,cs,l) != 0)
-		se->syspt.pg = 0;
-
-	// copy clean eventid
-	st_insert(se->t,&se->eventid,cs,l);
-	// not found! scan end (or no possible grants)
-	return (se->eventpt.pg == 0 && (se->syspt.pg == 0 || se->allowed == 0));
-}
-
-static uint _event_mark(struct _scan_event* se, cdat cs, uint len)
-{
-	cle_syshandler* syshdl = 0;
-	st_ptr pt, eventpt;
-
-	if(_event_move(se,cs,len) != 0 || _event_move(se,"",1))
-		return 1;
-
-	// lookup allowed roles (if no access yet)
-	//if(allowed == 0)
-	//	allowed = _access_check(app_instance,eventpt,user_roles);
-
-	// get pipeline-handlers
-	// module-level
-	pt = se->eventpt;
-	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
-		eventpt = pt;
-	else
-		eventpt.pg = 0;
-
-	// system-level
-	pt = se->syspt;
-	if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
-	{
-		if(st_get(0,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) != -1)
-			cle_panic(se->t);	// should never happen
-	}
-
-	// mark
-	if(syshdl != 0 || eventpt.pg != 0)
-	{
-		struct _mark_chain* mc = (struct _mark_chain*)tk_alloc(se->t,sizeof(struct _mark_chain),0);
-		mc->eventpt = eventpt;
-		mc->syshdl  = syshdl;
-		mc->next    = 0;
-
-		if(se->last != 0)
-		{
-			se->last->next = mc;
-			se->last = mc;
-		}
-		else
-			se->first = se->last = mc;
-	}
-	return 0;
-}
-
-static uint _event_scan(void* ctx, cdat cs, uint l)
-{
-	struct _scan_event* se = (struct _scan_event*)ctx;
-	uint i;
-	for(i = 0; l > 0; l--, se->index++)
-	{
-		uint c = cs[i];
-		switch(c)
-		{
-		case '.':
-		case '/':
-		case '\\':
-		case 0:
-			if((se->state & 1) == 0)
-				return -1;
-			if(_event_mark(se,cs,i))
-				return -1;
-			se->state = 2;
-			cs += i + 1;
-			i = 0;
-			break;
-		case '@':	// OID
-			if((se->state & 1) == 0)
-				return -1;
-			if(_event_mark(se,cs,i))
-				return -1;
-			se->state = 8;
-			se->oid_begin = se->index;
-			break;
-		case '!':	// TRACER-ID
-			if((se->state & 1) != 0)
-			{
-				if(_event_mark(se,cs,i))
-					return -1;
-				se->state = 0;
-			}
-			else if(se->state != 8)
-				return -1;
-			se->state |= 16;
-			se->trace_begin = se->index;
-			break;
-		case ' ':
-		case '\n':
-		case '\t':
-		case '\r':
-			se->state |= 4;
-			cs++;
-			break;
-		default:
-			// illegal character?
-			if(c < '0' || c > 'z' || (c > 'Z' && c < 'a') || (c > '9' && c < 'A'))
-				return -1;
-			if(se->state == 5)
-				return -1;
-			else if((se->state & 24) == 0)
-			{
-				se->state = 1;
-				i++;
-			}
-		}
-	}
-	return ((se->state & 1) != 0)? _event_move(se,cs,i) : 0;
-}
-
-static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type)
-{
-	event_handler* hdl;
-
-	if(type == SYNC_REQUEST_HANDLER && hdlists[type] != 0)
-		hdl = hdlists[type];
-	else
-	{
-		hdl = (event_handler*)tk_alloc(t,sizeof(struct event_handler),0);
-		hdl->next = hdlists[type];
-		hdlists[type] = hdl;
-	}
-
-	hdl->thehandler = syshandler;
-	hdl->handler_data = 0;
-	hdl->object = *object;
-
-	if(handler == 0)
-		hdl->handler.pg = 0;
-	else
-		hdl->handler = *handler;
-}
-
-static void _setup_handlers(cle_instance inst, struct _mark_chain* mc, event_handler** hdlists, st_ptr* obj)
-{
-	for(; mc != 0; mc = mc->next)
-	{
-		if(mc->eventpt.pg != 0)
-		{
-			it_ptr it;
-			it_create(inst.t,&it,&mc->eventpt);
-
-			while(it_next(inst.t,0,&it,sizeof(cle_handler)))
-			{
-				cle_handler href = *((cle_handler*)it.kdata);
-				st_ptr handler,lobj = *obj;
-				if(cle_get_handler(inst,href,&lobj,&handler) == 0)
-					_register_handler(inst.t,hdlists,&_runtime_handler,&handler,&lobj,href.type);
-			}
-
-			it_dispose(inst.t,&it);
-		}
-
-		while(mc->syshdl != 0)
-		{
-			_register_handler(inst.t,hdlists,mc->syshdl,0,obj,mc->syshdl->systype);
-
-			// next in list...
-			mc->syshdl = mc->syshdl->next_handler;
-		}
-	}
-}
-
-static void _ready_handler(event_handler* hdl, cle_instance inst, sys_handler_data* sysdata, cle_pipe* response, void* respdata, uint create_object)
-{
-	hdl->inst = inst;
-
-	//TODO copy event and user data
-	hdl->eventdata = sysdata;
-
-	// set output-handler
-	hdl->response = response;
-	hdl->respdata = respdata;
-
-	hdl->errlength = 0;
-	hdl->error = 0;
-
-	if(create_object)
-		cle_new_mem(inst.t,hdl->object,&hdl->object);
-
-	// prepare for input-stream
-	hdl->top = 0;
-	cle_standard_push(hdl);
-}
-
-static void _init_async_handlers(_ipt* ipt, event_handler* hdl, task* t, uint create_object)
-{
-	ipt->event_chain_begin = hdl;
-
-	while(hdl != 0)
-	{
-		cle_instance clone;
-		// put in separat tasks/transactions
-		clone.t = tk_clone_task(t);
-		tk_root_ptr(clone.t,&clone.root);
-
-		// "no output"-handler on all async's
-		_ready_handler(hdl,clone,&ipt->sys,&_async_out,hdl,create_object);
-
-		hdl = hdl->next;
-	}
-}
-
-static void _init_sync_handlers(_ipt* ipt, event_handler* sync_handler, event_handler* response_pipe, cle_instance inst, uint create_object, cle_pipe* response, void* responsedata)
-{
-	// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
-	// setup response-handler chain (only make sense with sync handlers)
-	if(response_pipe != 0)
-	{
-		event_handler *last = sync_handler,*hdl = response_pipe;
-		// in correct order (most specific handler comes first)
-		do
-		{
-			_ready_handler(last,inst,&ipt->sys,&hdl->thehandler->input,hdl,1);
-
-			last = hdl;
-			hdl = hdl->next;
-		}
-		while(hdl != 0);
-
-		// and finally the original output-target
-		_ready_handler(last,inst,&ipt->sys,response,responsedata,create_object);
-	}
-	else
-		_ready_handler(sync_handler,inst,&ipt->sys,response,responsedata,create_object);
-
-	sync_handler->next = ipt->event_chain_begin;
-	ipt->event_chain_begin = sync_handler;
-}
-
-static void _init_request_pipe(_ipt* ipt, event_handler* hdl, cle_instance inst)
-{
-	// reverse order (most general handlers comes first)
-	event_handler* last;
-	cle_pipe* resp;
-	void* data = ipt->event_chain_begin;
-
-	// just a single receiver? -> just (hard)chain together
-	if(ipt->event_chain_begin->next == 0)
-		resp = &ipt->event_chain_begin->thehandler->input;
-	else
-		resp = &_pipeline_all;
-
-	do
-	{
-		last = hdl;
-		_ready_handler(hdl,inst,&ipt->sys,resp,data,1);
-
-		resp = &hdl->thehandler->input;
-		data = hdl;
-
-		hdl = hdl->next;
-	}
-	while(hdl != 0);
-
-	last->next = 0;
-	ipt->event_chain_begin = last;
-}
-
-static void _setup_object_and_trace(cle_instance inst, struct _scan_event* se, st_ptr eventid, st_ptr* obj)
-{
-	obj->pg = 0;
-
-	if(se->state & 8)	// OID
-	{
-		st_ptr id = eventid;
-		st_offset(inst.t,&id,se->oid_begin);
-
-		cle_goto_object(inst,id,obj);
-	}
-
-	if(se->state & 16)	// TID
-	{
-		// TODO Trace
-	}
-}
-
-_ipt* cle_start(task* app_instance, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles,
-				 cle_pipe* response, void* responsedata)
-{
-	event_handler* hdlists[4] = {0,0,0,0};
-	struct _scan_event se;
-	cle_instance inst;
 	_ipt* ipt;
-	st_ptr obj;
+	event_handler* hdlists[4] = {0,0,0,0};
+	event_handler* hdl;
+	st_ptr pt,eventpt,syspt,instance,object;
+	int from,i,allowed;
+	char* ievent;
 
-	/* get a root ptr to instance-db */
-	inst.t = app_instance;
-	tk_root_ptr(inst.t,&inst.root);
+	if(event_len >= EVENT_MAX_LENGTH)
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
+
+	ievent = (char*)tk_alloc(app_instance,event_len + 1,0);
 
 	if(response == 0)
 		response = &_nil_out;
 
-	memset(&se,0,sizeof(struct _scan_event));
-	se.t = inst.t;
+	/* get a root ptr to instance-db */
+	tk_root_ptr(app_instance,&instance);
+
 	// no username? -> root/sa
-	se.allowed = st_is_empty(&userid);
+	allowed = (userid_len == 0);
 
-	se.eventpt = inst.root;
-	st_insert(inst.t,&se.eventpt,HEAD_EVENT,IHEAD_SIZE);
-	se.syspt = config;
-
-	st_empty(inst.t,&se.eventid);
-
-	if(st_map(inst.t,&eventid,_event_scan,&se) != 0 || se.allowed == 0)
+	eventpt = instance;
+	if(st_move(app_instance,&eventpt,HEAD_EVENT,HEAD_SIZE) != 0)
 	{
+		eventpt.pg = 0;
+		if(allowed == 0)
+		{
+			// no event-structure in this instance -> exit
+			_error(event_not_allowed);
+			return 0;
+		}
+	}
+
+	// validate event-id and get target-oid (if any)
+	i = _validate_eventid(eventid,event_len,ievent);
+	if(i < 0)
+	{
+		// illegal event-name
 		_error(event_not_allowed);
 		return 0;
 	}
-
-	// end-of-event without terminator-symbol
-	if(se.state == 1 && _event_mark(&se,"",0))
+/* FIXME
+	object.pg = 0;
+	if(eventid[i - 1] == '@' && cle_get_target(app_instance,instance,&object,eventid + i,event_len - i) == 0)
 	{
+		// target not found
 		_error(event_not_allowed);
 		return 0;
 	}
-
-	_setup_object_and_trace(inst,&se,eventid,&obj);
-
-	_setup_handlers(inst,se.first,hdlists,&obj);
-
-	// is there anyone in the other end?
-	if(hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)
-	{
-		_error(event_not_allowed);
-		return 0;
-	}
-
+	event_len = i;
+*/
 	// ipt setup - internal task
 	ipt = (_ipt*)tk_alloc(app_instance,sizeof(_ipt),0);
-	ipt->event_chain_begin = 0;
+	// default null
+	memset(ipt,0,sizeof(_ipt));
 
-	// reuse markchain
-	ipt->sys.free = (ptr_list*)se.first;
 	ipt->sys.config = config;
-	ipt->sys.eventid = se.eventid;
-//			ipt->sys.userid = userid;
-//			ipt->sys.userid_len = userid_len;
+	ipt->sys.eventid = ievent;
+	ipt->sys.event_len = event_len;
+	ipt->sys.userid = userid;
+	ipt->sys.userid_len = userid_len;
 
-	_init_async_handlers(ipt,hdlists[ASYNC_REQUEST_HANDLER],inst.t,se.state & 8);
+	syspt = config;
+	from = 0;
 
+	for(i = 0; i < event_len; i++)
+	{
+		// event-part-boundary
+		if(ievent[i] != 0)
+			continue;
+
+		// lookup event-part (module-level)
+		if(eventpt.pg != 0 && st_move(app_instance,&eventpt,ievent + from,i + 1 - from) != 0)
+		{
+			eventpt.pg = 0;
+			// not found! scan end (or no possible grants)
+			if(syspt.pg == 0 || allowed == 0)
+				break;
+		}
+
+		// lookup system-level handlers
+		if(syspt.pg != 0 && st_move(0,&syspt,ievent + from,i + 1 - from) != 0)
+		{
+			syspt.pg = 0;
+			// not found! scan end
+			if(eventpt.pg == 0)
+				break;
+		}
+
+		// lookup allowed roles (if no access yet)
+		if(allowed == 0)
+			allowed = _access_check(app_instance,eventpt,user_roles);
+
+		// get pipeline-handlers
+		// module-level
+		pt = eventpt;
+		if(pt.pg != 0 && st_move(app_instance,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+		{
+			it_ptr it;
+			it_create(app_instance,&it,&pt);
+
+			// iterate instance-refs / event-handler-id
+			while(it_next(app_instance,&pt,&it,0))
+			{
+				st_ptr handler, obj = object;
+				int handlertype = st_scan(app_instance,&pt);
+/* FIXME
+				if(cle_get_handler(app_instance,instance,pt,&handler,&obj,ievent,i + 1,handlertype) == 0)
+					_register_handler(app_instance,hdlists,&_runtime_handler,&handler,&obj,handlertype);*/
+			}
+
+			it_dispose(app_instance,&it);
+		}
+
+		// system-level
+		pt = syspt;
+		if(pt.pg != 0 && st_move(0,&pt,HEAD_HANDLER,HEAD_SIZE) == 0)
+		{
+			cle_syshandler* syshdl;
+			if(st_get(0,&pt,(char*)&syshdl,sizeof(cle_syshandler*)) == -1)
+			{
+				do
+				{
+					_register_handler(app_instance,hdlists,syshdl,0,&object,syshdl->systype);
+
+					// next in list...
+					syshdl = syshdl->next_handler;
+				}
+				while(syshdl != 0);
+			}
+		}
+
+		from = i + 1;
+	}
+
+	// access allowed? and is there anyone in the other end?
+	if(allowed == 0 || (hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0))
+	{
+		_error(event_not_allowed);
+		return 0;
+	}
+
+	// init async-handlers
+	if(hdlists[ASYNC_REQUEST_HANDLER] != 0)
+	{
+		hdl = hdlists[ASYNC_REQUEST_HANDLER];
+		ipt->event_chain_begin = hdl;
+
+		do
+		{
+			// put in separat tasks/transactions
+			st_ptr clone_instance;
+			task* clone = tk_clone_task(app_instance);
+			tk_root_ptr(clone,&clone_instance);
+
+			// "no output"-handler on all async's
+			_ready_handler(hdl,clone,&clone_instance,&ipt->sys,&_async_out,hdl,object.pg != 0);
+
+			hdl = hdl->next;
+		}
+		while(hdl != 0);
+	}
+
+	// setup sync-handler-chain
 	if(hdlists[SYNC_REQUEST_HANDLER] != 0)
-		_init_sync_handlers(ipt,hdlists[SYNC_REQUEST_HANDLER],hdlists[PIPELINE_RESPONSE],inst,se.state & 8,response,responsedata);
+	{
+		event_handler* sync_handler = hdlists[SYNC_REQUEST_HANDLER];
 
+		// more than one sync-handler?
+		if(sync_handler->next != 0)
+		{
+			struct _sync_chain* sc = (struct _sync_chain*)tk_alloc(app_instance,sizeof(struct _sync_chain),0);
+
+			_register_handler(app_instance,hdlists,&_sync_chain_handler,0,&object,SYNC_REQUEST_HANDLER);
+
+			sc->synch = sync_handler;
+			sc->create_object = (object.pg != 0);
+			sc->started = 0;
+			sc->failed = 0;
+			sc->input = 0;
+
+			sync_handler = hdlists[SYNC_REQUEST_HANDLER];
+			sync_handler->handler_data = sc;
+		}
+
+		// there can be only one active sync-handler (dont mess-up output with concurrent event-handlers)
+		// setup response-handler chain (only make sense with sync handlers)
+		if(hdlists[PIPELINE_RESPONSE] != 0)
+		{
+			event_handler* last;
+			// in correct order (most specific handler comes first)
+			hdl = hdlists[PIPELINE_RESPONSE];
+
+			last = sync_handler;
+			do
+			{
+				_ready_handler(last,app_instance,&instance,&ipt->sys,&hdl->thehandler->input,hdl,object.pg != 0);
+
+				last = hdl;
+				hdl = hdl->next;
+			}
+			while(hdl != 0);
+
+			// and finally the original output-target
+			_ready_handler(last,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+		}
+		else
+			_ready_handler(sync_handler,app_instance,&instance,&ipt->sys,response,responsedata,object.pg != 0);
+
+		sync_handler->next = ipt->event_chain_begin;
+		ipt->event_chain_begin = sync_handler;
+	}
+
+	// setup request-handler chain
 	if(hdlists[PIPELINE_REQUEST] != 0)
-		_init_request_pipe(ipt,hdlists[PIPELINE_REQUEST],inst);
+	{
+		// reverse order (most general handlers comes first)
+		event_handler* last;
+		cle_pipe* resp;
+		void* data = ipt->event_chain_begin;
+
+		// just a single (sync-receiver?) -> just (hard)chain together
+		// ipt->event_chain_begin == hdlists[SYNC_REQUEST_HANDLER] && 
+		if(ipt->event_chain_begin->next == 0)
+			resp = &ipt->event_chain_begin->thehandler->input;
+		else
+			resp = &_pipeline_all;
+
+		hdl = hdlists[PIPELINE_REQUEST];
+
+		do
+		{
+			last = hdl;
+			_ready_handler(hdl,app_instance,&instance,&ipt->sys,resp,data,object.pg != 0);
+
+			resp = &hdl->thehandler->input;
+			data = hdl;
+
+			hdl = hdl->next;
+		}
+		while(hdl != 0);
+
+		last->next = 0;
+		ipt->event_chain_begin = last;
+	}
 
 	// do start
 	cle_notify_start(ipt->event_chain_begin);
+
 	return ipt;
 }
 
@@ -709,13 +754,23 @@ void cle_next(_ipt* ipt)
 	if(ipt == 0)
 		return;
 
-	cle_notify_next(ipt->event_chain_begin);
+	if(ipt->depth != 0)
+		cle_end(ipt,input_incomplete,sizeof(input_incomplete));
+	else
+		// do next
+		cle_notify_next(ipt->event_chain_begin);
 }
 
 void cle_end(_ipt* ipt, cdat code, uint length)
 {
 	if(ipt == 0)
 		return;
+
+	if(length == 0 && ipt->depth != 0)
+	{
+		code = input_incomplete;
+		length = sizeof(input_incomplete);
+	}
 
 	cle_notify_end(ipt->event_chain_begin,code,length);
 }
@@ -725,8 +780,14 @@ void cle_pop(_ipt* ipt)
 	if(ipt == 0)
 		return;
 
-	if(_pa_pop(ipt->event_chain_begin))
+	if(ipt->depth == 0)
 		cle_end(ipt,input_underflow,sizeof(input_underflow));
+	else
+	{
+		_pa_pop(ipt->event_chain_begin);
+
+		ipt->depth--;
+	}
 }
 
 void cle_push(_ipt* ipt)
@@ -735,6 +796,8 @@ void cle_push(_ipt* ipt)
 		return;
 
 	_pa_push(ipt->event_chain_begin);
+
+	ipt->depth++;
 }
 
 void cle_data(_ipt* ipt, cdat data, uint length)

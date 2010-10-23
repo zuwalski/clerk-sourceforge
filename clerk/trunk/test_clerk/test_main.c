@@ -941,19 +941,6 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
-	test_instance_c();
-
-	heap_check();
-
-
-	test_struct_c();
-
-	heap_check();
-
-	test_task_c();
-
-	heap_check();
-
 
 	time_struct_c();
 
@@ -971,12 +958,13 @@ int main(int argc, char* argv[])
 
 	heap_check();
 
-	test_stream_c();
+	test_task_c();
 
 	heap_check();
 
 	test_task_c_2();
 
+	exit(0);
 	heap_check();
 
 	test_compile_c();
@@ -986,6 +974,13 @@ int main(int argc, char* argv[])
 	test_task_c_filepager();
 
 	heap_check();
+
+	test_stream_c();
+	test_instance_c();
+
+	heap_check();
+
+
 	// test
 	puts("\nTesting done...");
 	getchar();
