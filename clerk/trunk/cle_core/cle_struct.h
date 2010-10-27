@@ -32,6 +32,8 @@
 
 #define PTR_ID 0xFFFF
 
+#define PW_BLOCK_SIZE 32
+
 /* Defs */
 typedef struct overflow
 {
@@ -42,10 +44,11 @@ typedef struct overflow
 typedef struct page_wrap
 {
 	struct page_wrap* next;
-	struct page_wrap* parent;
 	overflow*         ovf;
 	page*             pg;
 	cle_pageid        ext_pageid;
+	cle_pageid        parent_0;
+	cle_pageid        parent_1;
 	ulong             refcount;
 }page_wrap;
 
@@ -72,16 +75,23 @@ struct pidcache
 	page_wrap* wrapper;
 };
 
+typedef struct pw_block {
+	struct pw_block* next;
+	page_wrap        pws[PW_BLOCK_SIZE];
+} pw_block;
+
 struct task
 {
-	struct pidcache cache[PID_CACHE_SIZE];
 	page_wrap*      stack;
 	page_wrap*      wpages;
+	page_wrap*      pwfree;
 	cle_pagesource* ps;
 	cle_psrc_data   psrc_data;
 	page_wrap*      pagemap_root_wrap;
 	ushort          pagemap_root_key;
 	segment         segment;
+	struct pidcache cache[PID_CACHE_SIZE];
+	pw_block        pws;
 };
 
 //#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))

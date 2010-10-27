@@ -594,8 +594,6 @@ void test_task_c()
 	// destroy
 	it_dispose(t,&it);
 
-	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
-
 	st_prt_distribution(&root,t);
 
 	// commit!
@@ -650,8 +648,6 @@ void test_task_c()
 
 	// destroy
 	it_dispose(t,&it);
-
-//	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);
 }
@@ -740,8 +736,6 @@ void test_task_c_2()
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
-
-	printf("Multi-commit pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	st_prt_distribution(&root,t);
 
@@ -964,10 +958,13 @@ int main(int argc, char* argv[])
 
 	test_task_c_2();
 
+	puts("done");
 	exit(0);
 	heap_check();
 
 	test_compile_c();
+
+	test_instance_c();
 
 	heap_check();
 
@@ -976,7 +973,6 @@ int main(int argc, char* argv[])
 	heap_check();
 
 	test_stream_c();
-	test_instance_c();
 
 	heap_check();
 
