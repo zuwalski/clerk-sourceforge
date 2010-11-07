@@ -594,7 +594,7 @@ void test_task_c()
 	// destroy
 	it_dispose(t,&it);
 
-	st_prt_distribution(&root,t);
+	//st_prt_distribution(&root,t);
 
 	// commit!
 	start = clock();
@@ -609,7 +609,7 @@ void test_task_c()
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
-	st_prt_distribution(&root,t);
+	//st_prt_distribution(&root,t);
 
 	// read back collection
 	it_create(t,&it,&root);
@@ -694,7 +694,7 @@ void test_task_c_2()
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
-	st_prt_distribution(&root,t);
+	//st_prt_distribution(&root,t);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
@@ -737,7 +737,7 @@ void test_task_c_2()
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
-	st_prt_distribution(&root,t);
+	//st_prt_distribution(&root,t);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)

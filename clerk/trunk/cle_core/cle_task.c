@@ -16,6 +16,7 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "cle_clerk.h"
@@ -736,7 +737,7 @@ int tk_commit_task(task* t) {
 							parent_1 = ppw->parent_0;
 
 							if (pgw->pg->id != 0)
-								pgw->pg = (page*) tk_alloc(t, setup.dest->used,
+								pgw->pg = (page*) tk_alloc(t, setup.dest->size,
 										0);
 
 							memcpy(pgw->pg, setup.dest, setup.dest->used);
@@ -744,9 +745,10 @@ int tk_commit_task(task* t) {
 							// mem-pager: destroys pgw->pg ... make-writable (see prev note)
 							//						t->ps->remove_page(t->psrc_data,setup.id);
 
+							if (ppw->pg->id != 0)
+								_tk_write_copy(t, ppw);
+
 							pgw = ppw;
-							if (pgw->pg->id != 0)
-								_tk_write_copy(t, pgw);
 						}
 						else
 							break;

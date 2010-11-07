@@ -213,7 +213,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 			//if(me->sub != 0)
 			{
 			ptr* pt = (ptr*)me;
-			//st_ptr tmp;
+			st_ptr tmp;
 			page_wrap* pw = pg;
 			key* root = _tk_get_ptr(t, &pw, me);
 			levels[level] += 1;
@@ -237,11 +237,11 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level)
 			//	st_prt_page(&tmp);
 			//}
 
-			//tmp.key = (pt->koffset == 0)? sizeof(page) : pt->koffset;
-			//tmp.offset = 0;
-			//tmp.pg = pw;
-			//puts("\n");
-			//st_prt_page(&tmp);
+//			tmp.key = (pt->koffset == 0)? sizeof(page) : pt->koffset;
+//			tmp.offset = 0;
+//			tmp.pg = pw;
+//			puts("\n");
+//			st_prt_page(&tmp);
 
 			calc_dist(pw,root,0,level + 1);
 			}
