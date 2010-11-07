@@ -157,7 +157,6 @@ static void _tk_release_page(task* t, page_wrap* wp) {
 
 		/* release ovf */
 		tk_mfree(t, wp->ovf);
-		wp->ovf = 0;
 	}
 
 	if (wp->ext_pageid != 0) {
@@ -170,8 +169,9 @@ static void _tk_release_page(task* t, page_wrap* wp) {
 	} else {
 		/* free internal page */
 		tk_mfree(t, wp->pg);
-		wp->pg = 0;
 	}
+
+	memset(wp, 0, sizeof(page_wrap));
 
 	// recycle wrapper
 	wp->next = t->pwfree;
