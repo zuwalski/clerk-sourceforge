@@ -59,13 +59,6 @@ typedef struct
 	uint length;
 } st_str;
 
-typedef struct
-{
-	task*  t;
-	void*  ctx;
-	st_ptr root;
-} cle_instance;
-
 /* generel functions */
 // create empty node
 // = 0 if ok - 1 if t is readonly

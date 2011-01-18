@@ -21,26 +21,12 @@
 
 #include "cle_clerk.h"
 #include "cle_pagesource.h"
-
+#include "cle_object.h"
 /*
 *	The main input-interface to the running system
 *	Commands and external events are "pumped" in through this set of functions
 */
 #define EVENT_MAX_LENGTH 512
-
-/* pipe interface begin */
-typedef struct cle_pipe
-{
-	void (*start)(void*);
-	void (*next)(void*);
-	void (*end)(void*,cdat,uint);
-	void (*pop)(void*);
-	void (*push)(void*);
-	uint (*data)(void*,cdat,uint);
-	void (*submit)(void*,task*,st_ptr*);
-} cle_pipe;
-
-/* pipe interface end */
 
 /* event input functions */
 typedef struct _ipt_internal _ipt;
@@ -55,14 +41,6 @@ void cle_push(_ipt* inpt);
 void cle_data(_ipt* inpt, cdat data, uint length);
 
 // system-event-handlers
-
-enum handler_type
-{
-	SYNC_REQUEST_HANDLER = 0,
-	ASYNC_REQUEST_HANDLER,
-	PIPELINE_REQUEST,
-	PIPELINE_RESPONSE
-};
 
 typedef struct sys_handler_data
 {

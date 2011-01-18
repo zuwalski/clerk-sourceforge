@@ -30,6 +30,7 @@
 
 */
 #include "cle_object.h"
+#include "cle_stream.h"
 
 static const char _new_extends_name[] = "dev\0new";
 static const char _new_object_name[] = "dev\0new\0object";

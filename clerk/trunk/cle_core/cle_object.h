@@ -24,17 +24,16 @@
 #define __CLE_OBJECT_H__
 
 #include "cle_clerk.h"
-#include "cle_stream.h"
 
 //root-headers \0\0[Identificer]
 #define IHEAD_SIZE 3	//(sizeof(segment) + 1)
-#define HEAD_EVENT "\0\0e"
-#define HEAD_NAMES "\0\0n"
+#define HEAD_EVENT ((cdat)"\0\0e")
+#define HEAD_NAMES ((cdat)"\0\0n")
 
 //object-headers have size 1 ([Identifier])
 #define HEAD_SIZE 2
-#define HEAD_HANDLER "\0h"
-#define HEAD_ROLES "\0r"
+#define HEAD_HANDLER ((cdat)"\0h")
+#define HEAD_ROLES ((cdat)"\0r")
 
 // properties
 enum property_type 
@@ -63,44 +62,9 @@ typedef struct
 {
 	char chrs[sizeof(oid)*2+1];
 } oid_str;
-// Bit
-// [31-22]	Level (0 == system/object)
-// [21-0]	Runningnumber (starting from 1)
+
 typedef ulong identity;
 // identity == 0 => not valid!
-
-#define IDLEVEL(id)  ((id) >> 22)
-#define IDNUMBER(id) ((id) & 0x3FFFFF)
-#define IDMAKE(level,number) (((level) << 22) | IDNUMBER(number))
-
-// later: mark-sweep of persisten objects. Flip first bit from mark to mark.
-#define IDMARK(id) ((id) & 1)
-
-typedef struct
-{
-	oid       id;
-	oid       ext;
-	identity  state;
-}
-objectheader2;
-// followed by object-content
-
-typedef union
-{
-	struct
-	{
-		segment zero;
-		st_ptr  ext;
-	};
-	objectheader2 obj;
-}
-objheader;
-
-#define ISMEMOBJ(header) ((header).zero == 0)
-// DEV-hdr: (next)identity
-// ... followed by optional name
-
-#define PROPERTY_SIZE (sizeof(identity))
 
 typedef struct
 {
@@ -116,6 +80,38 @@ typedef struct
 	uchar    type;
 }
 cle_typed_identity;
+
+typedef struct
+{
+	task*  t;
+	void*  ctx;
+	st_ptr root;
+}
+cle_instance;
+
+/* pipe interface begin */
+typedef struct cle_pipe
+{
+	void (*start)(void*);
+	void (*next)(void*);
+	void (*end)(void*,cdat,uint);
+	void (*pop)(void*);
+	void (*push)(void*);
+	uint (*data)(void*,cdat,uint);
+	void (*submit)(void*,task*,st_ptr*);
+}
+cle_pipe;
+
+/* pipe interface end */
+
+typedef enum handler_type
+{
+	SYNC_REQUEST_HANDLER = 0,
+	ASYNC_REQUEST_HANDLER,
+	PIPELINE_REQUEST,
+	PIPELINE_RESPONSE
+}
+handler_type;
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
@@ -141,7 +137,7 @@ int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, iden
 
 int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
-int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, enum handler_type type);
+int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, handler_type type);
 
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler);
 

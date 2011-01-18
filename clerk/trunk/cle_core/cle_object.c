@@ -15,14 +15,51 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
 #include "cle_object.h"
 #include "cle_compile.h"
 #include "cle_runtime.h"
 
+#include <string.h>
+
+// Identity Bit layout
+// [31-22]	Level (0 == system/object)
+// [21-0]	Running count (starting from 1)
+#define IDLEVEL(id)  ((id) >> 22)
+#define IDNUMBER(id) ((id) & 0x3FFFFF)
+#define IDMAKE(level,number) (((level) << 22) | IDNUMBER(number))
+
+typedef struct
+{
+	oid       id;
+	oid       ext;
+	ushort    version;
+	ushort    refcount;
+}
+objectheader2;
+// followed by object-content
+
+typedef union
+{
+	struct
+	{
+		segment zero;
+		st_ptr  ext;
+	};
+	objectheader2 obj;
+}
+objheader;
+
+#define ISMEMOBJ(header) ((header).zero == 0)
+// DEV-hdr: (next)identity
+// ... followed by optional name
+
+#define PROPERTY_SIZE (sizeof(identity))
+
 // defines
 static const identity names_identity = SYS_NAMES;
 static const identity dev_identity = SYS_DEV;
-static const identity start_state_identity = 2;	//FIXME
+static const identity start_state_identity = SYS_STATE;
 
 struct _head
 {
@@ -43,13 +80,13 @@ struct _mem_ref
 };
 
 // helper-functions
-static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,char*,int), void* ctx)
+static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,uchar*,uint), void* ctx)
 {
 	int state = 2;
 	while(1)
 	{
 		int i = 0;
-		char buffer[100];
+		uchar buffer[100];
 		do
 		{
 			int c = st_scan(t,from);
@@ -104,20 +141,20 @@ struct _val_ctx
 	uint val;
 };
 
-static int _mv(void* p, char* buffer, int len)
+static uint _mv(void* p, uchar* buffer, uint len)
 {
 	struct _val_ctx* ctx = (struct _val_ctx*)p;
 	return st_move(ctx->t,ctx->ptr,buffer,len);
 }
 
-static int _ins(void* p, char* buffer, int len)
+static uint _ins(void* p, uchar* buffer, uint len)
 {
 	struct _val_ctx* ctx = (struct _val_ctx*)p;
 	ctx->val = st_insert(ctx->t,ctx->ptr,buffer,len);
 	return 0;
 }
 
-static _cmp(void* p, char* buffer, int len)
+static uint _cmp(void* p, uchar* buffer, uint len)
 {
 	struct _val_ctx* ctx = (struct _val_ctx*)p;
 	int min_len = len > ctx->val ? ctx->val : len;
@@ -129,9 +166,9 @@ static _cmp(void* p, char* buffer, int len)
 	return 0;
 }
 
-static int _just_validate(void* p, char* buffer, int len) {return 0;}
+static uint _just_validate(void* p, uchar* buffer, uint len) {return 0;}
 
-static int _move_validate(task* t, st_ptr* to, st_ptr from)
+static uint _move_validate(task* t, st_ptr* to, st_ptr from)
 {
 	struct _val_ctx ctx;
 	ctx.t = t;
@@ -139,7 +176,7 @@ static int _move_validate(task* t, st_ptr* to, st_ptr from)
 	return _scan_validate(t,&from,_mv,&ctx);
 }
 
-static int _copy_validate(task* t, st_ptr* to, st_ptr from)
+static uint _copy_validate(task* t, st_ptr* to, st_ptr from)
 {
 	struct _val_ctx ctx;
 	int ret;
@@ -151,7 +188,7 @@ static int _copy_validate(task* t, st_ptr* to, st_ptr from)
 	return ctx.val;
 }
 
-static int _cmp_validate(task* t, st_ptr from, const char* str, uint len)
+static uint _cmp_validate(task* t, st_ptr from, const char* str, uint len)
 {
 	struct _val_ctx ctx;
 	ctx.t = t;
@@ -254,9 +291,6 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 		devid = IDMAKE(IDLEVEL(devid) + 1,0);
 	}
 
-	// state = start
-	header.state = start_state_identity;
-
 	// create base-object: first new id
 	header.id = _new_oid(inst,&newobj);
 
@@ -302,6 +336,12 @@ static uint _is_memobj(cle_instance inst, st_ptr obj)
 	return (zero == 0);
 }
 
+static int _goto_id(cle_instance inst, st_ptr* child, oid id)
+{
+	*child = inst.root;
+	return (id._low == 0 || st_move(inst.t,child,(cdat)&id,sizeof(oid)));
+}
+
 int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 {
 	st_ptr tname = name;
@@ -337,9 +377,8 @@ int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj)
 		if(st_get(inst.t,obj,(char*)&id,sizeof(oid)) != -1)
 			return __LINE__;
 	}
-
-	*obj = inst.root;
-	return st_move(inst.t,obj,(cdat)&id,sizeof(oid));
+	
+	return _goto_id(inst,obj,id);
 }
 
 int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj)
@@ -355,8 +394,7 @@ int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj)
 	if(st_get(inst.t,obj,(char*)&id,sizeof(oid)) != -1)
 		return __LINE__;
 
-	*obj = inst.root;
-	return st_move(inst.t,obj,(cdat)&id,sizeof(oid));
+	return _goto_id(inst,obj,id);
 }
 
 int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr)
@@ -380,12 +418,6 @@ int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr)
 	}
 
 	return 0;
-}
-
-static int _goto_id(cle_instance inst, st_ptr* child, oid id)
-{
-	*child = inst.root;
-	return (id._low == 0 || st_move(inst.t,child,(cdat)&id,sizeof(oid)));
 }
 
 int cle_goto_parent(cle_instance inst, st_ptr* child)
@@ -600,7 +632,7 @@ struct _split_ctx
 	uint    in_host;
 };
 
-static uint _do_split_name(void* pctx, char* chrs, int len)
+static uint _do_split_name(void* pctx, uchar* chrs, uint len)
 {
 	struct _split_ctx* ctx = (struct _split_ctx*)pctx;
 
@@ -752,10 +784,10 @@ int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, iden
 
 static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path, st_ptr expr, char source_prefix)
 {
-	char buffer[] = "s";
+	uchar buffer[] = "s";
 	// insert path
 	st_ptr pt = dest;
-	st_insert(app_instance,&pt,"p",1);
+	st_insert(app_instance,&pt,(cdat)"p",1);
 	st_insert_st(app_instance,&pt,&path);
 
 	// insert source
@@ -817,7 +849,7 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 static int _copy_handler_states(cle_instance inst, st_ptr obj, st_ptr handler, ptr_list* states)
 {
 	st_ptr pt;
-	st_insert(inst.t,&handler,"S",1);
+	st_insert(inst.t,&handler,(cdat)"S",1);
 
 	for(; states != 0; states = states->link)
 	{
@@ -913,7 +945,7 @@ int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* valu
 static int _is_handler_allowed(cle_instance inst, cle_handler href, st_ptr handler, objectheader2* header, uint check_relation)
 {
 	// check if handler is allowed in current state
-	if(st_move(inst.t,&handler,"S",1))
+	if(st_move(inst.t,&handler,(cdat)"S",1))
 		return __LINE__;
 
 	if(st_exsist(inst.t,&handler,(cdat)&header->state,sizeof(identity)) != 0)

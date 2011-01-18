@@ -669,13 +669,13 @@ void test_task_c_2()
 	resize_count = 0;
 	overflow_size = 0;
 
+	start = clock();
 	//  new task
 	t = tk_create_task(psource,pdata);
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
-	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		tmp = root;
@@ -693,18 +693,20 @@ void test_task_c_2()
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
-
-	st_prt_distribution(&root,t);
+	
+	tk_ref_ptr(&root);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		ASSERT(st_exsist(t,&root,(cdat)&i,sizeof(int)));
 	}
+	stop = clock();
 
+	st_prt_distribution(&root,t);
+	
 	tk_drop_task(t);
 	//tk_commit_task(t);
-	stop = clock();
 
 	printf("1-commit Validate time %d\n",stop - start);
 
@@ -736,8 +738,8 @@ void test_task_c_2()
 
 	// set pagesource-root
 	tk_root_ptr(t,&root);
-
-	st_prt_distribution(&root,t);
+	
+	tk_ref_ptr(&root);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
@@ -748,6 +750,8 @@ void test_task_c_2()
 
 	printf("Multi-commit Time validate %d\n",stop - start);
 
+	st_prt_distribution(&root,t);
+	
 	tk_drop_task(t);
 }
 
