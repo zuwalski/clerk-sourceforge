@@ -27,11 +27,14 @@
 
 //root-headers \0\0[Identificer]
 #define IHEAD_SIZE 3	//(sizeof(segment) + 1)
-#define HEAD_EVENT ((cdat)"\0\0e")
 #define HEAD_NAMES ((cdat)"\0\0n")
+
+#define HEAD_EVENT ((cdat)"\0\0e")
 
 //object-headers have size 1 ([Identifier])
 #define HEAD_SIZE 2
+#define HEAD_OBJECTS ((cdat)"\0o")
+
 #define HEAD_HANDLER ((cdat)"\0h")
 #define HEAD_ROLES ((cdat)"\0r")
 
@@ -84,8 +87,8 @@ cle_typed_identity;
 typedef struct
 {
 	task*  t;
-	void*  ctx;
 	st_ptr root;
+	st_ptr commit;
 }
 cle_instance;
 
@@ -172,5 +175,7 @@ int cle_collection_add_object(cle_instance inst, st_ptr obj, identity id, st_ptr
 int cle_collection_remove_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
 int cle_collection_test_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
+
+int cle_commit(cle_instance inst);
 
 #endif
