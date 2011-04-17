@@ -44,11 +44,10 @@ typedef struct overflow
 typedef struct page_wrap
 {
 	struct page_wrap* next;
+	struct page_wrap* parent;
 	overflow*         ovf;
 	page*             pg;
 	cle_pageid        ext_pageid;
-	cle_pageid        parent_0;
-	cle_pageid        parent_1;
 	ulong             refcount;
 }page_wrap;
 
@@ -98,7 +97,7 @@ struct task
 #define GOKEY(pag,off) ((key*)((char*)((pag)->pg) + (off)))
 #define GOPTR(pag,off) ((key*)(((char*)(pag)->ovf) + (((off) ^ 0x8000)<<4)))
 #define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
-#define KDATA(k) ((char*)k + sizeof(key))
+#define KDATA(k) ((unsigned char*)k + sizeof(key))
 #define CEILBYTE(l)(((l) + 7) >> 3)
 #define ISPTR(k) ((k)->length == PTR_ID)
 

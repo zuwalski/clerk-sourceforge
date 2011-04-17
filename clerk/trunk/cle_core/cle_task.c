@@ -22,10 +22,7 @@
 #include "cle_clerk.h"
 #include "cle_struct.h"
 
-const page_wrap rt_wrapper = { 0, 0, 0, 0, 0, 0, 0 };
-
 // TODO cle_task.c : from recursive commit/free to looping
-// TODO - : map-cache should only hold written pages
 
 /* mem-manager */
 // TODO: call external allocator
@@ -96,6 +93,7 @@ static page_wrap* _tk_alloc_page(task* t, uint page_size) {
 
 	tmp->ext_pageid = 0;
 	tmp->refcount = 1;
+	tmp->parent = 0;
 	tmp->next = 0;
 	tmp->ovf = 0;
 	tmp->pg = pg;
@@ -139,6 +137,8 @@ void* tk_alloc(task* t, uint size, struct page_wrap** pgref) {
 }
 
 static void _tk_release_page(task* t, page_wrap* wp) {
+	page_wrap* parent;
+	
 	// sanity: don't touch written external pages!
 	if (wp->ext_pageid != 0 && wp->pg->id == 0)
 		cle_panic(t);
@@ -170,12 +170,17 @@ static void _tk_release_page(task* t, page_wrap* wp) {
 		/* free internal page */
 		tk_mfree(t, wp->pg);
 	}
+	
+	parent = wp->parent;
 
 	memset(wp, 0, sizeof(page_wrap));
 
 	// recycle wrapper
 	wp->next = t->pwfree;
 	t->pwfree = wp;
+	
+	if(parent != 0)
+		tk_unref(t, parent);
 }
 
 static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid) {
@@ -215,7 +220,7 @@ static void _cache_pushdown(task* t, page_wrap* wrapper, cle_pageid pid) {
 	}
 }
 
-static page_wrap* _tk_load_page(task* t, cle_pageid pid, const page_wrap* parent) {
+static page_wrap* _tk_load_page(task* t, cle_pageid pid, page_wrap* parent) {
 	/* have a wrapper? */
 	st_ptr root_ptr;
 	page_wrap* pw;
@@ -243,9 +248,11 @@ static page_wrap* _tk_load_page(task* t, cle_pageid pid, const page_wrap* parent
 		pw->ovf = 0;
 		pw->pg = npage;
 		pw->refcount = 0;
-
-		pw->parent_0 = parent->ext_pageid;
-		pw->parent_1 = parent->parent_0;
+		
+		// keep parent in cache
+		pw->parent = parent;
+		if (parent != 0)
+			parent->refcount++;
 	}
 	// found: read address of page_wrapper
 	else if (st_get(t, &root_ptr, (char*) &pw, sizeof(pw)) != -1)
@@ -361,7 +368,7 @@ void tk_ref_ptr(st_ptr* ptr) {
 
 void tk_root_ptr(task* t, st_ptr* pt) {
 	key* k;
-	pt->pg = _tk_load_page(t, ROOT_ID, &rt_wrapper);
+	pt->pg = _tk_load_page(t, ROOT_ID, 0);
 	pt->key = sizeof(page);
 	pt->offset = 0;
 	k = GOKEY(pt->pg,sizeof(page));
@@ -672,117 +679,134 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent,
 	return size + k->length + ((sizeof(key) + 1) * 8);
 }
 
+static void _tk_link_writable_pages(task* t, page_wrap* pgw) {
+	uint max_size = 0;
+	
+	while (pgw != 0) {
+		if(pgw->pg->size > max_size)
+			max_size = pgw->pg->size;
+		
+		if (pgw->parent != 0 && (pgw->ovf != 0 || pgw->pg->waste > pgw->pg->size / 2)) {
+			// is the parent writable? Make sure
+			if (pgw->parent->pg->id != 0)
+				_tk_write_copy(t,pgw->parent);
+			
+			// make mem-ptr from parent -> pg
+			
+			pgw->refcount = 0;	// this page will be rebuild from parent
+		}
+		
+		pgw = pgw->next;
+	}
+}
+
+/*
+ deal with:
+ 
+ w-page 1 -> w-page 2 -> w-page 3
+ 
+ if starting with w-page 2 -> the parent of w-page 3 gets lost.
+ 
+ Dont write after each "round" - keep pages and write all when done (to prevent rewriting/updating)
+ 
+ */
 int tk_commit_task(task* t) {
 	page_wrap* pgw = t->wpages;
 	int ret = 0;
-	int have_pages_written = 0;
-
+	
 	while (pgw != 0) {
-		page_wrap* tmp = pgw->next;
 		page* pg = pgw->pg;
-
-		// written to?
-		if (pg->id == 0) {
-			have_pages_written = 1;
-
-			/* overflowed or cluttered? */
-			if (pgw->ovf || pg->waste > pg->size / 2) {
-				cle_pageid parent_1 = 0;
-				struct _tk_setup setup;
-				setup.dest = tk_malloc(t, pg->size);
-				setup.dest->size = pg->size;
-				setup.dest->waste = 0;
-
-				setup.fullsize = (pg->size - sizeof(page)) << 3;
-				setup.halfsize = setup.fullsize >> 1;
-				setup.fullsize -= setup.halfsize >> 1;
-
-				setup.t = t;
-
-				// pick up parent and rebuild from there (if not root)
-				if (pgw->parent_0 != 0) {
-					parent_1 = pgw->parent_1;
-					setup.id = pgw->ext_pageid;
-					setup.pg = pgw;
-					pgw = _tk_load_page(t, pgw->parent_0, &rt_wrapper);
-
-					// make parent writable
-					//if(pgw->pg->id != 0)
-					//_tk_write_copy(t,pgw);
-				} else {
-					setup.id = 0;
-					setup.pg = 0;
-				}
-
-				_tk_measure(&setup, pgw, 0, sizeof(page));
-
-				while (1) {
-					// reset and copy remaining rootpage
-					ushort sub = 0;
-					setup.dest->used = sizeof(page);
-					_tk_compact_copy(&setup, pgw, 0, &sub, sizeof(page), 0);
-
-					// dont rebuild again
-					pgw->pg->id = pgw->ext_pageid;
-
-					// rest is 'too small' (less than quarter page) [prevents ptr-to-ptr]
-					if (setup.dest->used < (setup.halfsize / 16) && parent_1
-							!= 0) {
-						page_wrap* ppw = _tk_load_page(t, parent_1, &rt_wrapper);
-
-						if (ppw->pg->used - ppw->pg->waste + setup.dest->used
-								- sizeof(ptr) - sizeof(page) < setup.dest->size) {
-							setup.id = pgw->ext_pageid;
-							setup.pg = pgw;
-							parent_1 = ppw->parent_0;
-
-							if (pgw->pg->id != 0)
-								pgw->pg = (page*) tk_alloc(t, setup.dest->size,
-										0);
-
-							memcpy(pgw->pg, setup.dest, setup.dest->used);
-
-							// mem-pager: destroys pgw->pg ... make-writable (see prev note)
-							//						t->ps->remove_page(t->psrc_data,setup.id);
-
-							if (ppw->pg->id != 0)
-								_tk_write_copy(t, ppw);
-
-							pgw = ppw;
-						}
-						else
-							break;
-					} else
-						break;
-				}
-
-				t->ps->write_page(t->psrc_data, pgw->ext_pageid, setup.dest);
-
-				// release old (now rebuilded) page (if we found parent)
-				//				if(setup.id != 0)
-				//					t->ps->remove_page(t->psrc_data,setup.id);
-
-				tk_mfree(t, setup.dest);
-			} else
-				/* just write it */
-				t->ps->write_page(t->psrc_data, pgw->ext_pageid, pg);
-
-			ret = t->ps->pager_error(t->psrc_data);
-			if (ret != 0)
-				break;
+		
+		/* overflowed or cluttered? */
+		if (pgw->ovf || pg->waste > pg->size / 2) {
+			struct _tk_setup setup;
+			setup.dest = tk_malloc(t, pg->size);
+			setup.dest->size = pg->size;
+			setup.dest->waste = 0;
+			
+			setup.fullsize = (pg->size - sizeof(page)) << 3;
+			setup.halfsize = setup.fullsize >> 1;
+			setup.fullsize -= setup.halfsize >> 1;
+			
+			setup.t = t;
+			
+			// pick up parent and rebuild from there (if not root)
+			if (pgw->parent != 0) {
+				setup.id = pgw->ext_pageid;
+				setup.pg = pgw;
+				
+				pgw->refcount = 0;
+				pgw = pgw->parent;
+				
+				// make parent writable
+				if(pgw->pg->id != 0)
+					_tk_write_copy(t,pgw);
+			} else {
+				setup.id = 0;
+				setup.pg = 0;
+			}
+			
+			_tk_measure(&setup, pgw, 0, sizeof(page));
+			
+			while (1) {
+				// reset and copy remaining rootpage
+				ushort sub = 0;
+				setup.dest->used = sizeof(page);
+				_tk_compact_copy(&setup, pgw, 0, &sub, sizeof(page), 0);
+				
+				// content moved to parent (and new pages) release
+				if(setup.id != 0)
+					t->ps->remove_page(t->psrc_data,setup.id);
+				
+				// use page to hold rebuild
+				memcpy(pgw->pg, setup.dest, setup.dest->used);
+				
+				// if rest is 'too small' (less than quarter page) [prevents ptr-to-ptr]
+				if (pgw->parent == 0 || setup.dest->used > (setup.halfsize / 16))
+					break;	// ok -> stop rebuild
+				
+				setup.id = pgw->ext_pageid;
+				setup.pg = pgw;
+				
+				pgw->refcount = 0;
+				pgw = pgw->parent;
+				
+				// make parent writable
+				if(pgw->pg->id != 0)
+					_tk_write_copy(t,pgw);
+			}
+			
+			tk_mfree(t, setup.dest);
 		}
-
-		pgw = tmp;
+		
+		ret = t->ps->pager_error(t->psrc_data);
+		if (ret != 0)
+			break;
+		
+		pgw = pgw->next;
 	}
-
-	if (have_pages_written) {
+	
+	// if any pages written
+	if (t->wpages != 0 && ret == 0) {
+		pgw = t->wpages;
+		
+		do {
+			if (pgw->refcount != 0)
+				t->ps->write_page(t->psrc_data, pgw->ext_pageid, pgw->pg);
+			
+			pgw = pgw->next;
+			
+			ret = t->ps->pager_error(t->psrc_data);
+		} while(ret == 0 && pgw != 0);
+		
 		if (ret == 0)
 			ret = t->ps->pager_commit(t->psrc_data);
-		else
-			t->ps->pager_rollback(t->psrc_data);
 	}
-
+	
+	if(ret != 0)
+		t->ps->pager_rollback(t->psrc_data);
+	
 	tk_drop_task(t);
-
+	
 	return ret;
 }

@@ -31,10 +31,9 @@
 
 typedef struct
 {
-	oid       id;
-	oid       ext;
-	ushort    version;
-	ushort    refcount;
+	oid    id;
+	oid    ext;
+	ulong  version;
 }
 objectheader2;
 // followed by object-content
@@ -79,6 +78,9 @@ struct _mem_ref
 	char ptr[sizeof(st_ptr)];
 };
 
+static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid);
+
+
 /****************************************************
  Name scanner
  
@@ -86,11 +88,11 @@ struct _mem_ref
 
 static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,uchar*,uint), void* ctx)
 {
+	uchar buffer[100];
 	int state = 2;
 	while(1)
 	{
 		int i = 0;
-		uchar buffer[100];
 		do
 		{
 			int c = st_scan(t,from);
@@ -101,6 +103,8 @@ static int _scan_validate(task* t, st_ptr* from, uint(*fun)(void*,uchar*,uint), 
 					return -4;
 				state = 3;
 				break;
+			case '/':
+			case '\\':
 			case '.':
 				if(state != 0)
 					return -3;
@@ -326,14 +330,14 @@ int cle_map_has_object(cle_instance inst, st_ptr host, identity id, st_ptr path,
 	_getheader(inst,&value,&header);
 	
 	if (ISMEMOBJ(header)) {
-		mref.hd.zero = 0;
-		mref.hd.type = TYPE_REF_MEM;
-		mref.ptr = *obj;
+		reftype.mref.hd.zero = 0;
+		reftype.mref.hd.type = TYPE_REF_MEM;
+		memcpy(reftype.mref.ptr, obj, sizeof(st_ptr));
 		ref_size = 2 + sizeof(st_ptr);
 	} else {
-		nref.hd.zero = 0;
-		nref.hd.type = TYPE_REF;
-		memcpy(nref.ref, header.obj.id, sizeof(oid));
+		reftype.nref.hd.zero = 0;
+		reftype.nref.hd.type = TYPE_REF;
+		memcpy(reftype.nref.ref, &header.obj.id, sizeof(oid));
 		ref_size = 2 + sizeof(oid);
 	}
 	
@@ -353,17 +357,10 @@ int cle_map_has_object(cle_instance inst, st_ptr host, identity id, st_ptr path,
 	 st_exsist(inst.t, &inst.commit, (cdat)&reftype, ref_size));
 }
 
-static int _report_objects(cle_instance inst, cdat path, uint length, st_ptr pt, int(*callback)(cle_instance inst, cdat path, uint length, st_ptr ref)) {
-	return 0;
-}
-
-static int _bf_iterate(cle_instance inst, cdat path, uint length, st_ptr pt, int(*callback)(cle_instance inst, cdat path, uint length, st_ptr ref)) {
-	return 0;
-}
-
 int cle_map_iterate_objects(cle_instance inst, st_ptr host, identity id, st_ptr path, int(*callback)(cle_instance inst, cdat path, uint length, st_ptr ref)){
 	objheader header;
 	st_ptr value;
+	it_ptr it;
 	
 	_getheader(inst,&host,&header);
 	
@@ -379,15 +376,9 @@ int cle_map_iterate_objects(cle_instance inst, st_ptr host, identity id, st_ptr 
 		st_move(inst.t, &inst.commit, (cdat)"a", 1) == 0 &&
 		(path.pg != 0 && _move_validate(inst.t, &inst.commit, path) == 0)) {
 		value = inst.commit;
-		
-		if(_report_objects(inst, 0, 0, value, callback))
-			return __LINE__;
 	}
 	else
 		value.pg = 0;
-	
-	if(_report_objects(inst, 0, 0, host, callback))
-		return __LINE__;
 	
 	it_create(inst.t, &it, &host);
 	
@@ -451,7 +442,6 @@ static oid _new_oid(cle_instance inst, st_ptr* newobj)
 	st_insert(inst.t,newobj,(cdat)&id._high,OID_HIGH_SIZE);
 	return id;
 }
-
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj)
 {
@@ -1351,7 +1341,7 @@ int cle_collection_test_object(cle_instance inst, st_ptr obj, identity id, st_pt
 // commit all updates to back-end - persist all new objects
 
 // recursively persist this object and all refs
-static int _persist_object2(cle_instance inst, st_ptr* obj, oid* newid)
+static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid)
 {
 	objheader header;
 	st_ptr    newobj,ext,pt = *obj;

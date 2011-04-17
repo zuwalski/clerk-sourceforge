@@ -15,7 +15,7 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include <stdlib.h>
+#include <string.h>
 
 #include "cle_clerk.h"
 #include "cle_struct.h"
@@ -191,7 +191,7 @@ static void _it_get_prev(struct _st_lkup_it_res* rt)
 	}
 }
 
-static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_next, const uint length)
+static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_next, const int length)
 {
 	key* sub    = rt->sub;
 	key* prev   = rt->prev;
@@ -199,6 +199,15 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 
 	it->kused = (uchar*)rt->path - (uchar*)it->kdata;
 
+	if (length > 0 && it->ksize < length) {
+		uchar* kdata = it->kdata;
+		it->kdata = tk_alloc(rt->t,length,0);
+		it->ksize = length;
+		rt->path = it->kdata + it->kused;
+		if (kdata != 0)
+			memcpy(it->kdata,kdata,it->kused);
+	}
+		
 	do
 	{
 		cdat ckey;
@@ -251,40 +260,52 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 			offset = 0;
 		}
 		clen >>= 3;
+		
 		// copy bytes
-		while(clen-- != 0)
-		{
-			it->kused++;
-			if(it->kused > it->ksize)
+		if (length == 0) {
+			while(clen-- != 0)
 			{
-				if(length == 0)
+				it->kused++;
+				if(it->kused > it->ksize)
 					_it_grow_kdata(it,rt);
-				else
-				{
-					it->kdata = tk_alloc(rt->t,length,0);
-					it->ksize = length;
-					rt->path = it->kdata;
-				}
-			}
-
-			rt->diff += 8;
-			*rt->path++ = *ckey;
-			if(length == 0)
-			{
+				
+				rt->diff += 8;
+				*rt->path++ = *ckey;
 				if(*ckey == 0) return;
+				ckey++;
 			}
-			else if(it->kused >= length)
-   				return;
-			ckey++;
-  		}
-
+		} else if (length < 0) {
+			it->kused += clen;
+			
+			if(it->kused > it->ksize)
+				_it_grow_kdata(it, rt);
+			
+			memcpy(rt->path,ckey,clen);
+			rt->diff += clen * 8;
+			rt->path += clen;
+		} else {
+			if (it->kused + clen > length){
+				if (it->kused >= length)
+					return;
+				clen = length - it->kused;
+			}
+			
+			memcpy(rt->path,ckey,clen);
+			rt->diff += clen * 8;
+			rt->path += clen;
+			it->kused += clen;
+			
+			if (it->kused >= length)
+				return;
+		}
+		
 		sub = prev;	// next key
 		prev = 0;
 	}
 	while(sub);
 }
 
-uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
+uint it_next(task* t, st_ptr* pt, it_ptr* it, const int length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -327,7 +348,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	return (it->kused > 0);
 }
 
-uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
+uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const int length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -376,7 +397,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	return (it->kused > 0)? 1 : 0;
 }
 
-uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
+uint it_prev(task* t, st_ptr* pt, it_ptr* it, const int length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;
@@ -419,7 +440,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const uint length)
 	return (it->kused > 0);
 }
 
-uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const uint length)
+uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length)
 {
 	struct _st_lkup_it_res rt;
 	rt.t      = t;

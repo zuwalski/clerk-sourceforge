@@ -15,6 +15,8 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include <string.h>
+
 #include "cle_clerk.h"
 #include "cle_struct.h"
 
@@ -190,7 +192,7 @@ static void _st_write(struct _st_lkup_res* rt)
 
 		memcpy(KDATA(rt->sub) + (rt->diff >> 3),rt->path,length);
 		rt->sub->length = ((rt->diff >> 3) + length) << 3;
-		rt->pg->pg->used = (KDATA(rt->sub) + ((uint)rt->sub->length >> 3)) - (char*)(rt->pg->pg);
+		rt->pg->pg->used = ((char*)KDATA(rt->sub) + ((uint)rt->sub->length >> 3)) - (char*)(rt->pg->pg);
 
 		rt->diff = rt->sub->length;		
 		size -= length;
