@@ -755,6 +755,68 @@ void test_task_c_2()
 	tk_drop_task(t);
 }
 
+void test_task_c_3() {
+	st_ptr root,tmp;
+	task* t;
+	uchar keystore[2000];
+	
+	memset(keystore,0,sizeof(keystore));
+	
+	cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+	
+	//  new task
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	st_insert(t,&root,(cdat)keystore,sizeof(keystore));
+	
+	tk_commit_task(t);
+
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+	
+	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	
+	keystore[1000] = 1;
+	tmp = root;
+	st_insert(t,&tmp,(cdat)keystore,sizeof(keystore));
+	
+	keystore[1000] = 0;
+	keystore[1500] = 1;
+	tmp = root;
+	st_insert(t,&tmp,(cdat)keystore,sizeof(keystore));
+
+	tk_commit_task(t);
+
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+	
+	st_prt_distribution(&root,t);
+	
+	st_prt_page(&root);
+
+	keystore[1000] = 0;
+	keystore[1500] = 0;
+	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	
+	keystore[1000] = 1;
+	keystore[1500] = 0;
+	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+
+	keystore[1000] = 0;
+	keystore[1500] = 1;
+	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+
+	tk_drop_task(t);
+}
+
 void test_task_c_filepager()
 {
 	clock_t start,stop;
@@ -939,6 +1001,7 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
+	test_task_c_3();
 
 	time_struct_c();
 

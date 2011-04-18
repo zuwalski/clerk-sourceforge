@@ -48,7 +48,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 						>> (o & 7))) ? "+" : "-", pt->offset, pt->pg, meoff,
 						pt->next);
 
-				if (ind < 3) {
+				if (ind < 6) {
 					wrap.ext_pageid = pt->pg;
 					wrap.pg = pt->pg;
 					printf(" (%d)>>\n", wrap.pg->used);

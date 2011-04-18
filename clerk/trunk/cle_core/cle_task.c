@@ -16,7 +16,6 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "cle_clerk.h"
@@ -507,7 +506,7 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw,
 				pw = setup->pg;
 				k = GOKEY(pw,sizeof(page));
 
-				adjoffset += pt->offset;
+				//adjoffset += pt->offset;	// ???
 			} else {
 				ptr* newptr;
 				setup->dest->used += setup->dest->used & 1;
@@ -679,7 +678,32 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent,
 	return size + k->length + ((sizeof(key) + 1) * 8);
 }
 
-static void _tk_link_writable_pages(task* t, page_wrap* pgw) {
+static uint _tk_to_mem_ptr(page_wrap* pw, page_wrap* to, ushort k){
+	while (k != 0) {
+		key* kp = GOOFF(pw,k);
+		
+		if(ISPTR(kp)){
+			ptr* pt = (ptr*) kp;
+			
+			if(pt->koffset == 0 && pt->pg == to->ext_pageid) {
+				pt->koffset = sizeof(page);
+				pt->pg = to;
+				return pt->offset;
+			}
+		}
+		else {
+			uint ret = _tk_to_mem_ptr(pw,to,kp->sub);
+			if(ret != 0)
+				return ret;
+		}
+		
+		k = kp->next;
+	}
+	
+	return 0;
+}
+
+static uint _tk_link_written_pages(task* t, page_wrap* pgw) {
 	uint max_size = 0;
 	
 	while (pgw != 0) {
@@ -687,17 +711,93 @@ static void _tk_link_writable_pages(task* t, page_wrap* pgw) {
 			max_size = pgw->pg->size;
 		
 		if (pgw->parent != 0 && (pgw->ovf != 0 || pgw->pg->waste > pgw->pg->size / 2)) {
+			page_wrap* parent = pgw->parent;
+			uint offset;
+			
 			// is the parent writable? Make sure
-			if (pgw->parent->pg->id != 0)
-				_tk_write_copy(t,pgw->parent);
+			if (parent->pg->id != 0)
+				_tk_write_copy(t,parent);
 			
 			// make mem-ptr from parent -> pg
+			offset = _tk_to_mem_ptr(parent, pgw, sizeof(page));
+			if(offset == 0)
+				cle_panic(t);
 			
-			pgw->refcount = 0;	// this page will be rebuild from parent
+			// fix offset like mem-ptr
+			GOKEY(pgw,sizeof(page))->offset = offset;
+			
+			// this page will be rebuild from parent
+			pgw->refcount = 0;
+			t->ps->remove_page(t->psrc_data, pgw->ext_pageid);
+			
+			// force rebuild of this page
+			parent->pg->waste = parent->pg->size;
 		}
 		
 		pgw = pgw->next;
 	}
+	
+	return max_size;
+}
+
+int tk_commit_task(task* t) {
+	struct _tk_setup setup;
+	page_wrap* pgw;
+	int ret = 0;
+	
+	uint max_size = _tk_link_written_pages(t, t->wpages);
+	
+	setup.t = t;
+	setup.id = 0;
+	setup.pg = 0;
+	setup.dest = tk_malloc(t, max_size);
+
+	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
+		page* pg;
+		
+		if (pgw->refcount == 0)
+			continue;
+		
+		/* overflowed or cluttered? */
+		pg = pgw->pg;
+		if (pgw->ovf || pg->waste > pg->size / 2) {
+			ushort sub;
+			
+			setup.dest->size = pg->size;
+			setup.dest->waste = 0;
+			
+			setup.fullsize = (pg->size - sizeof(page)) << 3;
+			setup.halfsize = setup.fullsize >> 1;
+			setup.fullsize -= setup.halfsize >> 1;
+			
+			_tk_measure(&setup, pgw, 0, sizeof(page));
+			
+			// reset and copy remaining rootpage
+			sub = 0;
+			setup.dest->used = sizeof(page);
+			
+			_tk_compact_copy(&setup, pgw, 0, &sub, sizeof(page), 0);
+			
+			pg = setup.dest;
+		}
+		
+		t->ps->write_page(t->psrc_data, pgw->ext_pageid, pg);
+
+		ret = t->ps->pager_error(t->psrc_data);
+		if (ret != 0)
+			break;
+	}
+	
+	tk_mfree(t, setup.dest);
+
+	if(ret != 0)
+		t->ps->pager_rollback(t->psrc_data);
+	else
+		ret = t->ps->pager_commit(t->psrc_data);
+	
+	tk_drop_task(t);
+	
+	return ret;
 }
 
 /*
@@ -710,7 +810,7 @@ static void _tk_link_writable_pages(task* t, page_wrap* pgw) {
  Dont write after each "round" - keep pages and write all when done (to prevent rewriting/updating)
  
  */
-int tk_commit_task(task* t) {
+int tk_commit_task_2(task* t) {
 	page_wrap* pgw = t->wpages;
 	int ret = 0;
 	
