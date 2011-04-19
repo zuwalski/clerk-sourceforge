@@ -48,7 +48,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 						>> (o & 7))) ? "+" : "-", pt->offset, pt->pg, meoff,
 						pt->next);
 
-				if (ind < 6) {
+				if (ind < 20) {
 					wrap.ext_pageid = pt->pg;
 					wrap.pg = pt->pg;
 					printf(" (%d)>>\n", wrap.pg->used);
@@ -73,7 +73,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 
 			//printf("%s",path);
 			for (i = 0; i < (l + 7) >> 3; i++) {
-				if (i > 5) {
+				if (i > 3) {
 					printf("...");
 					break;
 				}
@@ -152,9 +152,9 @@ void _tk_print(page* pg) {
 	}
 }
 
-static int levels[100];
-static int filling[8];
 static task* t;
+static int levels[100];
+static int filling[10];
 static int empty_keys;
 static int offset_zero;
 static int key_count;

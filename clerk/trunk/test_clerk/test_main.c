@@ -771,6 +771,7 @@ void test_task_c_3() {
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 
+	tmp = root;
 	st_insert(t,&root,(cdat)keystore,sizeof(keystore));
 	
 	tk_commit_task(t);
@@ -790,17 +791,13 @@ void test_task_c_3() {
 	keystore[1500] = 1;
 	tmp = root;
 	st_insert(t,&tmp,(cdat)keystore,sizeof(keystore));
-
+	
 	tk_commit_task(t);
 
 	t = tk_create_task(psource,pdata);
 	
 	// set pagesource-root
 	tk_root_ptr(t,&root);
-	
-	st_prt_distribution(&root,t);
-	
-	st_prt_page(&root);
 
 	keystore[1000] = 0;
 	keystore[1500] = 0;
