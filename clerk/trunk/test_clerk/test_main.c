@@ -783,6 +783,8 @@ void test_task_c_3() {
 	
 	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
 	
+	st_prt_distribution(&root,t);
+	
 	keystore[1000] = 1;
 	tmp = root;
 	st_insert(t,&tmp,(cdat)keystore,sizeof(keystore));

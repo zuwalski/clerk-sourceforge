@@ -47,7 +47,8 @@ typedef struct page_wrap
 	struct page_wrap* parent;
 	overflow*         ovf;
 	page*             pg;
-	cle_pageid        ext_pageid;
+	page*             orig;
+//	cle_pageid        ext_pageid;
 	ulong             refcount;
 }page_wrap;
 

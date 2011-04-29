@@ -49,7 +49,6 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 						pt->next);
 
 				if (ind < 20) {
-					wrap.ext_pageid = pt->pg;
 					wrap.pg = pt->pg;
 					printf(" (%d)>>\n", wrap.pg->used);
 					print_struct(&wrap, GOKEY(&wrap, sizeof(page)), ind + 2,

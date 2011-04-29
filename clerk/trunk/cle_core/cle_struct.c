@@ -165,6 +165,9 @@ static void _st_make_writable(struct _st_lkup_res* rt)
 {
 	page* old = rt->pg->pg;
 	
+	if(old->id == 0 || rt->pg->orig != 0)
+		return;
+	
 	_tk_write_copy(rt->t,rt->pg);
 
 	/* fix pointers */
@@ -182,8 +185,7 @@ static void _st_write(struct _st_lkup_res* rt)
 	key* newkey;
 	uint size = rt->length >> 3;
 
-	if(rt->pg->pg->id)
-		_st_make_writable(rt);
+	_st_make_writable(rt);
 
 	/* continue/append (last)key? */
 	if((rt->sub->length == 0 || rt->diff == rt->sub->length) && IS_LAST_KEY(rt->sub,rt->pg->pg))
@@ -360,8 +362,7 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 	rt->prev = 0;
 	rt->t    = t;
 
-	if(rt->pg->pg->id)
-		_st_make_writable(rt);
+	_st_make_writable(rt);
 
 	if(rt->sub->sub)
 	{
@@ -450,8 +451,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 
 	if(rt.prev)
 	{
-		if(rt.pg->pg->id)
-			_st_make_writable(&rt);
+		_st_make_writable(&rt);
 		//waste  = rt.sub->length - rt.prev->offset;
 		//remove = rt.prev->next;
 		//rm_pg  = rt.pg;
@@ -461,8 +461,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 	}
 	else if(rt.d_sub)
 	{
-		if(rt.d_pg->pg->id)
-			_st_make_writable(&rt);
+		_st_make_writable(&rt);
 
 		if(rt.d_prev)
 		{
@@ -496,7 +495,7 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
 	rt.prev = 0;
 	rt.t    = t;
 
-	if(rt.pg->pg->id && length > 0)
+	if(length > 0)
 		_st_make_writable(&rt);
 
 	while(length > 0)
@@ -506,8 +505,7 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length)
 		if(ISPTR(rt.sub))
 		{
 			rt.sub = _tk_get_ptr(t,&rt.pg,rt.sub);
-			if(rt.pg->pg->id)
-				_st_make_writable(&rt);
+			_st_make_writable(&rt);
 		}
 
 		wlen = (rt.sub->length - rt.diff) >> 3;
