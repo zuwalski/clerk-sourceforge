@@ -474,6 +474,63 @@ void tk_drop_task(task* t) {
 
 /////////////////////////////// Sync v1 ///////////////////////////////////
 
+static void _tk_insert_trace_n(page_wrap* pgw, uint depth, ushort kstack[]) {
+	while (depth > 0) {
+		key* kp;
+	}
+}
+
+static void _tk_trace_inserts_n(page_wrap* pgw, ushort kstack[]) {
+	const ushort lim = pgw->orig->used;
+	ushort k = sizeof(page);
+	uint depth = 0;
+
+	while (1) {
+		key* ok = (key*)((char*)pgw->orig + k);
+		key* kp = GOOFF(pgw,k);
+
+		// changed?
+		if (memcmp(kp, ok, sizeof(key)) != 0) {
+			// new next
+			if(kp->next > lim)
+				;
+			// removed next
+			else if(kp->next != ok->next)
+				;
+			
+			// new sub
+			if(kp->sub > lim)
+				;
+			// removed sub
+			else if(kp->sub != ok->sub)
+				;
+						
+			// changed length
+			if(kp->length != ok->length)
+				;
+		}
+		
+		if (ISPTR(kp) == 0 && kp->sub != 0) {
+			kstack[depth++] = k;
+			k = kp->sub;
+		}
+		else if (kp->next != 0)
+			k = kp->next;
+		else {
+			do {
+				if(depth == 0)
+					return;
+				
+				k = kstack[--depth];
+				kp = GOOFF(pgw,k);
+				k = kp->next;
+			}
+			while (k == 0);
+		}
+	}
+}
+
+
 struct _tk_trace {
 	struct _tk_trace* parent;
 	struct _tk_trace* next;
@@ -503,6 +560,8 @@ static void _tk_trace_inserts(page_wrap* pgw, struct _tk_trace* p, ushort k) {
 	
 	while (k != 0) {
 		trace.kp = GOOFF(pgw,k);
+		key* ok = (key*)((char*)pgw->orig + k);
+		
 		
 		if (ISPTR(trace.kp)) {
 			ptr* pt = (ptr*) trace.kp;
@@ -767,7 +826,7 @@ static uint _tk_link_written_pages(task* t, page_wrap* pgw) {
 			pgw->refcount = 0;
 			t->ps->remove_page(t->psrc_data, pgw->pg->id);
 
-			// force rebuild of this page
+			// force rebuild of parent
 			parent->pg->waste = parent->pg->size;
 		}
 
@@ -796,7 +855,7 @@ int tk_commit_task(task* t) {
 		/* overflowed or cluttered? */
 		pg = pgw->pg;
 		if (pgw->ovf || pg->waste > pg->size / 2) {
-			ushort sub;
+			ushort sub = 0;
 
 			setup.dest->size = pg->size;
 			setup.dest->waste = 0;
@@ -808,7 +867,6 @@ int tk_commit_task(task* t) {
 			_tk_measure(&setup, pgw, 0, sizeof(page));
 
 			// reset and copy remaining rootpage
-			sub = 0;
 			setup.dest->used = sizeof(page);
 			setup.dest->id = pg->id;
 
