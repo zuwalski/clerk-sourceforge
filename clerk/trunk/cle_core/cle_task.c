@@ -474,54 +474,77 @@ void tk_drop_task(task* t) {
 
 /////////////////////////////// Sync v1 ///////////////////////////////////
 
-static void _tk_insert_trace_n(page_wrap* pgw, uint depth, ushort kstack[]) {
-	while (depth > 0) {
-		key* kp;
+static void _tk_insert_trace(page_wrap* pgw, uint depth, ushort kstack[], page_wrap* lpgw, ushort lkey) {
+
+}
+
+static void _tk_delete_trace(page_wrap* pgw, uint depth, ushort kstack[], ushort found, ushort expect) {
+	const ushort lim = pgw->orig->used;
+	// skip new keys
+	while (found > lim) {
+		key* kp = GOOFF(pgw,found);
+		found = kp->next;
+	}
+	
+	while (found != expect) {
+		// expect was deleted
+		key* ok = (key*)((char*)pgw->orig + expect);
+		
+		expect = ok->next;
 	}
 }
 
-static void _tk_trace_inserts_n(page_wrap* pgw, ushort kstack[]) {
+static void _tk_trace_change(page_wrap* pgw, ushort kstack[]) {
 	const ushort lim = pgw->orig->used;
 	ushort k = sizeof(page);
 	uint depth = 0;
-
+	
 	while (1) {
-		key* ok = (key*)((char*)pgw->orig + k);
 		key* kp = GOOFF(pgw,k);
-
-		// changed?
-		if (memcmp(kp, ok, sizeof(key)) != 0) {
-			// new next
-			if(kp->next > lim)
-				;
-			// removed next
-			else if(kp->next != ok->next)
-				;
+		
+		// new key
+		if (k > lim) {
+			if (ISPTR(kp)) {
+				ptr* pt = (ptr*)kp;
+				_tk_insert_trace(pgw,depth,kstack,pt->pg,pt->koffset);
+			} else 
+				_tk_insert_trace(pgw,depth,kstack,pgw,k);
+		} else {
+			// old key - was it changed? (deletes only)
+			key* ok = (key*)((char*)pgw->orig + k);
 			
-			// new sub
-			if(kp->sub > lim)
-				;
-			// removed sub
-			else if(kp->sub != ok->sub)
-				;
-						
-			// changed length
-			if(kp->length != ok->length)
-				;
+			// changed next
+			if(kp->next != ok->next)
+				_tk_delete_trace(pgw,depth,kstack,kp->next,ok->next);
+			
+			if(ISPTR(kp) == 0){
+				// changed sub
+				if(kp->sub != ok->sub)
+					_tk_delete_trace(pgw,depth,kstack,kp->sub,ok->sub);
+				
+				// changed length
+				if(kp->length != ok->length)
+					;
+
+				if (kp->sub != 0) {
+					// push content step
+					kstack[depth++] = k;
+					k = kp->sub;
+					
+					continue;
+				}
+			}
 		}
 		
-		if (ISPTR(kp) == 0 && kp->sub != 0) {
-			kstack[depth++] = k;
-			k = kp->sub;
-		}
-		else if (kp->next != 0)
+		if (kp->next != 0)
 			k = kp->next;
 		else {
+			// pop content step
 			do {
-				if(depth == 0)
+				if(depth-- == 0)
 					return;
 				
-				k = kstack[--depth];
+				k = kstack[depth];
 				kp = GOOFF(pgw,k);
 				k = kp->next;
 			}
@@ -530,56 +553,11 @@ static void _tk_trace_inserts_n(page_wrap* pgw, ushort kstack[]) {
 	}
 }
 
-
-struct _tk_trace {
-	struct _tk_trace* parent;
-	struct _tk_trace* next;
-	key* kp;
-};
-
-static void _tk_insert_trace(task* t, st_ptr* target, struct _tk_trace* trace, uint length) {
-	// rewind
-	trace->next = 0;
-	while (trace->parent != 0) {
-		trace->parent->next = trace;
-		trace = trace->parent;
-	}
-
-	while (trace->next != 0) {
-		st_insert(t, target, KDATA(trace->kp), trace->next->kp->offset >> 3);
-		
-		trace = trace->next;
-	}
-
-	st_insert(t, target, KDATA(trace->kp), length >> 3);
-}
-
-static void _tk_trace_inserts(page_wrap* pgw, struct _tk_trace* p, ushort k) {
-	struct _tk_trace trace;
-	trace.parent = p;
-	
-	while (k != 0) {
-		trace.kp = GOOFF(pgw,k);
-		key* ok = (key*)((char*)pgw->orig + k);
-		
-		
-		if (ISPTR(trace.kp)) {
-			ptr* pt = (ptr*) trace.kp;
-			if (pt->koffset != 0) {
-				
-			}
-		} else if (trace.kp->sub != 0)
-			_tk_trace_inserts(pgw, &trace, trace.kp->sub);
-		
-		k = trace.kp->next;
-	}
-}
-
-uint tk_sync_to(task* t, st_ptr* target) {
+uint tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	page_wrap* pgw;
 	
 	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
-		_tk_trace_inserts(pgw, 0, sizeof(page));
+		_tk_trace_change(pgw, 0);
 	}
 
 	return 0;
@@ -763,7 +741,7 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, ush
 	} else // cut k below limit (length | sub->offset)
 	{
 		uint subsize = (k->sub == 0) ? 0 : _tk_measure(setup, pw, k, k->sub);// + size);
-		const uint target_size = (sizeof(key) * 8) - (k->length >= setup->halfsize ? setup->fullsize : setup->halfsize);
+		const uint target_size = (sizeof(key) * 8) - (k->length > setup->halfsize ? setup->fullsize : setup->halfsize);
 
 		while (1) {
 			int cut_offset = subsize + k->length + target_size;
