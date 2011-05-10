@@ -935,6 +935,48 @@ void test_task_c_filepager()
 	tk_drop_task(t);
 }
 
+void test_tk_sync() {
+	st_ptr root,tmp,ins_root,del_root;
+	task* t;
+	
+	const unsigned char t1[] = "abc";
+	const unsigned char t2[] = "abad";
+	const unsigned char t3[] = "abcd";
+	
+	cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+	
+	//  new task
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+	
+	tmp = root;
+	st_insert(t, &tmp, t1, sizeof(t1));
+	
+	tmp = root;
+	st_insert(t, &tmp, t2, sizeof(t2));
+
+	tmp = root;
+	st_insert(t, &tmp, t3, sizeof(t3));
+
+	st_prt_page(&root);
+	
+	st_empty(t, &ins_root);
+	st_empty(t, &del_root);
+	
+	tk_sync_to(t, &del_root, &ins_root);
+	
+	st_prt_page(&ins_root);
+
+	ASSERT(st_exsist(t, &ins_root, t1, sizeof(t1)));
+	ASSERT(st_exsist(t, &ins_root, t2, sizeof(t2)));
+	ASSERT(st_exsist(t, &ins_root, t3, sizeof(t3)));
+	
+	tk_drop_task(t);
+}
+
 static uint dat(void* ctx,cdat dat,uint len)
 {
 	printf("dat %d %.*s\n",len,len,dat);
@@ -1000,6 +1042,9 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
+	test_tk_sync();
+	
+	
 	test_task_c_3();
 
 	time_struct_c();

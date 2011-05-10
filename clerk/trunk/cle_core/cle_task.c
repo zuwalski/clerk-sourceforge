@@ -474,15 +474,59 @@ void tk_drop_task(task* t) {
 
 /////////////////////////////// Sync v1 ///////////////////////////////////
 
-static void _tk_insert_trace(page_wrap* pgw, uint depth, ushort kstack[], page_wrap* lpgw, ushort lkey) {
-
+static st_ptr _tk_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], ushort offset, st_ptr root){
+	key* kp = GOOFF(pgw,kstack[0]);
+	uchar* dat = KDATA(kp);
+	uint i;
+	
+	for (i = 1; i < depth; i++) {
+		kp = GOOFF(pgw,kstack[i]);
+		
+		st_insert(t, &root, dat, kp->offset >> 3);
+		
+		dat = KDATA(kp);
+	}
+	
+	st_insert(t, &root, dat, offset >> 3);
+	
+	return root;
 }
 
-static void _tk_delete_trace(page_wrap* pgw, uint depth, ushort kstack[], ushort found, ushort expect) {
+static void _tk_insert_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], page_wrap* lpgw, ushort lkey, ushort offset, st_ptr* insert_tree) {
+	st_ptr root = _tk_trace(t, pgw, depth, kstack, offset, *insert_tree);
+	
+	ushort pt = _tk_alloc_ptr(t, root.pg);
+	
+	key* kp = GOOFF(root.pg,root.key);
+
+	ptr* ptrp = (ptr*) GOPTR(root.pg,pt);
+	
+	ptrp->pg = lpgw;
+	ptrp->koffset = lkey;
+	ptrp->offset = offset;
+
+	ptrp->next = 0;
+	ptrp->ptr_id = PTR_ID;
+	
+	if (kp->sub == 0) {
+		kp->sub = pt;
+	} else {
+		kp = GOOFF(root.pg,kp->sub);
+		
+		while (kp->next != 0) {
+			kp = GOOFF(root.pg,kp->next);
+		}
+		
+		kp->next = pt;
+	}	
+}
+
+static void _tk_delete_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], ushort found, ushort expect, st_ptr* del_tree) {
 	const ushort lim = pgw->orig->used;
 	// skip new keys
 	while (found > lim) {
 		key* kp = GOOFF(pgw,found);
+		
 		found = kp->next;
 	}
 	
@@ -490,11 +534,15 @@ static void _tk_delete_trace(page_wrap* pgw, uint depth, ushort kstack[], ushort
 		// expect was deleted
 		key* ok = (key*)((char*)pgw->orig + expect);
 		
+		st_ptr root = _tk_trace(t, pgw, depth, kstack, ok->offset, *del_tree);
+		
+		st_insert(t, &root, KDATA(ok), 1);
+		
 		expect = ok->next;
 	}
 }
 
-static void _tk_trace_change(page_wrap* pgw, ushort kstack[]) {
+static void _tk_trace_change(task* t, page_wrap* pgw, ushort kstack[], st_ptr* delete_tree, st_ptr* insert_tree) {
 	const ushort lim = pgw->orig->used;
 	ushort k = sizeof(page);
 	uint depth = 0;
@@ -506,25 +554,38 @@ static void _tk_trace_change(page_wrap* pgw, ushort kstack[]) {
 		if (k > lim) {
 			if (ISPTR(kp)) {
 				ptr* pt = (ptr*)kp;
-				_tk_insert_trace(pgw,depth,kstack,pt->pg,pt->koffset);
+				_tk_insert_trace(t,pgw,depth,kstack,pt->pg,pt->koffset,pt->offset,insert_tree);
 			} else 
-				_tk_insert_trace(pgw,depth,kstack,pgw,k);
+				_tk_insert_trace(t,pgw,depth,kstack,pgw,k,kp->offset,insert_tree);
 		} else {
 			// old key - was it changed? (deletes only)
 			key* ok = (key*)((char*)pgw->orig + k);
 			
 			// changed next
 			if(kp->next != ok->next)
-				_tk_delete_trace(pgw,depth,kstack,kp->next,ok->next);
+				_tk_delete_trace(t, pgw, depth, kstack, kp->next, ok->next, delete_tree);
 			
 			if(ISPTR(kp) == 0){
 				// changed sub
 				if(kp->sub != ok->sub)
-					_tk_delete_trace(pgw,depth,kstack,kp->sub,ok->sub);
+					_tk_delete_trace(t, pgw, depth, kstack, kp->sub, ok->sub, delete_tree);
 				
-				// changed length
-				if(kp->length != ok->length)
-					;
+				// shortend key
+				if(kp->length < ok->length) {
+					st_ptr root;
+					
+					kstack[depth] = k;
+					
+					root = _tk_trace(t, pgw, depth + 1, kstack, kp->length, *delete_tree);
+					
+					st_insert(t, &root, KDATA(ok) + (kp->length >> 3), 1);
+				}
+				// appended to
+				else if(kp->length > ok->length) {
+					kstack[depth] = k;
+					
+					_tk_trace(t, pgw, depth + 1, kstack, kp->length, *insert_tree);
+				}
 
 				if (kp->sub != 0) {
 					// push content step
@@ -553,14 +614,21 @@ static void _tk_trace_change(page_wrap* pgw, ushort kstack[]) {
 	}
 }
 
-uint tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
+void tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	page_wrap* pgw;
+	ushort* kstack = 0;
+	uint ssize = 0;
 	
 	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
-		_tk_trace_change(pgw, 0);
+		if (pgw->pg->size / 4 > ssize) {
+			ssize = pgw->pg->size / 4;
+			kstack = tk_realloc(t, kstack, pgw->pg->size / 4);
+		}
+
+		_tk_trace_change(t, pgw, kstack, delete_tree, insert_tree);
 	}
 
-	return 0;
+	tk_mfree(t, kstack);
 }
 
 
