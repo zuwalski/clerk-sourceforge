@@ -942,6 +942,7 @@ void test_tk_sync() {
 	const unsigned char t1[] = "abc";
 	const unsigned char t2[] = "abad";
 	const unsigned char t3[] = "abcd";
+	const unsigned char t4[] = "abcde";
 	
 	cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
@@ -960,20 +961,41 @@ void test_tk_sync() {
 
 	tmp = root;
 	st_insert(t, &tmp, t3, sizeof(t3));
-
-	st_prt_page(&root);
 	
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 	
 	tk_sync_to(t, &del_root, &ins_root);
-	
-	st_prt_page(&ins_root);
 
 	ASSERT(st_exsist(t, &ins_root, t1, sizeof(t1)));
 	ASSERT(st_exsist(t, &ins_root, t2, sizeof(t2)));
 	ASSERT(st_exsist(t, &ins_root, t3, sizeof(t3)));
 	
+	tk_commit_task(t);
+	
+	//  new task
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+
+	st_empty(t, &ins_root);
+	st_empty(t, &del_root);
+	
+	tk_sync_to(t, &del_root, &ins_root);
+	
+	ASSERT(st_is_empty(&ins_root));
+	ASSERT(st_is_empty(&del_root));
+	
+	tmp = root;
+	st_insert(t, &tmp, t4, sizeof(t4));
+
+	tk_sync_to(t, &del_root, &ins_root);
+
+//	st_prt_page(&ins_root);
+
+	ASSERT(st_exsist(t, &ins_root, t4, sizeof(t4)));
+
 	tk_drop_task(t);
 }
 

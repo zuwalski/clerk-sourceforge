@@ -399,8 +399,8 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length)
 	if(length > 0)
 	{
 		length <<= 3;
-		/* old key has room for this update*/
-		if(pu.waste >= length)
+		/* old key has room for this update (and its a local page) */
+		if(pu.waste >= length && pt->pg->pg->id == 0)
 		{
 			memcpy(KDATA(rt.sub)+(rt.diff >> 3),path,length >> 3);
 			rt.diff = rt.sub->length = length + rt.diff;

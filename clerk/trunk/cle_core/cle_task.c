@@ -447,7 +447,8 @@ void tk_drop_task(task* t) {
 				// page belongs to page-source
 				if (w->pg->id != 0)
 					t->ps->unref_page(t->psrc_data, w->pg);
-				else
+				
+				if (w->orig != 0 || w->pg->id == 0)
 					tk_mfree(t, w->pg);
 			}
 		}
@@ -474,28 +475,107 @@ void tk_drop_task(task* t) {
 
 /////////////////////////////// Sync v1 ///////////////////////////////////
 
-static st_ptr _tk_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], ushort offset, st_ptr root){
-	key* kp = GOOFF(pgw,kstack[0]);
+struct trace_ptr {
+	st_ptr* base;
+	st_ptr	ptr;
+};
+
+struct _tk_trace_page_hub {
+	struct _tk_trace_page_hub* next;
+	page_wrap* pgw;
+	uint from, to;
+};
+
+struct _tk_trace_base {
+	struct _tk_trace_page_hub* free;
+	struct _tk_trace_page_hub* chain;
+	ushort* kstack;
+	task* t;
+	uint ssize;
+	uint sused;
+};
+
+static void _tk_base_reset(struct _tk_trace_base* base){
+	base->sused = 0;
+	
+	while (base->chain != 0) {
+		struct _tk_trace_page_hub* n = base->chain->next;
+		
+		base->chain->next = base->free;
+		base->free = base->chain;
+		
+		base->chain = n;
+	}
+}
+
+static struct _tk_trace_page_hub* _tk_new_hub(struct _tk_trace_base* base, page_wrap* pgw, uint start_depth) {
+	struct _tk_trace_page_hub* r;
+	if (base->free != 0) {
+		r = base->free;
+		base->free = r->next;
+	} else {
+		r = tk_alloc(base->t, sizeof(struct _tk_trace_page_hub), 0);
+	}
+	
+	r->next = 0;
+	r->pgw = pgw;
+	r->to = base->sused;
+	r->from = start_depth;
+	
+	return r;
+}
+
+static void _tk_push_key(struct _tk_trace_base* base, ushort k){
+	if (base->sused == base->ssize) {
+		base->ssize += PAGE_SIZE;
+		base->kstack = tk_realloc(base->t, base->kstack, base->ssize * sizeof(ushort));
+	}
+	
+	base->kstack[base->sused++] = k;
+}
+
+static st_ptr _tk_trace_write(struct _tk_trace_base* base, page_wrap* pgw, st_ptr ptr, uint from, uint to, ushort offset){
+	key* kp = GOOFF(pgw,base->kstack[from]);
 	uchar* dat = KDATA(kp);
 	uint i;
 	
-	for (i = 1; i < depth; i++) {
-		kp = GOOFF(pgw,kstack[i]);
+	for (i = from + 1; i < to; i++) {
+		kp = GOOFF(pgw,base->kstack[i]);
 		
-		st_insert(t, &root, dat, kp->offset >> 3);
+		st_insert(base->t, &ptr, dat, kp->offset >> 3);
 		
 		dat = KDATA(kp);
 	}
 	
-	st_insert(t, &root, dat, offset >> 3);
+	st_insert(base->t, &ptr, dat, offset >> 3);
 	
-	return root;
+	return ptr;
 }
 
-static void _tk_insert_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], page_wrap* lpgw, ushort lkey, ushort offset, st_ptr* insert_tree) {
-	st_ptr root = _tk_trace(t, pgw, depth, kstack, offset, *insert_tree);
+static st_ptr _tk_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* pt, uint start_depth, ushort offset){
+	if(pt->ptr.pg == 0) {
+		struct _tk_trace_page_hub* lead = base->chain;
+		
+		pt->ptr = *pt->base;
+		
+		while (lead != 0) {
+			if (lead->to > lead->from + 1) {
+				key* k = GOOFF(lead->pgw,base->kstack[lead->to]);
+				
+				pt->ptr = _tk_trace_write(base, lead->pgw, pt->ptr, lead->from, lead->to - 1, k->offset);
+			}
+			
+			lead = lead->next;
+		}
+	}
 	
-	ushort pt = _tk_alloc_ptr(t, root.pg);
+	return _tk_trace_write(base, pgw, pt->ptr, start_depth, base->sused, offset);
+}
+
+static void _tk_insert_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* insert_tree, uint start_depth, page_wrap* lpgw, ushort lkey, ushort offset) {
+	st_ptr root = _tk_trace(base, pgw, insert_tree, start_depth, offset);
+	
+	ushort pt = _tk_alloc_ptr(base->t, root.pg);
 	
 	key* kp = GOOFF(root.pg,root.key);
 
@@ -518,13 +598,13 @@ static void _tk_insert_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[
 		}
 		
 		kp->next = pt;
-	}	
+	}
 }
 
-static void _tk_delete_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[], ushort found, ushort expect, st_ptr* del_tree) {
+static void _tk_delete_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* del_tree, uint start_depth, ushort found, ushort expect) {
 	const ushort lim = pgw->orig->used;
 	// skip new keys
-	while (found > lim) {
+	while (found >= lim) {
 		key* kp = GOOFF(pgw,found);
 		
 		found = kp->next;
@@ -534,64 +614,66 @@ static void _tk_delete_trace(task* t, page_wrap* pgw, uint depth, ushort kstack[
 		// expect was deleted
 		key* ok = (key*)((char*)pgw->orig + expect);
 		
-		st_ptr root = _tk_trace(t, pgw, depth, kstack, ok->offset, *del_tree);
+		st_ptr root = _tk_trace(base, pgw, del_tree, start_depth, ok->offset);
 		
-		st_insert(t, &root, KDATA(ok), 1);
+		st_insert(base->t, &root, KDATA(ok), 1);
 		
 		expect = ok->next;
 	}
 }
 
-static void _tk_trace_change(task* t, page_wrap* pgw, ushort kstack[], st_ptr* delete_tree, st_ptr* insert_tree) {
-	const ushort lim = pgw->orig->used;
-	ushort k = sizeof(page);
-	uint depth = 0;
+static void _tk_trace_change(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* delete_tree, struct trace_ptr* insert_tree) {
+	const uint start_depth = base->sused, lim = pgw->orig->used;
+	uint k = sizeof(page);
 	
 	while (1) {
 		key* kp = GOOFF(pgw,k);
 		
 		// new key
-		if (k > lim) {
+		if (k >= lim) {			
 			if (ISPTR(kp)) {
 				ptr* pt = (ptr*)kp;
-				_tk_insert_trace(t,pgw,depth,kstack,pt->pg,pt->koffset,pt->offset,insert_tree);
+				_tk_insert_trace(base, pgw, insert_tree, start_depth, pt->pg, pt->koffset, pt->offset);
 			} else 
-				_tk_insert_trace(t,pgw,depth,kstack,pgw,k,kp->offset,insert_tree);
+				_tk_insert_trace(base, pgw, insert_tree, start_depth, pgw, k, kp->offset);
 		} else {
 			// old key - was it changed? (deletes only)
 			key* ok = (key*)((char*)pgw->orig + k);
 			
 			// changed next
 			if(kp->next != ok->next)
-				_tk_delete_trace(t, pgw, depth, kstack, kp->next, ok->next, delete_tree);
+				_tk_delete_trace(base, pgw, delete_tree, start_depth, kp->next, ok->next);
 			
 			if(ISPTR(kp) == 0){
 				// changed sub
 				if(kp->sub != ok->sub)
-					_tk_delete_trace(t, pgw, depth, kstack, kp->sub, ok->sub, delete_tree);
+					_tk_delete_trace(base, pgw, delete_tree, start_depth, kp->sub, ok->sub);
 				
 				// shortend key
 				if(kp->length < ok->length) {
 					st_ptr root;
 					
-					kstack[depth] = k;
+					_tk_push_key(base, k);
 					
-					root = _tk_trace(t, pgw, depth + 1, kstack, kp->length, *delete_tree);
+					root = _tk_trace(base, pgw, delete_tree, start_depth, kp->length);
 					
-					st_insert(t, &root, KDATA(ok) + (kp->length >> 3), 1);
+					st_insert(base->t, &root, KDATA(ok) + (kp->length >> 3), 1);
+
+					base->sused--;
 				}
 				// appended to
 				else if(kp->length > ok->length) {
-					kstack[depth] = k;
+					_tk_push_key(base, k);
 					
-					_tk_trace(t, pgw, depth + 1, kstack, kp->length, *insert_tree);
+					_tk_trace(base, pgw, insert_tree, start_depth, kp->length);
+					
+					base->sused--;
 				}
 
 				if (kp->sub != 0) {
 					// push content step
-					kstack[depth++] = k;
+					_tk_push_key(base, k);
 					k = kp->sub;
-					
 					continue;
 				}
 			}
@@ -602,10 +684,63 @@ static void _tk_trace_change(task* t, page_wrap* pgw, ushort kstack[], st_ptr* d
 		else {
 			// pop content step
 			do {
-				if(depth-- == 0)
+				if(start_depth == base->sused)
 					return;
 				
-				k = kstack[depth];
+				k = base->kstack[--base->sused];
+				kp = GOOFF(pgw,k);
+				k = kp->next;
+			}
+			while (k == 0);
+		}
+	}
+}
+
+static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base, page_wrap* pgw, page_wrap* find) {
+	const uint start_depth = base->sused;
+	uint k = sizeof(page);
+	
+	while (1) {
+		key* kp = GOOFF(pgw,k);
+		
+		if (ISPTR(kp)) {
+			ptr* pt = (ptr*)kp;
+			if (pt->koffset == 0 && pt->pg == find->pg->id) {
+				struct _tk_trace_page_hub* h;
+				
+				_tk_push_key(base, k);
+				
+				if (find->parent != 0) {
+					struct _tk_trace_page_hub* r = _tk_trace_page_ptr(base, find, find->parent);
+					if(r == 0)
+						return 0;
+					
+					h = _tk_new_hub(base, pgw, start_depth);
+					r->next = h;
+				} 
+				else {
+					h = _tk_new_hub(base, pgw, start_depth);
+					base->chain = h;
+				}
+				
+				return h;			
+			}
+		}
+		
+		if (ISPTR(kp) == 0 && kp->sub != 0) {
+			// push content step
+			_tk_push_key(base, k);
+			k = kp->sub;
+		}
+		else if (kp->next != 0)
+			k = kp->next;
+		else {
+			// pop content step
+			do {
+				if(start_depth == base->sused)
+					return 0;
+				
+				k = base->kstack[--base->sused];
 				kp = GOOFF(pgw,k);
 				k = kp->next;
 			}
@@ -615,20 +750,29 @@ static void _tk_trace_change(task* t, page_wrap* pgw, ushort kstack[], st_ptr* d
 }
 
 void tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
+	struct _tk_trace_base base;
 	page_wrap* pgw;
-	ushort* kstack = 0;
-	uint ssize = 0;
 	
-	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
-		if (pgw->pg->size / 4 > ssize) {
-			ssize = pgw->pg->size / 4;
-			kstack = tk_realloc(t, kstack, pgw->pg->size / 4);
+	base.sused = base.ssize = 0;
+	base.chain = base.free = 0;
+	base.kstack = 0;
+	base.t = t;
+	
+	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {		
+		if (pgw->parent == 0 || _tk_trace_page_ptr(&base, pgw->parent, pgw)){
+			struct trace_ptr t_delete, t_insert;
+			
+			t_delete.base = delete_tree;
+			t_insert.base = insert_tree;
+			t_delete.ptr.pg = t_insert.ptr.pg = 0;
+			
+			_tk_trace_change(&base, pgw, &t_delete, &t_insert);			
 		}
-
-		_tk_trace_change(t, pgw, kstack, delete_tree, insert_tree);
+		
+		_tk_base_reset(&base);
 	}
-
-	tk_mfree(t, kstack);
+	
+	tk_mfree(t, base.kstack);
 }
 
 
@@ -826,59 +970,57 @@ static uint _tk_measure(struct _tk_setup* setup, page_wrap* pw, key* parent, ush
 	return size + k->length + ((sizeof(key) + 1) * 8);
 }
 
-static uint _tk_to_mem_ptr(page_wrap* pw, page_wrap* to, ushort k) {
+static uint _tk_to_mem_ptr(task* t, page_wrap* pw, page_wrap* to, ushort k) {
 	while (k != 0) {
 		key* kp = GOOFF(pw,k);
-
+		
 		if (ISPTR(kp)) {
 			ptr* pt = (ptr*) kp;
-
+			
 			if (pt->koffset == 0 && pt->pg == to->pg->id) {
+				// is it writable? Make sure
+				if (pw->orig == 0)
+					_tk_write_copy(t, pw);
+				
 				pt->koffset = sizeof(page);
 				pt->pg = to;
-
+				
 				// fix offset like mem-ptr
 				GOKEY(to,sizeof(page))->offset = pt->offset;
 				return 1;
 			}
-		} else if (_tk_to_mem_ptr(pw, to, kp->sub))
+		} else if (_tk_to_mem_ptr(t, pw, to, kp->sub))
 			return 1;
-
+		
 		k = kp->next;
 	}
-
+	
 	return 0;
 }
 
 static uint _tk_link_written_pages(task* t, page_wrap* pgw) {
 	uint max_size = 0;
-
+	
 	while (pgw != 0) {
 		if (pgw->pg->size > max_size)
 			max_size = pgw->pg->size;
-
+		
 		if (pgw->parent != 0 && (pgw->ovf != 0 || pgw->pg->waste > pgw->pg->size / 2)) {
 			page_wrap* parent = pgw->parent;
-
-			// is the parent writable? Make sure
-			if (parent->orig == 0)
-				_tk_write_copy(t, parent);
-
-			// make mem-ptr from parent -> pg
-			if (_tk_to_mem_ptr(parent, pgw, sizeof(page)) == 0)
-				cle_panic(t);
-
-			// this page will be rebuild from parent
+			
+			// make mem-ptr from parent -> pg (if not found - link was deleted, then just dont build it)
+			if(_tk_to_mem_ptr(t, parent, pgw, sizeof(page)))
+				// force rebuild of parent
+				parent->pg->waste = parent->pg->size;
+			
+			// this page will be rebuild from parent (or dont need to after all)
 			pgw->refcount = 0;
 			t->ps->remove_page(t->psrc_data, pgw->pg->id);
-
-			// force rebuild of parent
-			parent->pg->waste = parent->pg->size;
 		}
-
+		
 		pgw = pgw->next;
 	}
-
+	
 	return max_size;
 }
 
