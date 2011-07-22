@@ -535,20 +535,22 @@ static void _tk_push_key(struct _tk_trace_base* base, ushort k){
 }
 
 static st_ptr _tk_trace_write(struct _tk_trace_base* base, page_wrap* pgw, st_ptr ptr, uint from, uint to, ushort offset){
-	key* kp = GOOFF(pgw,base->kstack[from]);
-	uchar* dat = KDATA(kp);
-	uint i;
-	
-	for (i = from + 1; i < to; i++) {
-		kp = GOOFF(pgw,base->kstack[i]);
+	if (from != to) {
+		key* kp = GOOFF(pgw,base->kstack[from]);
+		uchar* dat = KDATA(kp);
+		uint i;
 		
-		st_insert(base->t, &ptr, dat, kp->offset >> 3);
+		for (i = from + 1; i < to; i++) {
+			kp = GOOFF(pgw,base->kstack[i]);
+			
+			st_insert(base->t, &ptr, dat, kp->offset >> 3);
+			
+			dat = KDATA(kp);
+		}
 		
-		dat = KDATA(kp);
+		// round up - make sure the last (diff'ed on) byte is there
+		st_insert(base->t, &ptr, dat, (offset + 7) >> 3);
 	}
-	
-	// round up - make sure the last (diff'ed on) byte is there
-	st_insert(base->t, &ptr, dat, (offset + 7) >> 3);
 	
 	return ptr;
 }

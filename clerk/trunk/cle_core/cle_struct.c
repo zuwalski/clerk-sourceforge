@@ -461,11 +461,20 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 	}
 	else if(rt.d_sub)
 	{
+		page* orig = rt.d_pg->pg;
+		key* k;
+		
 		_st_make_writable(&rt);
+		
+		// fix pointer
+		rt.d_sub = GOKEY(rt.d_pg,(char*)rt.d_sub - (char*)orig);
 
 		if(rt.d_prev)
 		{
-			key* k = GOOFF(rt.d_pg,rt.d_prev->next);
+			// fix pointer
+			rt.d_prev = GOKEY(rt.d_pg,(char*)rt.d_prev - (char*)orig);
+
+			k = GOOFF(rt.d_pg,rt.d_prev->next);
 			rt.d_prev->next = k->next;
 
 			if(k->offset == rt.d_sub->length)
@@ -473,7 +482,7 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length)
 		}
 		else
 		{
-			key* k = GOOFF(rt.d_pg,rt.d_sub->sub);
+			k = GOOFF(rt.d_pg,rt.d_sub->sub);
 			rt.d_sub->sub = k->next;
 
 			if(k->offset == rt.d_sub->length)

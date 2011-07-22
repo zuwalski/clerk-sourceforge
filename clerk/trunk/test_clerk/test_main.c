@@ -994,9 +994,26 @@ void test_tk_sync() {
 
 	tk_sync_to(t, &del_root, &ins_root);
 
-	st_prt_page(&ins_root);
-
 	ASSERT(st_exsist(t, &ins_root, t4, sizeof(t4)));
+
+	tk_commit_task(t);
+	
+	//  new task
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+	
+	st_delete(t, &root, t2, sizeof(t2));
+	
+	st_prt_page(&root);
+
+	st_empty(t, &ins_root);
+	st_empty(t, &del_root);
+	
+	tk_sync_to(t, &del_root, &ins_root);	
+	
+	st_prt_page(&del_root);
 
 	tk_drop_task(t);
 }
