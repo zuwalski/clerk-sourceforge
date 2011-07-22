@@ -547,7 +547,8 @@ static st_ptr _tk_trace_write(struct _tk_trace_base* base, page_wrap* pgw, st_pt
 		dat = KDATA(kp);
 	}
 	
-	st_insert(base->t, &ptr, dat, offset >> 3);
+	// round up - make sure the last (diff'ed on) byte is there
+	st_insert(base->t, &ptr, dat, (offset + 7) >> 3);
 	
 	return ptr;
 }
@@ -576,14 +577,15 @@ static void _tk_insert_trace(struct _tk_trace_base* base, page_wrap* pgw, struct
 	st_ptr root = _tk_trace(base, pgw, insert_tree, start_depth, offset);
 	
 	ushort pt = _tk_alloc_ptr(base->t, root.pg);
-	
+		
 	key* kp = GOOFF(root.pg,root.key);
 
 	ptr* ptrp = (ptr*) GOPTR(root.pg,pt);
 	
 	ptrp->pg = lpgw;
 	ptrp->koffset = lkey;
-	ptrp->offset = offset;
+	// the diff was on the last byte - adjust the offset
+	ptrp->offset = root.offset - (8 - (offset & 7));
 
 	ptrp->next = 0;
 	ptrp->ptr_id = PTR_ID;

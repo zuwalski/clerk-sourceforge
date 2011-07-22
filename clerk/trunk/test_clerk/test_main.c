@@ -967,6 +967,8 @@ void test_tk_sync() {
 	
 	tk_sync_to(t, &del_root, &ins_root);
 
+	st_prt_page(&ins_root);
+
 	ASSERT(st_exsist(t, &ins_root, t1, sizeof(t1)));
 	ASSERT(st_exsist(t, &ins_root, t2, sizeof(t2)));
 	ASSERT(st_exsist(t, &ins_root, t3, sizeof(t3)));
@@ -992,7 +994,7 @@ void test_tk_sync() {
 
 	tk_sync_to(t, &del_root, &ins_root);
 
-//	st_prt_page(&ins_root);
+	st_prt_page(&ins_root);
 
 	ASSERT(st_exsist(t, &ins_root, t4, sizeof(t4)));
 
