@@ -548,8 +548,7 @@ static st_ptr _tk_trace_write(struct _tk_trace_base* base, page_wrap* pgw, st_pt
 			dat = KDATA(kp);
 		}
 		
-		// round up - make sure the last (diff'ed on) byte is there
-		st_insert(base->t, &ptr, dat, (offset + 7) >> 3);
+		st_insert(base->t, &ptr, dat, offset >> 3);
 	}
 	
 	return ptr;
@@ -562,11 +561,9 @@ static st_ptr _tk_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trac
 		pt->ptr = *pt->base;
 		
 		while (lead != 0) {
-			if (lead->to > lead->from + 1) {
-				key* k = GOOFF(lead->pgw,base->kstack[lead->to]);
-				
-				pt->ptr = _tk_trace_write(base, lead->pgw, pt->ptr, lead->from, lead->to - 1, k->offset);
-			}
+			key* k = GOOFF(lead->pgw,base->kstack[lead->to]);
+			
+			pt->ptr = _tk_trace_write(base, lead->pgw, pt->ptr, lead->from, lead->to - 1, k->offset);
 			
 			lead = lead->next;
 		}
@@ -576,7 +573,8 @@ static st_ptr _tk_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trac
 }
 
 static void _tk_insert_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* insert_tree, uint start_depth, page_wrap* lpgw, ushort lkey, ushort offset) {
-	st_ptr root = _tk_trace(base, pgw, insert_tree, start_depth, offset);
+	// round up - make sure the last (diff'ed on) byte is there
+	st_ptr root = _tk_trace(base, pgw, insert_tree, start_depth, offset + 7);
 	
 	ushort pt = _tk_alloc_ptr(base->t, root.pg);
 		
@@ -649,37 +647,30 @@ static void _tk_trace_change(struct _tk_trace_base* base, page_wrap* pgw, struct
 				_tk_delete_trace(base, pgw, delete_tree, start_depth, kp->next, ok->next);
 			
 			if(ISPTR(kp) == 0){
+				// push content step
+				_tk_push_key(base, k);
+				
 				// changed sub
-				if(kp->sub != ok->sub)
+				if(kp->sub != ok->sub)	
 					_tk_delete_trace(base, pgw, delete_tree, start_depth, kp->sub, ok->sub);
 				
 				// shortend key
 				if(kp->length < ok->length) {
-					st_ptr root;
-					
-					_tk_push_key(base, k);
-					
-					root = _tk_trace(base, pgw, delete_tree, start_depth, kp->length);
+					st_ptr root = _tk_trace(base, pgw, delete_tree, start_depth, kp->length);
 					
 					st_insert(base->t, &root, KDATA(ok) + (kp->length >> 3), 1);
-
-					base->sused--;
 				}
 				// appended to
-				else if(kp->length > ok->length) {
-					_tk_push_key(base, k);
-					
-					_tk_trace(base, pgw, insert_tree, start_depth, kp->length);
-					
-					base->sused--;
-				}
-
+				else if(kp->length > ok->length)
+					_tk_trace(base, pgw, insert_tree, start_depth, kp->length + 7);
+				
 				if (kp->sub != 0) {
-					// push content step
-					_tk_push_key(base, k);
 					k = kp->sub;
+					// keep k on stack
 					continue;
 				}
+				
+				base->sused--;
 			}
 		}
 		
