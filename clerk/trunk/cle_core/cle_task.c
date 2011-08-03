@@ -974,8 +974,10 @@ static uint _tk_to_mem_ptr(task* t, page_wrap* pw, page_wrap* to, ushort k) {
 			
 			if (pt->koffset == 0 && pt->pg == to->pg->id) {
 				// is it writable? Make sure
-				if (pw->orig == 0)
+				if (pw->orig == 0) {
 					_tk_write_copy(t, pw);
+					pt = (ptr*) GOOFF(pw,k);
+				}
 				
 				pt->koffset = sizeof(page);
 				pt->pg = to;

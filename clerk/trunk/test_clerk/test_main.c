@@ -658,6 +658,7 @@ void test_task_c_2()
 
 	st_ptr root,tmp;
 	task* t;
+	it_ptr it;
 	int i;
 	uchar keystore[100];
 
@@ -683,11 +684,17 @@ void test_task_c_2()
 		st_insert(t,&tmp,(cdat)keystore,sizeof(keystore));
 	}
 
+	stop = clock();
+
+	printf("1-commit insert-time %d\n",stop - start);
+
+	start = clock();
+
 	tk_commit_task(t);
 
 	stop = clock();
 
-	printf("1-commit Time %d\n",stop - start);
+	printf("1-commit commit-time %d\n",stop - start);
 
 	t = tk_create_task(psource,pdata);
 
@@ -703,12 +710,12 @@ void test_task_c_2()
 	}
 	stop = clock();
 
+	printf("1-commit Validate time %d\n",stop - start);
+	
 	st_prt_distribution(&root,t);
 	
 	tk_drop_task(t);
 	//tk_commit_task(t);
-
-	printf("1-commit Validate time %d\n",stop - start);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
@@ -740,7 +747,24 @@ void test_task_c_2()
 	tk_root_ptr(t,&root);
 	
 	tk_ref_ptr(&root);
+	
+	start = clock();
 
+		it_create(t, &it, &root);
+		i = 0;
+		
+		while (it_next(t, 0, &it, sizeof(keystore))) {
+			i++;
+		}
+		
+		it_dispose(t, &it);
+		
+		ASSERT(HIGH_ITERATION_COUNT == i);
+
+	stop = clock();
+	
+	printf("Multi-commit Time validate (iterate) %d\n",stop - start);
+	
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
