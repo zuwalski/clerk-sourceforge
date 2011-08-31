@@ -660,6 +660,7 @@ void test_task_c_2()
 	task* t;
 	it_ptr it;
 	int i;
+//	uchar keystore[1000];
 	uchar keystore[100];
 
 	cle_pagesource* psource = &util_memory_pager;
@@ -702,6 +703,21 @@ void test_task_c_2()
 	tk_root_ptr(t,&root);
 	
 	tk_ref_ptr(&root);
+	
+	start = clock();
+	
+	it_create(t, &it, &root);
+	
+	for (i = 0; it_next(t, 0, &it, sizeof(keystore)); i++)
+		;
+	
+	it_dispose(t, &it);
+	
+	ASSERT(HIGH_ITERATION_COUNT == i);
+	
+	stop = clock();
+	
+	printf("1-commit Time validate (iterate) %d\n",stop - start);
 
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
@@ -749,18 +765,16 @@ void test_task_c_2()
 	tk_ref_ptr(&root);
 	
 	start = clock();
-
-		it_create(t, &it, &root);
-		i = 0;
-		
-		while (it_next(t, 0, &it, sizeof(keystore))) {
-			i++;
-		}
-		
-		it_dispose(t, &it);
-		
-		ASSERT(HIGH_ITERATION_COUNT == i);
-
+	
+	it_create(t, &it, &root);
+	
+	for (i = 0; it_next(t, 0, &it, sizeof(keystore)); i++)
+		;
+	
+	it_dispose(t, &it);
+	
+	ASSERT(HIGH_ITERATION_COUNT == i);
+	
 	stop = clock();
 	
 	printf("Multi-commit Time validate (iterate) %d\n",stop - start);
@@ -963,6 +977,7 @@ void test_tk_sync() {
 	st_ptr root,tmp,ins_root,del_root;
 	task* t;
 	
+	unsigned char big[PAGE_SIZE * 2];
 	const unsigned char t1[] = "abc";
 	const unsigned char t2[] = "abad";
 	const unsigned char t3[] = "abcd";
@@ -991,7 +1006,7 @@ void test_tk_sync() {
 	
 	tk_sync_to(t, &del_root, &ins_root);
 
-	st_prt_page(&ins_root);
+	//st_prt_page(&ins_root);
 
 	ASSERT(st_exsist(t, &ins_root, t1, sizeof(t1)));
 	ASSERT(st_exsist(t, &ins_root, t2, sizeof(t2)));
@@ -1028,17 +1043,55 @@ void test_tk_sync() {
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 	
+	ASSERT(st_exsist(t, &root, t4, sizeof(t4)));
+	
 	st_delete(t, &root, t2, sizeof(t2));
 	
-	st_prt_page(&root);
-
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 	
 	tk_sync_to(t, &del_root, &ins_root);	
-	
-	st_prt_page(&del_root);
+		
+	ASSERT(st_exsist(t, &del_root, t2, 3));
 
+	st_delete(t, &root, t1, sizeof(t1));
+
+	tk_sync_to(t, &del_root, &ins_root);
+
+	ASSERT(st_exsist(t, &del_root, t1, sizeof(t1)));
+	ASSERT(st_exsist(t, &root, t1, sizeof(t1)) == 0);
+	ASSERT(st_exsist(t, &root, t4, sizeof(t4)));
+	ASSERT(st_exsist(t, &root, t3, sizeof(t3)));
+	
+	memcmp(big, "1234", 4);
+	
+	tmp = root;
+	st_insert(t, &tmp, big, sizeof(big));
+	
+	tk_commit_task(t);
+	
+	//  new task
+	t = tk_create_task(psource,pdata);
+	
+	// set pagesource-root
+	tk_root_ptr(t,&root);
+	
+	tmp = root;
+	ASSERT(st_move(t, &tmp, big, sizeof(big)) == 0);
+
+	st_insert(t, &tmp, t1, sizeof(t1));
+	
+	st_empty(t, &ins_root);
+	st_empty(t, &del_root);
+
+	tk_sync_to(t, &del_root, &ins_root);
+	
+	//st_prt_page(&ins_root);
+	
+	tmp = ins_root;
+	ASSERT(st_move(t, &tmp, big, sizeof(big)) == 0);
+	ASSERT(st_exsist(t, &tmp, t1, sizeof(t1)));
+	
 	tk_drop_task(t);
 }
 

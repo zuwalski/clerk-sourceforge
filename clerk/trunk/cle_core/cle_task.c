@@ -508,7 +508,7 @@ static void _tk_base_reset(struct _tk_trace_base* base){
 	}
 }
 
-static struct _tk_trace_page_hub* _tk_new_hub(struct _tk_trace_base* base, page_wrap* pgw, uint start_depth) {
+static struct _tk_trace_page_hub* _tk_new_hub(struct _tk_trace_base* base, page_wrap* pgw, uint from, uint to) {
 	struct _tk_trace_page_hub* r;
 	if (base->free != 0) {
 		r = base->free;
@@ -519,8 +519,8 @@ static struct _tk_trace_page_hub* _tk_new_hub(struct _tk_trace_base* base, page_
 	
 	r->next = 0;
 	r->pgw = pgw;
-	r->to = base->sused;
-	r->from = start_depth;
+	r->from = from;
+	r->to = to;
 	
 	return r;
 }
@@ -563,7 +563,7 @@ static st_ptr _tk_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trac
 		while (lead != 0) {
 			key* k = GOOFF(lead->pgw,base->kstack[lead->to]);
 			
-			pt->ptr = _tk_trace_write(base, lead->pgw, pt->ptr, lead->from, lead->to - 1, k->offset);
+			pt->ptr = _tk_trace_write(base, lead->pgw, pt->ptr, lead->from, lead->to, k->offset);
 			
 			lead = lead->next;
 		}
@@ -702,19 +702,20 @@ static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base
 			ptr* pt = (ptr*)kp;
 			if (pt->koffset == 0 && pt->pg == find->pg->id) {
 				struct _tk_trace_page_hub* h;
+				const uint to = base->sused + 1;
 				
 				_tk_push_key(base, k);
 				
-				if (find->parent != 0) {
-					struct _tk_trace_page_hub* r = _tk_trace_page_ptr(base, find, find->parent);
+				if (pgw->parent != 0) {
+					struct _tk_trace_page_hub* r = _tk_trace_page_ptr(base, pgw->parent, pgw);
 					if(r == 0)
 						return 0;
 					
-					h = _tk_new_hub(base, pgw, start_depth);
+					h = _tk_new_hub(base, pgw, start_depth, to);
 					r->next = h;
 				} 
 				else {
-					h = _tk_new_hub(base, pgw, start_depth);
+					h = _tk_new_hub(base, pgw, start_depth, to);
 					base->chain = h;
 				}
 				
@@ -845,6 +846,29 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 	}
 }
 
+static void _tk_release_after_compact(task* t, page_wrap* pw, ushort next) {
+	while (next != 0) {
+		key* k = GOOFF(pw,next);
+		// trace to end-of-next's
+		if (k->next != 0)
+			_tk_release_after_compact(t, pw, k->next);
+		
+		if (ISPTR(k)) // pointer
+		{
+			ptr* pt = (ptr*) k;
+			if (pt->koffset != 0) {
+				page_wrap* npw = pt->pg;
+				if (npw->orig == 0)
+					tk_unref(t, npw);
+			}
+			
+			return;
+		}
+		
+		next = k->sub;
+	}
+}
+
 static ushort _tk_link_and_create_page(struct _tk_setup* setup, page_wrap* pw, int ptr_offset) {
 	// first: create a link to new page
 	ptr* pt;
@@ -913,12 +937,14 @@ static uint _tk_cut_key(struct _tk_setup* setup, page_wrap* pw, key* copy, key* 
 	setup->o_pt = setup->l_pt = 0;
 	_tk_compact_copy(setup, pw, root, &root->sub, (prev != 0) ? prev->next : copy->sub, -(cut_adj & 0xFFF8));
 
+//	_tk_release_after_compact(setup->t, pw, (prev != 0) ? prev->next : copy->sub);
+	
 	// link ext-pointer to new page
 	if (prev != 0)
 		prev->next = _tk_link_and_create_page(setup, pw, cut_adj);
 	else
 		copy->sub = _tk_link_and_create_page(setup, pw, cut_adj);
-
+	
 	return (sizeof(ptr) * 8);
 }
 
