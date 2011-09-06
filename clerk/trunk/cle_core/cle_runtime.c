@@ -680,32 +680,6 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	sp->type = STACK_PTR;
 }
 
-// add identity to fun-args
-static int _rt_collection_do_objects(struct _rt_invocation* inv, struct _rt_stack* sp, uint params, int(*coll_fun)(cle_instance, st_ptr, st_ptr))
-{
-	if(sp[params].type == STACK_OBJ)
-		;	// try invoke add/remove/in on object
-	else if(sp[params].type != STACK_COLLECTION)
-		_rt_error(inv,__LINE__);
-	else
-	{
-		st_ptr coll = sp[params].ptr;
-
-		while(params-- != 0)
-		{
-			if(sp[params].type != STACK_OBJ)
-			{
-				_rt_error(inv,__LINE__);
-				break;
-			}
-
-			if(coll_fun(inv->hdl->inst,coll,sp[params].obj))
-				return 1;
-		}
-	}
-	return 0;
-}
-
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
@@ -900,32 +874,6 @@ static void _rt_run(struct _rt_invocation* inv)
 			}
 			else
 				_rt_error(inv,__LINE__);
-			break;
-
-		case OP_CADD:
-			tmp = *inv->top->pc++;
-			if(inv->top->is_expr)
-				_rt_error(inv,__LINE__);
-			else if(_rt_collection_do_objects(inv,sp,tmp,cle_collection_add_object))
-				_rt_error(inv,__LINE__);
-			sp += tmp;
-			break;
-		case OP_CREMOVE:
-			tmp = *inv->top->pc++;
-			if(inv->top->is_expr)
-				_rt_error(inv,__LINE__);
-			else if(_rt_collection_do_objects(inv,sp,tmp,cle_collection_remove_object))
-				_rt_error(inv,__LINE__);
-			sp += tmp;
-			break;
-		case OP_CIN:
-			tmp = *inv->top->pc++;
-			{
-				int res = _rt_collection_do_objects(inv,sp,tmp,cle_collection_test_object);
-				sp += tmp;
-				sp->type = STACK_NUM;
-				sp->num = (res == 0);
-			}
 			break;
 
 		case OP_IT:

@@ -80,7 +80,7 @@ cle_handler;
 typedef struct
 {
 	identity id;
-	uchar    type;
+	uchar type;
 }
 cle_typed_identity;
 
@@ -88,7 +88,6 @@ typedef struct
 {
 	task*  t;
 	st_ptr root;
-	st_ptr commit;
 }
 cle_instance;
 
@@ -140,8 +139,6 @@ int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, iden
 
 int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
-int cle_create_handler(cle_instance inst, st_ptr obj, st_ptr eventname, st_ptr expr, ptr_list* states, cle_pipe* response, void* data, handler_type type);
-
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler);
 
 int cle_get_property_host(cle_instance inst, st_ptr* obj, cdat str, uint length);
@@ -169,12 +166,6 @@ int cle_set_property_num(cle_instance inst, st_ptr obj, identity id, double dbl)
 enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity id);
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
-
-int cle_collection_add_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
-
-int cle_collection_remove_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
-
-int cle_collection_test_object(cle_instance inst, st_ptr obj, identity id, st_ptr ref);
 
 int cle_commit(cle_instance inst);
 

@@ -29,34 +29,10 @@
 #include <string.h>
 #include "test.h"
 
-void heap_check()
-{
-/*
-int heapstatus = _heapchk();
-   switch( heapstatus )
-   {
-   case _HEAPOK:
-      printf(" OK - heap is fine\n" );
-      break;
-   case _HEAPEMPTY:
-      printf(" OK - heap is empty\n" );
-      break;
-   case _HEAPBADBEGIN:
-      printf( "ERROR - bad start of heap\n" );
-      break;
-   case _HEAPBADNODE:
-      printf( "ERROR - bad node in heap\n" );
-      break;
-   default:
-      printf( "ERROR - other\n" );
-   }
-*/
-}
 
 void cle_panic(task* t)
 {
 	puts("failed in cle_panic in test_main.c");
-	heap_check();
 	getchar();
 	exit(-1);
 }
@@ -1160,30 +1136,21 @@ void test_st_trace()
 
 int main(int argc, char* argv[])
 {
+	test_instance_c();
+
 	test_tk_sync();
-	
 	
 	test_task_c_3();
 
 	time_struct_c();
 
-	heap_check();
-
 	test_st_trace();
 
-	heap_check();
-
 	test_iterate_c();
-
-	heap_check();
-
+	
 	test_iterate_fixedlength();
 
-	heap_check();
-
 	test_task_c();
-
-	heap_check();
 
 	test_task_c_2();
 
@@ -1191,21 +1158,12 @@ int main(int argc, char* argv[])
 	getchar();
 	exit(0);
 
-	heap_check();
-
 	test_compile_c();
 
-	test_instance_c();
-
-	heap_check();
 
 	test_task_c_filepager();
 
-	heap_check();
-
 	test_stream_c();
-
-	heap_check();
 
 
 	// test

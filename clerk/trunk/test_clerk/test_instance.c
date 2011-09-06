@@ -16,11 +16,9 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include "test.h"
-#include "../cle_core/cle_stream.h"
 #include "../cle_core/cle_object.h"
 #include <stdio.h>
-#include <memory.h>
-#include <time.h>
+#include <string.h>
 
 // objects
 const char objone[] = "object\0one";
@@ -72,39 +70,39 @@ void test_instance_c()
 
 	ASSERT(cle_new(inst,name,empty,&object1) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object1) != 0);
+	ASSERT(cle_goto_object(inst,name,&object1) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 
 	ASSERT(cle_new(inst,name,object1,&object2) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object2) != 0);
+	ASSERT(cle_goto_object(inst,name,&object2) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 
 	ASSERT(cle_new(inst,name,object2,&object3) == 0);
 
-	ASSERT(cle_goto_object(inst,name,&object3) != 0);
+	ASSERT(cle_goto_object(inst,name,&object3) == 0);
 
 	pt = name;
 	st_update(t,&pt,objone,sizeof(objone));
-	ASSERT(cle_goto_object(inst,name,&object) != 0);
+	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid(inst,object1,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
-	ASSERT(cle_goto_object(inst,name,&object) != 0);
+	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid(inst,object2,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
-	ASSERT(cle_goto_object(inst,name,&object) != 0);
+	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid(inst,object3,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaad",13) == 0);
@@ -144,28 +142,6 @@ void test_instance_c()
 
 	list.link = 0;
 	list.pt = name;
-
-	// the event
-	st_empty(t,&eventname);
-	pt = eventname;
-	st_insert(t,&pt,testevent,sizeof(testevent));
-
-	// method body
-	st_empty(t,&meth);
-	pt = meth;
-	st_insert(t,&pt,testmeth,sizeof(testmeth) - 1);
-
-	// sync-handler for start-state
-	ASSERT(cle_create_handler(inst,object2,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
-
-	// sync-handler for state1
-	// set state 
-	pt = name;
-	st_update(t,&pt,state1,sizeof(state2));
-
-	list.pt = name;
-
-	ASSERT(cle_create_handler(inst,object1,eventname,meth,&list,&_test_pipe_stdout,0,SYNC_REQUEST_HANDLER) == 0);
 
 	// PROPERTIES
 
@@ -233,7 +209,7 @@ void test_instance_c()
 	
 	// make object persistent by ass. to object1
 
-	ASSERT(cle_set_property_ref(inst,object1,id1.id,object) == 0);
+/*	ASSERT(cle_set_property_ref(inst,object1,id1.id,object) == 0);
 
 	ASSERT(cle_get_oid(inst,mobj1,&oidstr) == 0);
 
@@ -245,33 +221,7 @@ void test_instance_c()
 
 	// same id - but not same ptr
 	ASSERT(memcmp(&oidstr,&oidstr2,sizeof(oidstr)) == 0);
-
-	// COLLECTIONS
-	{
-		// can not override other types with collection
-		ASSERT(cle_collection_add_object(inst,object1,id1.id,object1));
-
-		st_empty(t,&propname);
-		pt = propname;
-		st_update(t,&pt,(cdat)propColl,sizeof(propColl));
-
-		ASSERT(cle_create_property(inst,object1,propname,&id2.id) == 0);
-
-		ASSERT(cle_collection_add_object(inst,object1,id2.id,object1) == 0);
-		ASSERT(cle_collection_add_object(inst,object1,id2.id,object2) == 0);
-
-		// are they in
-		ASSERT(cle_collection_test_object(inst,object1,id2.id,object1));
-		ASSERT(cle_collection_test_object(inst,object1,id2.id,object2));
-		// object3 not in
-		ASSERT(cle_collection_test_object(inst,object1,id2.id,object3) == 0);
-
-		// delete 2
-		ASSERT(cle_collection_remove_object(inst,object1,id2.id,object2) == 0);
-
-		ASSERT(cle_collection_test_object(inst,object1,id2.id,object1));
-		ASSERT(cle_collection_test_object(inst,object1,id2.id,object2) == 0);
-	}
+*/
 
 	// EXPRS
 	pt = name;
