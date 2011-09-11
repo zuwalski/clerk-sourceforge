@@ -227,6 +227,10 @@ void test_instance_c()
 	pt = name;
 	st_update(t,&pt,exprpath,sizeof(exprpath));
 
+	st_empty(t, &meth);
+	pt = meth;
+	st_update(t,&pt,testmeth,sizeof(testmeth));
+
 	ASSERT(cle_create_expr(inst,object1,name,meth,&_test_pipe_stdout,0) == 0);
 
 	tk_drop_task(t);

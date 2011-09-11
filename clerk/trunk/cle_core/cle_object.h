@@ -54,6 +54,16 @@ enum property_type
 	TYPE_DEPENDENCY
 };
 
+enum fixed_identities
+{
+	SYS_NAMES = 0,
+	SYS_DEV,
+	SYS_STATE,
+	F_INIT,
+	F_TOSTRING,
+	F_HANDLER
+};
+
 #define OID_HIGH_SIZE 4
 typedef struct
 {
@@ -115,11 +125,15 @@ typedef enum handler_type
 }
 handler_type;
 
+int cle_scan_validate(task* t, st_ptr* from, int(*fun)(void*, uchar*, uint), void* ctx);
+
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
 
 void cle_new_mem(task* app_instance, st_ptr extends, st_ptr* newobj);
 
 int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj);
+
+int cle_goto_id(cle_instance inst, st_ptr* obj, oid id);
 
 int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj);
 
