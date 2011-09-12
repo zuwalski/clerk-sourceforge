@@ -61,7 +61,11 @@ enum fixed_identities
 	SYS_STATE,
 	F_INIT,
 	F_TOSTRING,
-	F_HANDLER
+	F_SYNC_HANDLER,
+	F_ASYNC_HANDLER,
+	F_FRAG_HANDLER,
+	F_RESP_HANDLER,
+	F_REQ_HANDLER
 };
 
 #define OID_HIGH_SIZE 4
@@ -161,7 +165,7 @@ int cle_get_property_host_st(cle_instance inst, st_ptr* obj, st_ptr propname);
 
 int cle_probe_identity(cle_instance inst, st_ptr* reader, cle_typed_identity* id);
 
-int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value);
+int cle_identity_value(cle_instance inst, identity id, st_ptr obj, st_ptr* value);
 
 int cle_get_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr* ref);
 

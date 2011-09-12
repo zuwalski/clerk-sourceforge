@@ -325,6 +325,10 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj) {
 	return 0;
 }
 
+int cle_goto_id(cle_instance inst, st_ptr* obj, oid id) {
+	return _goto_id(inst, obj, id);
+}
+
 int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj) {
 	st_ptr tname = name;
 	oid id;
@@ -361,26 +365,27 @@ int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj) {
 
 	return _goto_id(inst, obj, id);
 }
-
-int cle_goto_id(cle_instance inst, st_ptr* obj, oid id) {
-	return _goto_id(inst, obj, id);
-}
 				
 int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj) {
 	oid id;
+	char* boid = (char*) &id;
+	int i;
+	
+	if (length != sizeof(oid) * 2)
+		return 1;
+	
+	for (i = 0; i < length; i++) {
+		int val = name[i] - 'a';
+		if (val < 0 || (val & 0xF0))
+			return __LINE__;
+		
+		if (i & 1)
+			boid[i >> 1] |= val;
+		else
+			boid[i >> 1] = val << 4;
+	}
+	
 	*obj = inst.root;
-	if (st_move(inst.t, obj, HEAD_NAMES, IHEAD_SIZE) != 0)
-		return __LINE__;
-
-	if (st_move(inst.t, obj, name, length) != 0)
-		return __LINE__;
-
-	if (st_move(inst.t, obj, HEAD_OBJECTS, HEAD_SIZE) != 0)
-		return __LINE__;
-
-	if (st_get(inst.t, obj, (char*) &id, sizeof(oid)) != -1)
-		return __LINE__;
-
 	return _goto_id(inst, obj, id);
 }
 
@@ -684,9 +689,9 @@ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle
 	}
 }
 
-int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* value) {
+int cle_identity_value(cle_instance inst, identity id, st_ptr obj, st_ptr* value) {
 	do {
-		st_ptr pt = *obj;
+		st_ptr pt = obj;
 
 		if (st_offset(inst.t, &pt, sizeof(objectheader2)) != 0)
 			break;
@@ -695,7 +700,7 @@ int cle_identity_value(cle_instance inst, identity id, st_ptr* obj, st_ptr* valu
 			*value = pt;
 			return 0;
 		}
-	} while (cle_goto_parent(inst, obj) == 0);
+	} while (cle_goto_parent(inst, &obj) == 0);
 
 	return __LINE__;
 }
@@ -787,7 +792,7 @@ int cle_set_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr ref)
 }
 
 int cle_get_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr* ref) {
-	if (cle_identity_value(inst, id, &obj, ref))
+	if (cle_identity_value(inst, id, obj, ref))
 		return 1;
 
 	return cle_get_property_ref_value(inst, *ref, ref);
@@ -821,7 +826,7 @@ int cle_set_property_num(cle_instance inst, st_ptr obj, identity id, double dbl)
 int cle_get_property_num(cle_instance inst, st_ptr obj, identity id, double* dbl) {
 	st_ptr prop;
 
-	if (cle_identity_value(inst, id, &obj, &prop))
+	if (cle_identity_value(inst, id, obj, &prop))
 		return 1;
 
 	return cle_get_property_num_value(inst, prop, dbl);
@@ -836,7 +841,7 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity
 	st_ptr prop;
 	struct _head _head;
 
-	if (cle_identity_value(inst, id, &obj, &prop))
+	if (cle_identity_value(inst, id, obj, &prop))
 		return TYPE_ILLEGAL;
 
 	if (st_get(inst.t, &prop, (char*) &_head, sizeof(_head)) != -2 || _head.zero != 0)

@@ -240,7 +240,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
 	case TYPE_METHOD:
-		if(cle_identity_value(inv->hdl->inst,id.id,&top.obj,&top.ptr))
+		if(cle_identity_value(inv->hdl->inst,id.id,top.obj,&top.ptr))
 			return;
 
 		(*sp)->code = _rt_load_code(inv,top.ptr);
@@ -248,7 +248,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		(*sp)->type = STACK_CODE;
 		break;
 	case TYPE_EXPR:
-		if(cle_identity_value(inv->hdl->inst,id.id,&top.obj,&top.ptr))
+		if(cle_identity_value(inv->hdl->inst,id.id,top.obj,&top.ptr))
 			return;
 
 		inv->top = _rt_newcall(inv,_rt_load_code(inv,top.ptr),&(*sp)->obj,1);
@@ -264,7 +264,7 @@ static void _rt_get(struct _rt_invocation* inv, struct _rt_stack** sp)
 		if(top.obj.pg != inv->top->object.pg || top.obj.key != inv->top->object.key)
 			return;
 
-		if(cle_identity_value(inv->hdl->inst,id.id,&top.obj,&top.ptr))
+		if(cle_identity_value(inv->hdl->inst,id.id,top.obj,&top.ptr))
 			return;
 
 		// TODO: try context-lookup
@@ -305,7 +305,7 @@ static uint _rt_move(struct _rt_invocation* inv, struct _rt_stack** sp, cdat mv,
 			return _rt_error(inv,__LINE__);
 		break;
 	case STACK_PROP:
-		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,&(*sp)->prop_obj,&(*sp)->ptr))
+		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,(*sp)->prop_obj,&(*sp)->ptr))
 			return _rt_error(inv,__LINE__);
 
 		if(st_move(inv->t,&(*sp)->ptr,mv,length) == 0)
@@ -343,7 +343,7 @@ static uint _rt_move_st(struct _rt_invocation* inv, struct _rt_stack** sp, st_pt
 			return _rt_error(inv,__LINE__);
 		break;
 	case STACK_PROP:
-		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,&(*sp)->prop_obj,&(*sp)->ptr))
+		if(cle_identity_value(inv->hdl->inst,(*sp)->prop_id,(*sp)->prop_obj,&(*sp)->ptr))
 			return _rt_error(inv,__LINE__);
 
 		if(st_move_st(inv->t,&(*sp)->ptr,mv) == 0)
@@ -424,7 +424,7 @@ static uint _rt_prop_out(struct _rt_invocation* inv, struct _rt_stack** sp, stru
 	struct _rt_stack value;
 	rt_number num;
 
-	if(cle_identity_value(inv->hdl->inst,from->prop_id,&from->prop_obj,&value.single_ptr))
+	if(cle_identity_value(inv->hdl->inst,from->prop_id,from->prop_obj,&value.single_ptr))
 		return _rt_error(inv,__LINE__);
 
 	switch(cle_get_property_type_value(inv->hdl->inst,value.single_ptr))
@@ -440,7 +440,7 @@ static uint _rt_prop_out(struct _rt_invocation* inv, struct _rt_stack** sp, stru
 	case TYPE_REF_MEM:
 		if(cle_get_property_ref_value(inv->hdl->inst,value.single_ptr,&value.obj))
 			return _rt_error(inv,__LINE__);
-		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&value.obj,&value.ptr) == 0)
+		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,value.obj,&value.ptr) == 0)
 			*sp = _rt_eval_expr(inv,to,&value);
 		break;
 	case TYPE_COLLECTION:
@@ -463,7 +463,7 @@ static uint _rt_out(struct _rt_invocation* inv, struct _rt_stack** sp, struct _r
 		_rt_num_out(inv,to,from->num);
 		break;
 	case STACK_OBJ:
-		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,&from->obj,&from->ptr) == 0)
+		if(cle_identity_value(inv->hdl->inst,F_TOSTRING,from->obj,&from->ptr) == 0)
 			*sp = _rt_eval_expr(inv,to,from);
 		break;	// no "tostring" expr? output nothing
 	case STACK_CODE:
@@ -635,7 +635,7 @@ static uint _rt_new_obj(struct _rt_invocation* inv, struct _rt_stack* sp)
 {
 	cle_new_mem(inv->t,sp->obj,&sp->obj);
 
-	if(cle_identity_value(inv->hdl->inst,F_INIT,&sp->obj,&sp->ptr) == 0)
+	if(cle_identity_value(inv->hdl->inst,F_INIT,sp->obj,&sp->ptr) == 0)
 		sp->code = _rt_load_code(inv,sp->ptr);
 	else
 		sp->code = &_empty_method;
@@ -835,7 +835,8 @@ static void _rt_run(struct _rt_invocation* inv)
 			tmp = *((ushort*)inv->top->pc);
 			inv->top->pc += sizeof(ushort);
 			sp--;
-			if(cle_goto_object_cdat(inv->hdl->inst,inv->top->pc,tmp,&sp->obj))
+//			if(cle_goto_object_cdat(inv->hdl->inst,inv->top->pc,tmp,&sp->obj))
+				if (1)
 				_rt_error(inv,__LINE__);
 			else
 			{
@@ -1116,7 +1117,7 @@ static void _rt_run(struct _rt_invocation* inv)
 				switch(sp->type)
 				{
 				case STACK_PROP:
-					if(cle_identity_value(inv->hdl->inst,sp->prop_id,&sp->prop_obj,&sp->ptr))
+					if(cle_identity_value(inv->hdl->inst,sp->prop_id,sp->prop_obj,&sp->ptr))
 						_rt_error(inv,__LINE__);
 					if(cle_set_property_ptr(inv->hdl->inst,sp[1].prop_obj,sp[1].prop_id,&sp[1].ptr))
 						_rt_error(inv,__LINE__);

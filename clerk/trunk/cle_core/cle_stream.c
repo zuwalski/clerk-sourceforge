@@ -407,7 +407,10 @@ struct _scanner_ctx {
 	st_ptr user_roles;
 	st_ptr evt;
 	st_ptr sys;
-	uint allowed;
+	st_ptr obj;
+	st_ptr end;
+	ushort allowed;
+	ushort state;
 };
 
 static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
@@ -415,6 +418,8 @@ static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 
 	if (pt.pg == 0 || st_move(ctx->inst.t, &pt, HEAD_OBJECTS, HEAD_SIZE))
 		return;
+	
+	ctx->end = pt;
 	
 	it_create(ctx->inst.t, &it, &pt);
 	
@@ -424,8 +429,19 @@ static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 		if (it.kused != sizeof(oid) || cle_goto_id(ctx->inst, &obj, *((oid*)it.kdata)))
 			cle_panic(ctx->inst.t);
 		
-		if (cle_identity_value(ctx->inst, F_HANDLER, &obj, &handler) == 0) {
-			// query annotation for type of handler
+		if (cle_identity_value(ctx->inst, F_SYNC_HANDLER, obj, &handler) == 0) {
+		}
+
+		if (cle_identity_value(ctx->inst, F_ASYNC_HANDLER, obj, &handler) == 0) {
+		}
+		
+		if (cle_identity_value(ctx->inst, F_FRAG_HANDLER, obj, &handler) == 0) {
+		}
+		
+		if (cle_identity_value(ctx->inst, F_RESP_HANDLER, obj, &handler) == 0) {
+		}
+
+		if (cle_identity_value(ctx->inst, F_REQ_HANDLER, obj, &handler) == 0) {
 		}
 	}
 	
@@ -448,7 +464,7 @@ static void _reg_syshandlers(struct _scanner_ctx* ctx, st_ptr pt) {
 	} while (syshdl = syshdl->next_handler);
 }
 
-static uint _check_access(task* t, st_ptr allow, st_ptr roles) {
+static ushort _check_access(task* t, st_ptr allow, st_ptr roles) {
 	it_ptr aitr, ritr;
 	uint ret;
 	
@@ -489,28 +505,50 @@ static void _check_boundry(struct _scanner_ctx* ctx) {
 
 static int _scanner(void* p, uchar* buffer, uint len) {
 	struct _scanner_ctx* ctx = (struct _scanner_ctx*) p;
-
-	if (ctx->evt.pg != 0 && st_move(ctx->inst.t, &ctx->evt, buffer, len)) {
-		ctx->evt.pg = 0;
-
-		// not found! scan end (or no possible grants)
-		if (ctx->sys.pg == 0 || ctx->allowed == 0)
-			return 1;
-	}
-
-	if (ctx->sys.pg != 0 && st_move(ctx->inst.t, &ctx->sys, buffer, len)) {
-		ctx->sys.pg = 0;
-
-		// not found! scan end
-		if (ctx->evt.pg == 0)
-			return 1;
-	}
-
+	
 	st_insert(ctx->inst.t, &ctx->event_name, buffer, len);
-
-	if (buffer[len - 1] == 0)
-		_check_boundry(ctx);
-
+	
+	if (ctx->state == 0) {
+		if (buffer[len - 1] == '@') {
+			buffer[len - 1] = 0;
+			ctx->state = 1;
+		}
+		
+		if (ctx->evt.pg != 0 && st_move(ctx->inst.t, &ctx->evt, buffer, len)) {
+			ctx->evt.pg = 0;
+			
+			// not found! scan end (or no possible grants)
+			if (ctx->sys.pg == 0 || ctx->allowed == 0)
+				return 1;
+		}
+		
+		if (ctx->sys.pg != 0 && st_move(ctx->inst.t, &ctx->sys, buffer, len)) {
+			ctx->sys.pg = 0;
+			
+			// not found! scan end
+			if (ctx->evt.pg == 0)
+				return 1;
+		}
+				
+		if (buffer[len - 1] == 0)
+			_check_boundry(ctx);
+		
+	} else if (ctx->state & 1) {
+		if (ctx->allowed == 0)
+			return 1;
+		
+		if (cle_goto_object_cdat(ctx->inst, buffer, len, &ctx->obj))
+			return 1;
+		
+		ctx->state = 2;
+	} else if (ctx->state & 2) {
+		if (buffer[len - 1] != 0 && cle_get_property_host(ctx->inst, &ctx->end, buffer, len))
+			return 1;
+		
+		ctx->state = 4;
+	} else
+		return st_move(ctx->inst.t, &ctx->end, buffer, len);
+	
 	return 0;
 }
 
