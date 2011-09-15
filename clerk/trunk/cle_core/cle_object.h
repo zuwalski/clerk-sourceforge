@@ -37,6 +37,7 @@
 
 #define HEAD_HANDLER ((cdat)"\0h")
 #define HEAD_ROLES ((cdat)"\0r")
+#define HEAD_LINK ((cdat)"\0l")
 
 // properties
 enum property_type 
@@ -61,11 +62,7 @@ enum fixed_identities
 	SYS_STATE,
 	F_INIT,
 	F_TOSTRING,
-	F_SYNC_HANDLER,
-	F_ASYNC_HANDLER,
-	F_FRAG_HANDLER,
-	F_RESP_HANDLER,
-	F_REQ_HANDLER
+	F_MSG_HANDLER
 };
 
 #define OID_HIGH_SIZE 4

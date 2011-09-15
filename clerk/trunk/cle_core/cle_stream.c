@@ -218,21 +218,6 @@ cle_syshandler cle_create_simple_handler(void(*start)(void*), void(*next)(void*)
 	return hdl;
 }
 
-static void _register_handler(task* app_instance, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type) {
-	event_handler* hdl = (event_handler*) tk_alloc(app_instance, sizeof(struct event_handler), 0);
-
-	hdl->next = hdlists[type];
-	hdlists[type] = hdl;
-	hdl->thehandler = syshandler;
-	hdl->object = *object;
-	hdl->handler_data = 0;
-
-	if (handler == 0)
-		hdl->handler.pg = 0;
-	else
-		hdl->handler = *handler;
-}
-
 /* system event-handler setup */
 void cle_add_sys_handler(task* config_task, st_ptr config_root, cdat eventmask, uint mask_length, cle_syshandler* handler) {
 	cle_syshandler* exsisting;
@@ -402,6 +387,7 @@ static cle_syshandler _sync_chain_handler = { 0, { _sync_start, _sync_next, _syn
 #define _error(txt) response->end(responsedata,txt,sizeof(txt))
 
 struct _scanner_ctx {
+	event_handler* hdlists[5];
 	cle_instance inst;
 	st_ptr event_name;
 	st_ptr user_roles;
@@ -413,38 +399,44 @@ struct _scanner_ctx {
 	ushort state;
 };
 
+static st_ptr empty = { 0, 0, 0 };
+
+static void _register_handler(task* t, event_handler** hdlists, cle_syshandler* syshandler, st_ptr* handler, st_ptr* object, enum handler_type type) {
+	event_handler* hdl = (event_handler*) tk_alloc(t, sizeof(struct event_handler), 0);
+
+	hdl->next = hdlists[type];
+	hdlists[type] = hdl;
+	hdl->thehandler = syshandler;
+	hdl->object = *object;
+	hdl->handler_data = 0;
+	hdl->handler = *handler;
+}
+
 static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 	it_ptr it;
 
-	if (pt.pg == 0 || st_move(ctx->inst.t, &pt, HEAD_OBJECTS, HEAD_SIZE))
-		return;
-	
 	ctx->end = pt;
-	
+
+	if (pt.pg == 0 || st_move(ctx->inst.t, &pt, HEAD_LINK, HEAD_SIZE))
+		return;
+
 	it_create(ctx->inst.t, &it, &pt);
-	
-	while (it_next(ctx->inst.t, 0, &it, sizeof(oid))) {
+
+	while (it_next(ctx->inst.t, 0, &it, sizeof(oid) + 1)) {
 		st_ptr obj, handler;
-		
-		if (it.kused != sizeof(oid) || cle_goto_id(ctx->inst, &obj, *((oid*)it.kdata)))
+
+		if (it.kused != sizeof(oid) + 1 || cle_goto_id(ctx->inst, &obj, *((oid*) (it.kdata + 1))))
 			cle_panic(ctx->inst.t);
-		
-		if (cle_identity_value(ctx->inst, F_SYNC_HANDLER, obj, &handler) == 0) {
-		}
 
-		if (cle_identity_value(ctx->inst, F_ASYNC_HANDLER, obj, &handler) == 0) {
-		}
-		
-		if (cle_identity_value(ctx->inst, F_FRAG_HANDLER, obj, &handler) == 0) {
-		}
-		
-		if (cle_identity_value(ctx->inst, F_RESP_HANDLER, obj, &handler) == 0) {
-		}
-
-		if (cle_identity_value(ctx->inst, F_REQ_HANDLER, obj, &handler) == 0) {
+		if (cle_identity_value(ctx->inst, F_MSG_HANDLER, obj, &handler) == 0) {
+			// invoke handler
+			_register_handler(ctx->inst.t, ctx->hdlists, &_runtime_handler, &handler, &obj, *it.kdata);
+		} else if ((*it.kdata & 2) == 0) {
+			// stream object (sync && fragment)
+			_register_handler(ctx->inst.t, ctx->hdlists, &_runtime_handler, &empty, &obj, *it.kdata);
 		}
 	}
-	
+
 	it_dispose(ctx->inst.t, &it);
 }
 
@@ -458,8 +450,7 @@ static void _reg_syshandlers(struct _scanner_ctx* ctx, st_ptr pt) {
 		cle_panic(ctx->inst.t);
 
 	do {
-		//_register_handler(ctx->t,hdlists,syshdl,0,&object,syshdl->systype);
-
+		_register_handler(ctx->inst.t, ctx->hdlists, syshdl, &empty, &empty, syshdl->systype);
 		// next in list...
 	} while (syshdl = syshdl->next_handler);
 }
@@ -467,88 +458,88 @@ static void _reg_syshandlers(struct _scanner_ctx* ctx, st_ptr pt) {
 static ushort _check_access(task* t, st_ptr allow, st_ptr roles) {
 	it_ptr aitr, ritr;
 	uint ret;
-	
+
 	if (st_move(t, &allow, HEAD_ROLES, HEAD_SIZE))
 		return 0;
 
 	it_create(t, &aitr, &allow);
 	it_create(t, &ritr, &roles);
-	
+
 	while (1) {
 		ret = it_next_eq(t, 0, &aitr, 0);
 		if (ret != 1)
 			break;
 
 		it_load(t, &ritr, aitr.kdata, aitr.kused);
-		
+
 		ret = it_next_eq(t, 0, &ritr, 0);
 		if (ret != 1)
 			break;
-		
+
 		it_load(t, &aitr, ritr.kdata, ritr.kused);
 	}
-	
+
 	it_dispose(t, &aitr);
 	it_dispose(t, &ritr);
-	
+
 	return (ret == 2);
 }
 
 static void _check_boundry(struct _scanner_ctx* ctx) {
 	_reg_handlers(ctx, ctx->evt);
-	
+
 	_reg_syshandlers(ctx, ctx->sys);
-	
+
 	if (ctx->allowed == 0)
 		ctx->allowed = _check_access(ctx->inst.t, ctx->evt, ctx->user_roles);
 }
 
 static int _scanner(void* p, uchar* buffer, uint len) {
 	struct _scanner_ctx* ctx = (struct _scanner_ctx*) p;
-	
+
 	st_insert(ctx->inst.t, &ctx->event_name, buffer, len);
-	
+
 	if (ctx->state == 0) {
 		if (buffer[len - 1] == '@') {
 			buffer[len - 1] = 0;
 			ctx->state = 1;
 		}
-		
+
 		if (ctx->evt.pg != 0 && st_move(ctx->inst.t, &ctx->evt, buffer, len)) {
 			ctx->evt.pg = 0;
-			
+
 			// not found! scan end (or no possible grants)
 			if (ctx->sys.pg == 0 || ctx->allowed == 0)
 				return 1;
 		}
-		
+
 		if (ctx->sys.pg != 0 && st_move(ctx->inst.t, &ctx->sys, buffer, len)) {
 			ctx->sys.pg = 0;
-			
+
 			// not found! scan end
 			if (ctx->evt.pg == 0)
 				return 1;
 		}
-				
+
 		if (buffer[len - 1] == 0)
 			_check_boundry(ctx);
-		
+
 	} else if (ctx->state & 1) {
 		if (ctx->allowed == 0)
 			return 1;
-		
+
 		if (cle_goto_object_cdat(ctx->inst, buffer, len, &ctx->obj))
 			return 1;
-		
+
 		ctx->state = 2;
 	} else if (ctx->state & 2) {
 		if (buffer[len - 1] != 0 && cle_get_property_host(ctx->inst, &ctx->end, buffer, len))
 			return 1;
-		
+
 		ctx->state = 4;
 	} else
 		return st_move(ctx->inst.t, &ctx->end, buffer, len);
-	
+
 	return 0;
 }
 
@@ -559,7 +550,7 @@ _ipt* cle_start2(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_
 
 	inst.t = tk_clone_task(parent);
 	tk_root_ptr(inst.t, &inst.root);
-	
+
 	ctx.user_roles = user_roles;
 
 	_check_boundry(&ctx);
@@ -568,7 +559,7 @@ _ipt* cle_start2(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_
 		tk_drop_task(inst.t);
 		return 0;
 	}
-	
+
 	tk_ref_ptr(&config);
 
 	ipt = (_ipt*) tk_alloc(inst.t, sizeof(_ipt), 0);

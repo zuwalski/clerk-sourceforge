@@ -70,6 +70,43 @@ struct _mem_ref {
 	char ptr[sizeof(st_ptr)];
 };
 
+/////////// basenames ////////////
+
+static st_ptr basenames;
+
+static const uchar _init[] = "init";
+static const uchar _tostring[] = "tostring";
+static const uchar _msghandler[] = "message";
+
+static void _setup_base() {
+	cle_typed_identity _id;
+	st_ptr pt;
+	task* t = tk_create_task(0, 0);
+	
+	st_empty(t, &basenames);
+	
+	_id.type = TYPE_METHOD;
+	_id.id = F_INIT;
+	
+	pt = basenames;
+	st_insert(t, &pt, _init, sizeof(_init));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+	
+	_id.type = TYPE_EXPR;
+	_id.id = F_TOSTRING;
+	
+	pt = basenames;
+	st_insert(t, &pt, _tostring, sizeof(_tostring));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+
+	_id.type = TYPE_METHOD;
+	_id.id = F_MSG_HANDLER;
+	
+	pt = basenames;
+	st_insert(t, &pt, _msghandler, sizeof(_msghandler));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+}
+
 /****************************************************
  Name scanner
  
@@ -576,8 +613,11 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, const enum
 
 		// host-part not found (root of parent-relation)
 		if (header.obj.ext._low == 0) {
-			// TODO: look in fixed names ("object" bound names)
-			if (create == 0)
+			// look in fixed names ("object" bound names)
+			pt = basenames;
+			if (st_move_st(inst.t, &pt, &hostpart) == 0)
+				create = 0;
+			else if (create == 0)
 				return 0;
 			break;
 		}
