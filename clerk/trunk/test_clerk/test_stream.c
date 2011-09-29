@@ -22,6 +22,43 @@
 #include <stdio.h>
 #include <time.h>
 
+
+//////////////////////////////////
+
+static const cle_pipe_inst pipe = {&_test_pipe_stdout, 0};
+static const st_ptr empty = {0,0,0};
+
+void test_stream_c2() {
+	cle_psrc_data store = util_create_mempager();
+	task* t = tk_create_task(&util_memory_pager, store);
+	cle_instance inst = {t, root(t)};
+	
+	st_ptr eventid = str(t, "event");
+	st_ptr config = str(t, "");
+	st_ptr userid = str(t, "");
+	st_ptr user_roles = str(t, "");
+	
+	_ipt* ipt = cle_start2(t, config, eventid, userid, user_roles, pipe);
+	
+	ASSERT(ipt == 0);
+	
+	cle_new(inst, eventid, empty, 0);
+	
+	tk_commit_task(t);
+	
+	t = tk_create_task(&util_memory_pager, store);
+	
+	ipt = cle_start2(t, config, eventid, userid, user_roles, pipe);
+	
+	ASSERT(ipt);
+	
+	tk_drop_task(t);
+}
+
+
+/////////////////
+
+
 // testhandler w event_handler* argument
 static void _start(event_handler* v)
 {
@@ -252,4 +289,6 @@ void test_stream_c()
 
 	tk_drop_task(t);
 }
+
+
 

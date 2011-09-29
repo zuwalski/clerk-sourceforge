@@ -115,12 +115,19 @@ typedef struct cle_pipe
 }
 cle_pipe;
 
+typedef struct cle_pipe_inst {
+	cle_pipe* pipe;
+	void* data;
+}
+cle_pipe_inst;
+
 /* pipe interface end */
 
 typedef enum handler_type
 {
 	SYNC_REQUEST_HANDLER = 0,
 	ASYNC_REQUEST_HANDLER,
+	SYNC_RESPONSE_FRAGMENT,
 	PIPELINE_REQUEST,
 	PIPELINE_RESPONSE
 }
@@ -138,7 +145,9 @@ int cle_goto_id(cle_instance inst, st_ptr* obj, oid id);
 
 int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj);
 
-int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* buffer);
+int cle_get_oid_str(cle_instance inst, st_ptr obj, oid_str* buffer);
+
+oid cle_get_oid(cle_instance inst, st_ptr obj);
 
 int cle_goto_parent(cle_instance inst, st_ptr* child);
 

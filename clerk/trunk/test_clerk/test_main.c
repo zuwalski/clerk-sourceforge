@@ -1134,8 +1134,60 @@ void test_st_trace()
 	tk_drop_task(t);
 }
 
+
+/////////// basenames ////////////
+
+static st_ptr basenames;
+
+static const uchar _init[] = "init";
+static const uchar _tostring[] = "tostring";
+static const uchar _msghandler[] = "message";
+
+static int _setup_base() {
+	cle_typed_identity _id;
+	st_ptr pt;
+	task* t = tk_create_task(0, 0);
+	
+	st_empty(t, &basenames);
+	
+	_id.type = TYPE_METHOD;
+	_id.id = F_INIT;
+	
+	pt = basenames;
+	st_insert(t, &pt, _init, sizeof(_init));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+	
+	_id.type = TYPE_EXPR;
+	_id.id = F_TOSTRING;
+	
+	pt = basenames;
+	st_insert(t, &pt, _tostring, sizeof(_tostring));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+	
+	_id.type = TYPE_METHOD;
+	_id.id = F_MSG_HANDLER;
+	
+	pt = basenames;
+	st_insert(t, &pt, _msghandler, sizeof(_msghandler));
+	st_append(t, &pt, (cdat)&_id, sizeof(_id));
+	
+	return 0;
+}
+
 int main(int argc, char* argv[])
 {
+	_setup_base();
+	
+	st_prt_page(&basenames);
+	map_static_page(basenames.pg);
+	
+	
+	test_stream_c2();
+	
+	puts("done");
+	getchar();
+	exit(0);
+
 	test_instance_c();
 
 	test_tk_sync();
@@ -1154,9 +1206,6 @@ int main(int argc, char* argv[])
 
 	test_task_c_2();
 
-	puts("done");
-	getchar();
-	exit(0);
 
 	test_compile_c();
 

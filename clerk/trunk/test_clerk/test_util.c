@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 #include "test.h"
 #include "../cle_core/cle_runtime.h"
 
@@ -351,6 +352,23 @@ uint sim_new(uchar kdata[], uint ksize) {
 	}
 
 	return kdata[0] + 2;
+}
+
+st_ptr str(task* t, char* cs) {
+	st_ptr pt,org;
+	
+	st_empty(t, &pt);
+	org = pt;
+	
+	st_insert(t, &pt, (cdat)cs, strlen(cs));
+	
+	return org;
+}
+
+st_ptr root(task* t) {
+	st_ptr rt;
+	tk_root_ptr(t, &rt);
+	return rt;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -927,12 +945,17 @@ cle_syshandler _runtime_handler = { 0, { _start2, _next2, _end2, _pop2, _push2,
 void map_static_page(page_wrap* pgw) {
 	int i;
 	page* pg = pgw->pg;
-
+	
 	for (i = 0; i < pg->used; i++) {
+		uchar c = *((uchar*) pg + i);
 		if (i != 0)
 			printf(",");
 		if ((i & 31) == 31)
 			printf("\n");
-		printf("0x%x", (char*) pg + i);
+		
+		if(c >= 'a' && c <= 'z')
+			printf("'%c'", c);
+		else
+			printf("0x%x", c);
 	}
 }

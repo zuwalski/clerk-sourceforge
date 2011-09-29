@@ -70,43 +70,6 @@ struct _mem_ref {
 	char ptr[sizeof(st_ptr)];
 };
 
-/////////// basenames ////////////
-
-static st_ptr basenames;
-
-static const uchar _init[] = "init";
-static const uchar _tostring[] = "tostring";
-static const uchar _msghandler[] = "message";
-
-static void _setup_base() {
-	cle_typed_identity _id;
-	st_ptr pt;
-	task* t = tk_create_task(0, 0);
-	
-	st_empty(t, &basenames);
-	
-	_id.type = TYPE_METHOD;
-	_id.id = F_INIT;
-	
-	pt = basenames;
-	st_insert(t, &pt, _init, sizeof(_init));
-	st_append(t, &pt, (cdat)&_id, sizeof(_id));
-	
-	_id.type = TYPE_EXPR;
-	_id.id = F_TOSTRING;
-	
-	pt = basenames;
-	st_insert(t, &pt, _tostring, sizeof(_tostring));
-	st_append(t, &pt, (cdat)&_id, sizeof(_id));
-
-	_id.type = TYPE_METHOD;
-	_id.id = F_MSG_HANDLER;
-	
-	pt = basenames;
-	st_insert(t, &pt, _msghandler, sizeof(_msghandler));
-	st_append(t, &pt, (cdat)&_id, sizeof(_id));
-}
-
 /****************************************************
  Name scanner
  
@@ -116,7 +79,7 @@ int cle_scan_validate(task* t, st_ptr* from, int(*fun)(void*, uchar*, uint), voi
 	uchar buffer[100];
 	int state = 2;
 	while (1) {
-		int c,i = 0;
+		int c, i = 0;
 		do {
 			c = st_scan(t, from);
 			switch (c) {
@@ -135,7 +98,7 @@ int cle_scan_validate(task* t, st_ptr* from, int(*fun)(void*, uchar*, uint), voi
 				break;
 			case '@':
 				state = 0;
-				break;	
+				break;
 			case ' ':
 			case '\t':
 			case '\n':
@@ -258,6 +221,13 @@ static int _goto_id(cle_instance inst, st_ptr* child, oid id) {
 	*child = inst.root;
 	return (id._low == 0 || st_move(inst.t, child, (cdat) &id, sizeof(oid)));
 }
+
+/****************************************************
+ OBJ-BASENAMES */
+
+static const char basenames[] = { 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x4,0x78,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xa8,0x0,0x0,0x0,0x36,
+	0x0,0x69,0x6e,0x69,0x74,0x0,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3,0x0,0xc8,0x0,0x58,0x0,0x0,0x0,0x74,
+	0x6f,0x73,0x74,0x72,0x69,0x6e,0x67,0x0,0x4,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x4,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x5,0x0,0xc0,0x0,0x0,0x0,0x0 };
 
 /****************************************************
  implementations
@@ -402,26 +372,26 @@ int cle_goto_object(cle_instance inst, st_ptr name, st_ptr* obj) {
 
 	return _goto_id(inst, obj, id);
 }
-				
+
 int cle_goto_object_cdat(cle_instance inst, cdat name, uint length, st_ptr* obj) {
 	oid id;
 	char* boid = (char*) &id;
 	int i;
-	
+
 	if (length != sizeof(oid) * 2)
 		return 1;
-	
+
 	for (i = 0; i < length; i++) {
 		int val = name[i] - 'a';
 		if (val < 0 || (val & 0xF0))
 			return __LINE__;
-		
+
 		if (i & 1)
 			boid[i >> 1] |= val;
 		else
 			boid[i >> 1] = val << 4;
 	}
-	
+
 	*obj = inst.root;
 	return _goto_id(inst, obj, id);
 }
@@ -434,7 +404,7 @@ int cle_delete_name(cle_instance inst, st_ptr name) {
 	return st_delete_st(inst.t, &obj, &name);
 }
 
-int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr) {
+int cle_get_oid_str(cle_instance inst, st_ptr obj, oid_str* oidstr) {
 	char* buffer = oidstr->chrs;
 	objheader header;
 	uint i;
@@ -453,6 +423,12 @@ int cle_get_oid(cle_instance inst, st_ptr obj, oid_str* oidstr) {
 	}
 
 	return 0;
+}
+
+oid cle_get_oid(cle_instance inst, st_ptr obj) {
+	objheader header;
+	_getheader(inst, &obj, &header);
+	return header.obj.id;
 }
 
 int cle_goto_parent(cle_instance inst, st_ptr* child) {
@@ -614,10 +590,11 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, const enum
 		// host-part not found (root of parent-relation)
 		if (header.obj.ext._low == 0) {
 			// look in fixed names ("object" bound names)
-			pt = basenames;
-			if (st_move_st(inst.t, &pt, &hostpart) == 0)
-				create = 0;
-			else if (create == 0)
+//			st_ptr pt = {basenames, 0, 0};
+//			if (st_move_st(inst.t, &pt, &hostpart) == 0)
+//				create = 0;
+//			else 
+				if (create == 0)
 				return 0;
 			break;
 		}

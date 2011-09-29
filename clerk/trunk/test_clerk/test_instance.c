@@ -90,21 +90,21 @@ void test_instance_c()
 	st_update(t,&pt,objone,sizeof(objone));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object1,&oidstr) == 0);
+	ASSERT(cle_get_oid_str(inst,object1,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objtwo,sizeof(objtwo));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object2,&oidstr) == 0);
+	ASSERT(cle_get_oid_str(inst,object2,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
 	st_update(t,&pt,objthree,sizeof(objthree));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
-	ASSERT(cle_get_oid(inst,object3,&oidstr) == 0);
+	ASSERT(cle_get_oid_str(inst,object3,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaad",13) == 0);
 
 	object = object3;
@@ -186,22 +186,22 @@ void test_instance_c()
 
 	cle_new_mem(inst.t,object1,&object);
 
-	ASSERT(cle_get_oid(inst,object,&oidstr) != 0);
+	ASSERT(cle_get_oid_str(inst,object,&oidstr) != 0);
 
 	cle_new_mem(inst.t,object,&mobj1);
 
-	ASSERT(cle_get_oid(inst,mobj1,&oidstr) != 0);
+	ASSERT(cle_get_oid_str(inst,mobj1,&oidstr) != 0);
 
 	cle_new_mem(inst.t,object2,&mobj2);
 
-	ASSERT(cle_get_oid(inst,mobj2,&oidstr) != 0);
+	ASSERT(cle_get_oid_str(inst,mobj2,&oidstr) != 0);
 
 	// mobj to mobj doesn't persist
 	ASSERT(cle_set_property_ref(inst,object,id1.id,mobj1) == 0);
 
-	ASSERT(cle_get_oid(inst,object,&oidstr) != 0);
+	ASSERT(cle_get_oid_str(inst,object,&oidstr) != 0);
 
-	ASSERT(cle_get_oid(inst,mobj1,&oidstr) != 0);
+	ASSERT(cle_get_oid_str(inst,mobj1,&oidstr) != 0);
 
 	ASSERT(cle_get_property_ref(inst,object,id1.id,&pt) == 0);
 

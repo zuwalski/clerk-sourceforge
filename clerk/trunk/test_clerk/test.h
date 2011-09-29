@@ -44,10 +44,16 @@ uint sim_new(uchar kdata[], uint ksize);
 
 void test_stream_c();
 
+void test_stream_c2();
+
 void test_compile_c();
 
 void test_instance_c();
 
 extern cle_pipe _test_pipe_stdout;
+
+st_ptr str(task* t, char* cs);
+
+st_ptr root(task* t);
 
 #endif

@@ -34,6 +34,8 @@ typedef struct _ipt_internal _ipt;
 _ipt* cle_start(st_ptr config_root, cdat eventid, uint event_len, cdat userid, uint userid_len, char* user_roles[],
 				cle_pipe* response, void* responsedata, task* app_instance);
 
+_ipt* cle_start2(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response);
+
 void cle_next(_ipt* inpt);
 void cle_end(_ipt* inpt, cdat code, uint length);
 void cle_pop(_ipt* inpt);
@@ -111,6 +113,10 @@ void cle_notify_end(event_handler* handler, cdat msg, uint msglength);
 
 // hook-ref for the ignite-interpreter
 extern cle_syshandler _runtime_handler;
+
+extern cle_syshandler _object_stream;
+
+extern cle_syshandler _index_stream;
 
 
 // standard handlers

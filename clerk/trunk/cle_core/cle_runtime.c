@@ -656,7 +656,7 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	case STACK_OBJ:
 		{
 			oid_str buffer;
-			if(cle_get_oid(inv->hdl->inst,sp->obj,&buffer) == 0)
+			if(cle_get_oid_str(inv->hdl->inst,sp->obj,&buffer) == 0)
 				st_insert(inv->t,&result_w,(cdat)&buffer,sizeof(buffer));
 		}
 		break;
