@@ -116,8 +116,6 @@ extern cle_syshandler _runtime_handler;
 
 extern cle_syshandler _object_stream;
 
-extern cle_syshandler _index_stream;
-
 
 // standard handlers
 void dev_register_handlers(task* config_t, st_ptr* config_root);

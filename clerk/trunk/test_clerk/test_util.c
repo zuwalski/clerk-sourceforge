@@ -873,8 +873,6 @@ static void _submit2(event_handler* v, st_ptr* st) {
 cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2,
 		_submit2 };
 
-cle_syshandler _runtime_handler = { 0, { _start2, _next2, _end2, _pop2, _push2,
-		_data2, _submit2 }, 0 };
 /*
 
  #include "cle_struct.h"

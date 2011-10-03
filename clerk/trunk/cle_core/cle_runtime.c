@@ -680,6 +680,10 @@ static void _rt_type_id(struct _rt_invocation* inv, struct _rt_stack* sp)
 	sp->type = STACK_PTR;
 }
 
+static void cle_skip_header(cle_instance inst,st_ptr* pt){
+	cle_panic(inst.t);
+}
+
 static void _rt_run(struct _rt_invocation* inv)
 {
 	struct _rt_stack* sp = inv->top->sp;
@@ -1395,3 +1399,7 @@ static void _rt_end(event_handler* hdl, cdat code, uint length)
 }
 
 cle_syshandler _runtime_handler = {0,{_rt_start,_rt_next,_rt_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};
+
+cle_syshandler _object_stream = {0,{_rt_start,_rt_next,_rt_end,cle_standard_pop,cle_standard_push,cle_standard_data,cle_standard_submit},0};
+
+

@@ -96,9 +96,6 @@ int cle_scan_validate(task* t, st_ptr* from, int(*fun)(void*, uchar*, uint), voi
 				state = 0;
 				c = 0;
 				break;
-			case '@':
-				state = 0;
-				break;
 			case ' ':
 			case '\t':
 			case '\n':
