@@ -116,7 +116,7 @@ typedef struct cle_pipe
 cle_pipe;
 
 typedef struct cle_pipe_inst {
-	cle_pipe* pipe;
+	const cle_pipe* pipe;
 	void* data;
 }
 cle_pipe_inst;
@@ -129,7 +129,8 @@ typedef enum handler_type
 	ASYNC_REQUEST_HANDLER,
 	SYNC_RESPONSE_FRAGMENT,
 	PIPELINE_REQUEST,
-	PIPELINE_RESPONSE
+	PIPELINE_RESPONSE,
+	FLOW_HANDLER
 }
 handler_type;
 

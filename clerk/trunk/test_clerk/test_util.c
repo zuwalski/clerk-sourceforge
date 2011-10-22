@@ -956,4 +956,6 @@ void map_static_page(page_wrap* pgw) {
 		else
 			printf("0x%x", c);
 	}
+	
+	puts("\n");
 }

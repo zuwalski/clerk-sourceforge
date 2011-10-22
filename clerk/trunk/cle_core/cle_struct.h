@@ -48,7 +48,6 @@ typedef struct page_wrap
 	overflow*         ovf;
 	page*             pg;
 	page*             orig;
-//	cle_pageid        ext_pageid;
 	ulong             refcount;
 }page_wrap;
 
@@ -108,5 +107,6 @@ void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
 void _tk_write_copy(task* t, page_wrap* pg);
 void tk_unref(task* t, page_wrap* pg);
+page_wrap _tk_wrap_static_page(page* p);
 
 #endif

@@ -326,6 +326,16 @@ ushort _tk_alloc_ptr(task* t, page_wrap* pg) {
 	return nkoff;
 }
 
+page_wrap _tk_wrap_static_page(page* p) {
+	page_wrap pw;
+	pw.next = pw.parent = 0;
+	pw.orig = 0;
+	pw.ovf = 0;
+	pw.refcount = 1;
+	pw.pg = p;
+	return pw;
+}
+
 void _tk_remove_tree(task* t, page_wrap* pg, ushort off) {
 	while (off) {
 		key* k = GOOFF(pg,off);
