@@ -68,12 +68,12 @@ uint page_size = 0;
 uint resize_count = 0;
 uint overflow_size = 0;
 
-char test1[] = "test1";
-char test1x2[] = "test1\0test1";
-char test2[] = "t1set";
-char test3[] = "t2set";
-char test2x2[] = "t1set\0t1set";
-char test2_3[] = "t1set\0t2set";
+uchar test1[] = "test1";
+uchar test1x2[] = "test1\0test1";
+uchar test2[] = "t1set";
+uchar test3[] = "t2set";
+uchar test2x2[] = "t1set\0t1set";
+uchar test2_3[] = "t1set\0t2set";
 
 const char testdbfilename[] = "testdb.dat";
 
@@ -135,7 +135,7 @@ void test_struct_c()
 
 	ASSERT(st_exsist(t,&tmp,test1,sizeof(test1)));
 
-	// we can move all the way and find and empty node
+	// we can move all the way and find an empty node
 	tmp = root;
 	ASSERT(st_move(t,&tmp,test1x2,sizeof(test1x2)) == 0);
 
@@ -212,78 +212,78 @@ void test_struct_c()
 	st_empty(t,&root);
 
 	tmp = root;
-	st_insert(t,&tmp,"1234",4);
+	st_insert(t,&tmp,(cdat)"1234",4);
 
-	ASSERT(st_exsist(t,&root,"1245",4) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1245",4) == 0);
 
 	tmp = root;
-	st_insert(t,&tmp,"1245",4);
+	st_insert(t,&tmp,(cdat)"1245",4);
 
-	st_delete(t,&root,"1234",4);
+	st_delete(t,&root,(cdat)"1234",4);
 
-	ASSERT(st_exsist(t,&root,"12",2));
-	ASSERT(st_exsist(t,&root,"1245",4));
-	ASSERT(st_exsist(t,&root,"1234",4) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)(cdat)"12",2));
+	ASSERT(st_exsist(t,&root,(cdat)"1245",4));
+	ASSERT(st_exsist(t,&root,(cdat)"1234",4) == 0);
 
-	st_delete(t,&root,"12",2);
+	st_delete(t,&root,(cdat)"12",2);
 
-	ASSERT(st_exsist(t,&root,"12",2) == 0);
-	ASSERT(st_exsist(t,&root,"1245",4) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"12",2) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1245",4) == 0);
 
 	ASSERT(st_is_empty(&root));
 
 	tmp = root;
-	st_insert(t,&tmp,"1234567",7);
+	st_insert(t,&tmp,(cdat)"1234567",7);
 
-	ASSERT(st_exsist(t,&root,"1234567",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1234567",7));
 
-	st_delete(t,&root,"1",1);
+	st_delete(t,&root,(cdat)"1",1);
 
 	ASSERT(st_is_empty(&root));
 
 	tmp = root;
-	st_insert(t,&tmp,"1234567",7);
+	st_insert(t,&tmp,(cdat)"1234567",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1233333",7);
+	st_insert(t,&tmp,(cdat)"1233333",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1235555",7);
+	st_insert(t,&tmp,(cdat)"1235555",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"123456789",9);
+	st_insert(t,&tmp,(cdat)"123456789",9);
 
-	st_delete(t,&root,"123456789",9);
+	st_delete(t,&root,(cdat)"123456789",9);
 
-	ASSERT(st_exsist(t,&root,"1233333",7));
-	ASSERT(st_exsist(t,&root,"1235555",7));
-	ASSERT(st_exsist(t,&root,"1234567",7) == 0);
-	ASSERT(st_exsist(t,&root,"123456789",9) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1233333",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1235555",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1234567",7) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"123456789",9) == 0);
 
-	st_delete(t,&root,"1233333",7);
+	st_delete(t,&root,(cdat)"1233333",7);
 
-	ASSERT(st_exsist(t,&root,"1233333",7) == 0);
-	ASSERT(st_exsist(t,&root,"1235555",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1233333",7) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1235555",7));
 
-	st_delete(t,&root,"1235555",7);
+	st_delete(t,&root,(cdat)"1235555",7);
 
-	ASSERT(st_exsist(t,&root,"1235555",7) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1235555",7) == 0);
 	ASSERT(st_is_empty(&root));
 
 	tmp = root;
-	st_insert(t,&tmp,"1234567",7);
+	st_insert(t,&tmp,(cdat)"1234567",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1233333",7);
+	st_insert(t,&tmp,(cdat)"1233333",7);
 
 	tmp = root;
-	st_insert(t,&tmp,"1235555",7);
+	st_insert(t,&tmp,(cdat)"1235555",7);
 
-	st_delete(t,&root,"1235555",7);
+	st_delete(t,&root,(cdat)"1235555",7);
 
-	ASSERT(st_exsist(t,&root,"1233333",7));
-	ASSERT(st_exsist(t,&root,"1234567",7));
-	ASSERT(st_exsist(t,&root,"1235555",7) == 0);
+	ASSERT(st_exsist(t,&root,(cdat)"1233333",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1234567",7));
+	ASSERT(st_exsist(t,&root,(cdat)"1235555",7) == 0);
 
 	tk_drop_task(t);
 }
@@ -1176,10 +1176,10 @@ static int _setup_base() {
 
 int main(int argc, char* argv[])
 {
-	_setup_base();
+//	_setup_base();
 	
-	st_prt_page(&basenames);
-	map_static_page(basenames.pg);
+//	st_prt_page(&basenames);
+//	map_static_page(basenames.pg);
 	
 	
 	test_stream_c2();
@@ -1187,6 +1187,10 @@ int main(int argc, char* argv[])
 	puts("done");
 	getchar();
 	exit(0);
+
+	test_struct_c();
+	
+	time_struct_c();
 
 	test_instance_c();
 

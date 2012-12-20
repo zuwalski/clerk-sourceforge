@@ -184,7 +184,7 @@ void test_stream_c()
 	cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
 
-	cle_syshandler handler1,handler2,handler3,handler4;
+	cle_syshandler handler1,handler3,handler4;
 
 	clock_t start,stop;
 
@@ -195,9 +195,6 @@ void test_stream_c()
 
 	handler1.input = _test_pipe;
 	handler1.systype = SYNC_REQUEST_HANDLER;
-
-	handler2.input = _test_pipe;
-	handler2.systype = ASYNC_REQUEST_HANDLER;
 
 	handler3.input = _test_pipe;
 	handler3.systype = PIPELINE_REQUEST;
@@ -220,9 +217,6 @@ void test_stream_c()
 	// sync handler for "ab*"
 	cle_add_sys_handler(t,config_root,"ab",3,&handler1);
 
-	// async handler for "ab\0defghi*"
-	cle_add_sys_handler(t,config_root,"ab\0defghi",10,&handler2);
-
 	// request-pipe-handler for "ab\0de*"
 	cle_add_sys_handler(t,config_root,"ab\0de",6,&handler3);
 
@@ -230,7 +224,6 @@ void test_stream_c()
 	cle_add_sys_handler(t,config_root,"ab\0de\0g\0i",10,&handler4);
 
 	printf("handler1 sync: %p\n",&handler1);
-	printf("handler2 async: %p\n",&handler2);
 	printf("handler3 req: %p\n",&handler3);
 	printf("handler4 resp: %p\n",&handler4);
 
