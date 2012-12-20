@@ -408,7 +408,6 @@ struct _handler_node {
 	cle_pipe_inst handler;
 	cle_pipe_inst target;
 	st_ptr event_rest;
-	identity m;
 	oid oid;
 };
 
@@ -420,7 +419,7 @@ struct _scanner_ctx {
 	st_ptr evt;
 	st_ptr sys;
 	st_ptr obj;
-	st_ptr end;
+	oid  oid;
 	uint allowed;
 	uint state;
 };
@@ -440,7 +439,7 @@ static void _std_pop(void* v) {
 		ptr_list* tmp = h->cmn->out;
 		h->cmn->out = tmp->link;
 		
-		tmp->link = h->cmn->free
+		tmp->link = h->cmn->free;
 		h->cmn->free = tmp;
 	}
 }
@@ -507,17 +506,6 @@ static void _cn_end(void* v, cdat c, uint l) {
 
 static const cle_pipe _commit_node = {_cp_start, _cp_next, _cn_end, _cp_pop, _cp_push, _cp_data, _cp_submit};
 
-static void _as_end(void* v, cdat c, uint l) {
-	struct _handler_node* h = (struct _handler_node*) v;
-	if (l != 0)
-		h->cmn->flags = 1;
-
-	h->target.pipe->end(h->target.data, c, l);
-}
-
-static cle_pipe _async_target = { _nil1, _nil1, _as_end, _nil1, _nil1, _nil2x, _nil3 };
-static const cle_pipe_inst _async_target_inst = {&_async_target, 0};
-
 // commit node end
 
 struct _ipt_internal {
@@ -531,20 +519,13 @@ struct _ipt_internal {
 };
 
 static struct _handler_node* _hnode(struct _scanner_ctx* ctx, const cle_pipe* handler, oid id, enum handler_type type) {
-	struct _handler_node* hdl;
+	struct _handler_node* hdl = (struct _handler_node*) tk_alloc(ctx->inst.t, sizeof(struct _handler_node), 0);
 
-	if (type == SYNC_REQUEST_HANDLER && ctx->hdltypes[SYNC_REQUEST_HANDLER] != 0)
-		hdl = ctx->hdltypes[SYNC_REQUEST_HANDLER];
-	else {
-		hdl = (struct _handler_node*) tk_alloc(ctx->inst.t, sizeof(struct _handler_node), 0);
-
-		hdl->next = ctx->hdltypes[type];
-		ctx->hdltypes[type] = hdl;
-	}
-
+	hdl->next = ctx->hdltypes[type];
+	ctx->hdltypes[type] = hdl;
+	
 	hdl->handler.pipe = handler;
 	hdl->event_rest = ctx->event_name;
-	hdl->m = F_MSG_HANDLER;
 	hdl->oid = id;
 	return hdl;
 }
@@ -558,9 +539,20 @@ static void _ready_node(struct _handler_node* n, struct _task_common* cmn, cle_p
 static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 	it_ptr it;
 
-	ctx->end = pt;
-
-	if (pt.pg == 0 || st_move(ctx->inst.t, &pt, HEAD_LINK, HEAD_SIZE))
+	if (pt.pg == 0)
+		return;
+	
+	// trace last matching (single) object (if no obj-ref seen)
+	if (ctx->state != 1) {
+		st_ptr tpt = pt;
+		oid id;
+		if (st_move(ctx->inst.t, &tpt, HEAD_OBJECTS, HEAD_SIZE) == 0 && st_get(ctx->inst.t, &tpt, (char*) &id, sizeof(oid)) == -1) {
+			ctx->oid = id;
+			ctx->state = 2;
+		}
+	}
+	
+	if (st_move(ctx->inst.t, &pt, HEAD_LINK, HEAD_SIZE))
 		return;
 
 	it_create(ctx->inst.t, &it, &pt);
@@ -628,49 +620,35 @@ static void _check_boundry(struct _scanner_ctx* ctx) {
 static int _scanner(void* p, uchar* buffer, uint len) {
 	struct _scanner_ctx* ctx = (struct _scanner_ctx*) p;
 	
-	if (ctx->state == 0) {
-		if (buffer[0] == '@') {
-			if (cle_goto_object_cdat(ctx->inst, buffer + 1, len - 1, &ctx->obj))
-				return 1;
-			
-			// TODO: verify object-type
-			
-			ctx->state = 1;
-		} else {
-			st_insert(ctx->inst.t, &ctx->event_name, buffer, len);
-			
-			if (ctx->evt.pg != 0 && st_move(ctx->inst.t, &ctx->evt, buffer, len)) {
-				ctx->evt.pg = 0;
-				
-				// not found! scan end (or no possible grants)
-				if (ctx->sys.pg == 0 || ctx->allowed == 0)
-					return 1;
-			}
-			
-			if (ctx->sys.pg != 0 && st_move(ctx->inst.t, &ctx->sys, buffer, len)) {
-				ctx->sys.pg = 0;
-				
-				// not found! scan end
-				if (ctx->evt.pg == 0)
-					return 1;
-			}
-			
-			if (buffer[len - 1] == 0)
-				_check_boundry(ctx);
-		}
-	} else {		
-		if (ctx->state & 1) {
-			ctx->end = ctx->obj;
-			
-			if (buffer[len - 1] != 0 && cle_get_property_host(ctx->inst, &ctx->end, buffer, len))
-				return 1;
-			
-			ctx->state = 2;
-		} else if (st_move(ctx->inst.t, &ctx->end, buffer, len)) 
+	if (buffer[0] == '@') {
+		if (ctx->state == 1)
 			return 1;
 		
-		if (ctx->allowed == 0 && buffer[len - 1] == 0)
-			ctx->allowed = _check_access(ctx->inst.t, ctx->evt, ctx->user_roles);
+		if (cle_goto_object_cdat(ctx->inst, buffer + 1, len - 1, &ctx->obj))
+			return 1;
+		
+		ctx->state = 1;
+	} else {
+		st_insert(ctx->inst.t, &ctx->event_name, buffer, len);
+		
+		if (ctx->evt.pg != 0 && st_move(ctx->inst.t, &ctx->evt, buffer, len)) {
+			ctx->evt.pg = 0;
+			
+			// not found! scan end (or no possible grants)
+			if (ctx->sys.pg == 0 || ctx->allowed == 0)
+				return 1;
+		}
+		
+		if (ctx->sys.pg != 0 && st_move(ctx->inst.t, &ctx->sys, buffer, len)) {
+			ctx->sys.pg = 0;
+			
+			// not found! scan end
+			if (ctx->evt.pg == 0)
+				return 1;
+		}
+		
+		if (buffer[len - 1] == 0)
+			_check_boundry(ctx);
 	}
 	
 	return 0;
@@ -692,8 +670,9 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 
 	memset(ctx->hdltypes, 0, sizeof(ctx->hdltypes));
 
-	ctx->obj.pg = ctx->end.pg = 0;
 	ctx->state = 0;
+	ctx->obj.pg = 0;
+	ctx->oid = NOOID;
 	ctx->allowed = allowed;
 
 	_check_boundry(ctx);
@@ -707,97 +686,52 @@ static struct _task_common* _create_task_common(cle_instance inst) {
 	return cmn;
 }
 
-static void _special_sync_handler(struct _scanner_ctx* ctx) {
-	// only an object as target
-	if (ctx->state & 1)
-		_hnode(ctx, &_object_stream.input, cle_get_oid(ctx->inst, ctx->obj), SYNC_REQUEST_HANDLER);
-	// also a name on target-object
-	else if (ctx->state & 2) {
-		cle_typed_identity id;
-		
-		if (cle_probe_identity(ctx->inst, &ctx->end, &id) == 0 && (id.type == TYPE_EXPR || id.type == TYPE_METHOD))
-			_hnode(ctx, &_runtime_handler.input, cle_get_oid(ctx->inst, ctx->obj), SYNC_REQUEST_HANDLER)->m = id.id;
-		
-	} else if (ctx->hdltypes[SYNC_REQUEST_HANDLER] == 0) {
-		oid id;
-		
-		if (ctx->end.pg == 0 || st_move(ctx->inst.t, &ctx->end, HEAD_OBJECTS, HEAD_SIZE))
-			return;
-		
-		if (st_get(ctx->inst.t, &ctx->end, (char*)&id, sizeof(oid)) == -1)
-			_hnode(ctx, &_object_stream.input, id, SYNC_REQUEST_HANDLER);
-	}
-}
-
 static _ipt* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response) {
 	struct _handler_node* hdl;
 	struct _task_common* cmn;
+	struct _handler_node* sh = ctx->hdltypes[SYNC_REQUEST_HANDLER];
 	_ipt* ipt;
-
+	
 	if (ctx->allowed == 0)
 		return 0;
 	
-	_special_sync_handler(ctx);
-
-	if (ctx->hdltypes[SYNC_REQUEST_HANDLER] == 0 && ctx->hdltypes[ASYNC_REQUEST_HANDLER] == 0)
+	if (ctx->state != 0) {
+		
+	} else if (sh == 0)
 		return 0;
 	
 	ipt = (_ipt*) tk_alloc(ctx->inst.t, sizeof(_ipt), 0);
-	
-	// init async-handlers
-	hdl = ctx->hdltypes[ASYNC_REQUEST_HANDLER];
-	
-	// ERROR: copy async and flow nodes to own task
-	while (hdl != 0) {
-		// put in separat tasks/transactions
-		cle_instance clone;
-		clone.t = tk_clone_task(ctx->inst.t);
-		tk_root_ptr(clone.t, &clone.root);
-		cmn = _create_task_common(clone);
-		
-		// "no output"-handler on all async's
-		_ready_node(hdl, cmn, _async_target_inst);
-
-		// push commit-node
-		_ready_node(_hnode(ctx, &_commit_node, NOOID, FLOW_HANDLER), cmn, hdl->handler);
-		
-		hdl = hdl->next;
-	}
-
-	ipt->_node_chain = ctx->hdltypes[FLOW_HANDLER];
+	ipt->_node_chain = 0;
 	
 	cmn = _create_task_common(ctx->inst);
 	
 	// setup sync-handler-chain
-	if (ctx->hdltypes[SYNC_REQUEST_HANDLER] != 0) {
-		struct _handler_node* sh = ctx->hdltypes[SYNC_REQUEST_HANDLER];
+	
+	// push commit-node
+	hdl = _hnode(ctx, &_commit_node, NOOID, FLOW_HANDLER);
+	_ready_node(hdl, cmn, response);
+	
+	// setup response-handler chain
+	if (ctx->hdltypes[PIPELINE_RESPONSE] != 0) {
+		struct _handler_node* last = sh;
+		// in correct order (most specific handler comes first)
+		hdl = ctx->hdltypes[PIPELINE_RESPONSE];
 		
-		if (ctx->hdltypes[SYNC_RESPONSE_FRAGMENT] != 0) {
-			//
-		}
-		
-		// setup response-handler chain (only make sense with sync handlers)
-		if (ctx->hdltypes[PIPELINE_RESPONSE] != 0) {
-			struct _handler_node* last = sh;
-			// in correct order (most specific handler comes first)
-			hdl = ctx->hdltypes[PIPELINE_RESPONSE];
+		do {
+			cle_pipe_inst pi = {hdl->handler.pipe, hdl};
+			_ready_node(last, cmn, pi);
 			
-			do {
-				cle_pipe_inst pi = {hdl->handler.pipe, hdl};
-				_ready_node(last, cmn, pi);
-				
-				last = hdl;
-				hdl = hdl->next;
-			} while (hdl != 0);
-			
-			// and finally the original output-target
-			_ready_node(last, cmn, response);
-		} else
-			_ready_node(sh, cmn, response);
+			last = hdl;
+			hdl = hdl->next;
+		} while (hdl != 0);
 		
-		sh->next = ipt->_node_chain;
-		ipt->_node_chain = sh;
-	}
+		// and finally the original output-target
+		_ready_node(last, cmn, response);
+	} else
+		_ready_node(sh, cmn, response);
+	
+	sh->next = ipt->_node_chain;
+	ipt->_node_chain = sh;
 	
 	// setup request-handler chain
 	if (ctx->hdltypes[PIPELINE_REQUEST] != 0) {
@@ -821,9 +755,6 @@ static _ipt* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response) {
 		ipt->_node_chain = last;
 	}
 	
-	// push commit-node
-	_ready_node(_hnode(ctx, &_commit_node, NOOID, FLOW_HANDLER), cmn, ipt->_node_chain->handler);
-
 	return ipt;
 }
 
@@ -1049,28 +980,13 @@ _ipt* cle_start(st_ptr config, cdat eventid, uint event_len, cdat userid, uint u
 	}
 
 	// access allowed? and is there anyone in the other end?
-	if (allowed == 0 || (hdlists[SYNC_REQUEST_HANDLER] == 0 && hdlists[ASYNC_REQUEST_HANDLER] == 0)) {
+	if (allowed == 0 || (hdlists[SYNC_REQUEST_HANDLER] == 0)) {
 		_error(event_not_allowed);
 		return 0;
 	}
 
 	// init async-handlers
-	if (hdlists[ASYNC_REQUEST_HANDLER] != 0) {
-		hdl = hdlists[ASYNC_REQUEST_HANDLER];
-		ipt->event_chain_begin = hdl;
 
-		do {
-			// put in separat tasks/transactions
-			st_ptr clone_instance;
-			task* clone = tk_clone_task(app_instance);
-			tk_root_ptr(clone, &clone_instance);
-
-			// "no output"-handler on all async's
-			_ready_handler(hdl, clone, &clone_instance, &ipt->sys, &_async_out, hdl, object.pg != 0);
-
-			hdl = hdl->next;
-		} while (hdl != 0);
-	}
 
 	// setup sync-handler-chain
 	if (hdlists[SYNC_REQUEST_HANDLER] != 0) {

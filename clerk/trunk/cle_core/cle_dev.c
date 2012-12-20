@@ -136,7 +136,7 @@ static void _set_handler_sync_end(event_handler* hdl, cdat m, uint l)
 }
 static void _set_handler_asyn_end(event_handler* hdl, cdat m, uint l)
 {
-	_set_handler_shared(hdl,sizeof(_set_handler_name_asyn),m,l,ASYNC_REQUEST_HANDLER);
+	_set_handler_shared(hdl,sizeof(_set_handler_name_asyn),m,l,0);
 }
 static void _set_handler_resp_end(event_handler* hdl, cdat m, uint l)
 {
