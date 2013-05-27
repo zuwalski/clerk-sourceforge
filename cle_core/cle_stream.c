@@ -64,6 +64,10 @@ struct _scanner_ctx {
 	uint state;
 };
 
+// forwards
+static void _push(struct task_common* cmn);
+static state _bh_next(void* v);
+
 // ok node begin
 
 static state _ok_start(void* v) {
@@ -122,19 +126,6 @@ static state _cn_end(void* v, cdat c, uint l) {
 }
 
 static const cle_pipe _response_node = { _cn_start, _cn_next, _cn_end, _cn_pop, _cn_push, _cn_data, 0 };
-
-static void _push(struct task_common* cmn) {
-	ptr_list* l = cmn->free;
-	if (l)
-		cmn->free = l->link;
-	else
-		l = (ptr_list*) tk_alloc(cmn->inst.t, sizeof(ptr_list), 0);
-
-	l->link = cmn->out;
-	cmn->out = l;
-
-	l->pt = cmn->top;
-}
 
 static struct handler_node* _hnode(struct _scanner_ctx* ctx, const cle_pipe* handler, oid id, enum handler_type type) {
 	struct handler_node* hdl;
@@ -399,30 +390,44 @@ static state _need_start_call(struct handler_node* h) {
 	return s;
 }
 
-static state _check_end_pipe(struct handler_node* h, state s) {
-	cdat msg = (cdat) "";
-	uint len = 0;
+static state _check_state(struct handler_node* h, state s) {
+	_ipt* ipt;
+	if (s == OK)
+		return OK;
 
-	if (s == LEAVE) {
-		s = h->handler.pipe->end(h, msg, len);
+	ipt = h->cmn->ipt;
+
+	if (s == DONE) {
+		do {
+			// if its a basic handler -> send any last input
+			if (h->handler.pipe->next_ptr != 0 && (!h->cmn->out->link || !st_is_empty(&h->cmn->out->pt))) {
+				s = _bh_next(h);
+			}
+
+			s = h->handler.pipe->end(h, 0, 0);
+
+			h->handler.pipe = &_ok_node;
+			h = h->next;
+		} while (h && s != FAILED);
+	} else if (s == LEAVE) {
+		s = h->handler.pipe->end(h, 0, 0);
 		h->handler.pipe = &_copy_node;
 	}
 
-	if (s != OK) {
-		if (s == FAILED) {
-			h = h->cmn->ipt;
-			h->flags |= 1;
-			msg = (cdat) "pipe-line";
-			len = 10;
-		}
+	if (s == FAILED) {
+		cdat msg = (cdat) "pipe-line";
+		uint len = 10;
+
+		h = ipt;
+		h->flags |= 1;
 
 		do {
-			if (h->handler.pipe->end(h, msg, len) == FAILED)
-				s = FAILED;
+			h->handler.pipe->end(h, msg, len);
 			h->handler.pipe = &_ok_node;
 			h = h->next;
 		} while (h);
 	}
+
 	return s;
 }
 
@@ -432,16 +437,16 @@ static state _check_handler(struct handler_node* h, state (*handler)(void*)) {
 	if (s == OK)
 		s = handler(h);
 
-	return _check_end_pipe(h, s);
+	return _check_state(h, s);
 }
 
 state cle_close(_ipt* ipt, cdat msg, uint len) {
 	state s = (len == 0 && (ipt->flags & 1) == 0) ? DONE : FAILED;
 
-	if (_check_end_pipe(ipt, s) == DONE) {
-		tk_commit_task(ipt->cmn->inst.t);
-	} else {
+	if (_check_state(ipt, s) == FAILED) {
 		tk_drop_task(ipt->cmn->inst.t);
+	} else {
+		tk_commit_task(ipt->cmn->inst.t);
 	}
 	return s;
 }
@@ -463,7 +468,7 @@ state cle_data(_ipt* ipt, cdat data, uint len) {
 	if (s == OK)
 		s = ipt->handler.pipe->data(ipt, data, len);
 
-	return _check_end_pipe(ipt, s);
+	return _check_state(ipt, s);
 }
 
 // response
@@ -494,7 +499,7 @@ state resp_data(void* p, cdat c, uint l) {
 	if (s == OK)
 		s = h->next->handler.pipe->data(h->next, c, l);
 
-	return _check_end_pipe(h->next, s);
+	return _check_state(h->next, s);
 }
 state resp_next(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
@@ -515,7 +520,7 @@ state resp_serialize(void* v, st_ptr pt) {
 		s = st_map_st(h->cmn->inst.t, &pt, h->next->handler.pipe->data, h->next->handler.pipe->push, h->next->handler.pipe->pop,
 				h->next);
 
-	return _check_end_pipe(h->next, s);
+	return _check_state(h->next, s);
 }
 
 // add handler to config
@@ -538,6 +543,20 @@ uint cle_config_handler(task* t, st_ptr config, const cle_pipe* handler, enum ha
 }
 
 // basic handler implementation
+
+static void _push(struct task_common* cmn) {
+	ptr_list* l = cmn->free;
+	if (l)
+		cmn->free = l->link;
+	else
+		l = (ptr_list*) tk_alloc(cmn->inst.t, sizeof(ptr_list), 0);
+
+	l->link = cmn->out;
+	cmn->out = l;
+
+	l->pt = cmn->top;
+}
+
 static state _bh_push(void* v) {
 	struct handler_node* h = (struct handler_node*) v;
 	_push(h->cmn);
