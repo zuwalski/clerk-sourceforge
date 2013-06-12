@@ -25,27 +25,27 @@
 //////////////////////////////////
 
 static uint _start(void* p) {
-	puts("_start");
+	//puts("_start");
 	return 0;
 }
 static uint _next(void* p) {
-	puts("_next");
+	//puts("_next");
 	return 0;
 }
 static uint _end(void* p, cdat msg, uint len) {
-	printf("_end: %*s\n", len, msg);
+	//printf("_end: %*s\n", len, msg);
 	return 0;
 }
 static uint _pop(void* p) {
-	puts("_pop");
+	//puts("_pop");
 	return 0;
 }
 static uint _push(void* p) {
-	puts("_push");
+	//puts("_push");
 	return 0;
 }
 static uint _data(void* p, cdat data, uint len) {
-	printf("_data: %*s\n", len, data);
+	//printf("_data: %*s\n", len, data);
 	return 0;
 }
 
@@ -53,30 +53,30 @@ static const cle_pipe print_pipe = { _start, _next, _end, _pop, _push, _data, 0 
 static cle_pipe_inst pipe_inst = { &print_pipe, 0 };
 
 static uint pt_start(void* p) {
-	puts("pt_start");
+	//puts("pt_start");
 	return 0;
 }
 static uint pt_next(void* p) {
-	puts("pt_next");
+	//puts("pt_next");
 	resp_next(p);
 	return 0;
 }
 static uint pt_end(void* p, cdat msg, uint len) {
-	printf("pt_end: %*s\n", len, msg);
+	//printf("pt_end: %*s\n", len, msg);
 	return 0;
 }
 static uint pt_pop(void* p) {
-	puts("pt_pop");
+	//puts("pt_pop");
 	resp_pop(p);
 	return 0;
 }
 static uint pt_push(void* p) {
-	puts("pt_push");
+	//puts("pt_push");
 	resp_push(p);
 	return 0;
 }
 static uint pt_data(void* p, cdat data, uint len) {
-	printf("pt_data: %*s\n", len, data);
+	//printf("pt_data: %*s\n", len, data);
 	resp_data(p, data, len);
 	return 0;
 }
@@ -84,19 +84,19 @@ static uint pt_data(void* p, cdat data, uint len) {
 static const cle_pipe pt_pipe = { pt_start, pt_next, pt_end, pt_pop, pt_push, pt_data, 0 };
 
 static uint bh_start(void* p) {
-	puts("bh_start");
+	//puts("bh_start");
 	return 0;
 }
 
 static uint bh_next(void* p, st_ptr pt) {
-	puts("bh_next");
+	//puts("bh_next");
 	resp_serialize(p, pt);
 	resp_next(p);
 	return 0;
 }
 
 static uint bh_end(void* p, cdat m, uint l) {
-	printf("bh_end: %*s\n", l, m);
+	//printf("bh_end: %*s\n", l, m);
 	return 0;
 }
 
@@ -113,6 +113,8 @@ void test_stream_c2() {
 	st_ptr config = str(t, "");
 	st_ptr userid = str(t, "");
 	st_ptr user_roles = str(t, "");
+	int i;
+	clock_t start,stop;
 
 	_ipt* ipt = cle_open(t, config, eventid, userid, user_roles, pipe_inst);
 
@@ -155,21 +157,27 @@ void test_stream_c2() {
 	cle_config_handler(t, config, &bh_pipe, SYNC_REQUEST_HANDLER);
 
 	puts("test 3:");
-	ipt = cle_open(t, config, eventid, userid, user_roles, pipe_inst);
 
-	cle_data(ipt, (cdat) "a", 2);
-	cle_push(ipt);
-	cle_data(ipt, (cdat) "1", 2);
-	cle_push(ipt);
-	cle_data(ipt, (cdat) "x", 2);
+	start = clock();
+	for (i = 0; i < 700000; i++) {
+		ipt = cle_open(t, config, eventid, userid, user_roles, pipe_inst);
 
-	cle_pop(ipt);
-	cle_data(ipt, (cdat) "2", 2);
-	cle_pop(ipt);
-	cle_data(ipt, (cdat) "b", 2);
+		cle_data(ipt, (cdat) "a", 2);
+		cle_push(ipt);
+		cle_data(ipt, (cdat) "1", 2);
+		cle_push(ipt);
+		cle_data(ipt, (cdat) "x", 2);
 
-	cle_next(ipt);
-	cle_close(ipt, 0, 0);
+		cle_pop(ipt);
+		cle_data(ipt, (cdat) "2", 2);
+		cle_pop(ipt);
+		cle_data(ipt, (cdat) "b", 2);
+
+		cle_next(ipt);
+		cle_close(ipt, 0, 0);
+	}
+	stop = clock();
+	printf("time: %d\n", (stop - start));
 
 	tk_drop_task(t);
 }

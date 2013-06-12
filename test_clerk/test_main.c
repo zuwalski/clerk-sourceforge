@@ -1154,7 +1154,7 @@ int main(int argc, char* argv[])
 //	st_prt_page(&basenames);
 //	map_static_page(basenames.pg);
 	
-
+//	time_struct_c();
 	test_stream_c2();
 	
 	puts("done");
@@ -1163,7 +1163,7 @@ int main(int argc, char* argv[])
 
 	test_struct_c();
 	
-	time_struct_c();
+
 
 	test_instance_c();
 
