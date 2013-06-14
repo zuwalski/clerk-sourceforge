@@ -34,7 +34,7 @@ static uint _next(void* p) {
 }
 static uint _end(void* p, cdat msg, uint len) {
 	//printf("_end: %*s\n", len, msg);
-	return 0;
+	return 1;
 }
 static uint _pop(void* p) {
 	//puts("_pop");
@@ -63,7 +63,7 @@ static uint pt_next(void* p) {
 }
 static uint pt_end(void* p, cdat msg, uint len) {
 	//printf("pt_end: %*s\n", len, msg);
-	return 0;
+	return 1;
 }
 static uint pt_pop(void* p) {
 	//puts("pt_pop");

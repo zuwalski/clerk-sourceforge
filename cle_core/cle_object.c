@@ -994,6 +994,7 @@ static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid) {
 
 int cle_commit(cle_instance inst) {
 
+	tk_commit_task(inst.t);
 	return 0;
 }
 

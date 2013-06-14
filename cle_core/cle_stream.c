@@ -22,6 +22,9 @@
 /*
  *	The main input-interface to the running system
  *	Events/messages are "pumped" in through the exported set of functions
+ *
+ *	TODO env passed to open.
+ *	remove user-id - check for sa-role in user-roles
  */
 
 struct _child_task {
@@ -87,7 +90,7 @@ static state _ok_next(void* v) {
 	return OK;
 }
 static state _ok_end(void* v, cdat c, uint l) {
-	return OK;
+	return DONE;
 }
 static state _ok_pop(void* v) {
 	return OK;
@@ -316,20 +319,33 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 	ctx->obj_handler = &_copy_node;
 }
 
+static void _add_child(struct task_common* cmn, _ipt* ipt) {
+	struct _child_task* ct = (struct _child_task*) tk_alloc(cmn->inst.t, sizeof(struct _child_task), 0);
+	ct->next = cmn->childs;
+	cmn->childs = ct;
+	ct->task = ipt;
+}
+
 static struct task_common* _create_task_common(struct _scanner_ctx* ctx, cle_pipe_inst response, st_ptr config) {
 	struct task_common* cmn = (struct task_common*) tk_alloc(ctx->inst.t, sizeof(struct task_common), 0);
 	cmn->response = response;
 	cmn->inst = ctx->inst;
-	cmn->config = config;
-	cmn->parent = 0;
 
+	cmn->config = config;
 	cmn->event_name = ctx->event_name_base;
 	cmn->user_roles = ctx->user_roles;
 	cmn->userid = ctx->userid;
 
 	st_empty(cmn->inst.t, &cmn->top);
+	cmn->free = 0;
 	_push(cmn);
 
+	cmn->parent = 0;
+	cmn->childs = 0;
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
 	return cmn;
 }
 
@@ -375,7 +391,7 @@ static _ipt* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response, s
 // input interface
 _ipt* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response) {
 	struct _scanner_ctx ctx;
-	_ipt* ipt;
+	_ipt* ipt = 0;
 
 	_init_scanner(&ctx, parent, config, user_roles, userid);
 
@@ -384,29 +400,39 @@ _ipt* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_pt
 
 	_check_boundry(&ctx);
 
-	if (cle_scan_validate(parent, &eventid, _scanner, &ctx)) {
-		tk_drop_task(ctx.inst.t);
-		return 0;
-	}
+	if (cle_scan_validate(parent, &eventid, _scanner, &ctx) == 0)
+		ipt = _setup_handlers(&ctx, response, config);
 
-	if ((ipt = _setup_handlers(&ctx, response, config)) == 0) {
+	if (ipt == 0)
 		tk_drop_task(ctx.inst.t);
-		return 0;
-	}
 
 	return ipt;
 }
 
 /**
- * Must be call from the current thread of parent
+ * Must be called from the current thread of parent
  */
 _ipt* cle_open_child(void* parent, st_ptr eventid, cle_pipe_inst resp) {
 	struct handler_node* prnt = (struct handler_node*) parent;
 	struct task_common* pcmn = prnt->cmn;
+	struct _child_task* ct;
 	_ipt* ipt = cle_open(pcmn->inst.t, pcmn->config, eventid, pcmn->userid, pcmn->user_roles, resp);
+	if (ipt == 0)
+		return 0;
 
-	// TODO attach child to parent
+	// attach child to parent
 	ipt->cmn->parent = pcmn;
+	ct = pcmn->childs;
+	while (ct) {
+		if (ct->task == 0) {
+			ct->task = ipt;
+			break;
+		}
+		ct = ct->next;
+	}
+	if (ct == 0)
+		_add_child(pcmn, ipt);
+
 	return ipt;
 }
 
@@ -420,6 +446,7 @@ static state _need_start_call(struct handler_node* h) {
 }
 
 static state _check_state(struct handler_node* h, state s) {
+	struct _child_task* c;
 	if (s == OK)
 		return OK;
 
@@ -449,6 +476,7 @@ static state _check_state(struct handler_node* h, state s) {
 
 	// Failed
 	h = h->cmn->ipt;
+	c = h->cmn->childs;
 
 	do {
 		h->flags |= 1;
@@ -458,14 +486,11 @@ static state _check_state(struct handler_node* h, state s) {
 	} while (h);
 
 	// kill all child-tasks
-	if (h->cmn->childs) {
-		struct _child_task* c = h->cmn->childs;
-		do {
-			// TODO must call through input-queue
-			if (c->task)
-				cle_close(c->task, (cdat) "parent-failed", 14);
-			c = c->next;
-		} while (c);
+	while (c) {
+		// TODO must call through input-queue
+		if (c->task)
+			cle_close(c->task, (cdat) "parent-failed", 14);
+		c = c->next;
 	}
 
 	return FAILED;
@@ -498,10 +523,10 @@ state cle_close(_ipt* ipt, cdat msg, uint len) {
 	}
 
 	// rollback or commit
-	if (s == FAILED) {
-		tk_drop_task(ipt->cmn->inst.t);
+	if (s == DONE) {
+		s = cle_commit(ipt->cmn->inst) == 0 ? DONE : FAILED;
 	} else {
-		tk_commit_task(ipt->cmn->inst.t);
+		tk_drop_task(ipt->cmn->inst.t);
 	}
 	return s;
 }
@@ -652,5 +677,15 @@ static state _bh_next(void* v) {
 
 cle_pipe cle_basic_handler(state (*start)(void*), state (*next)(void* p, st_ptr ptr), state (*end)(void* p, cdat msg, uint len)) {
 	const cle_pipe p = { start, _bh_next, end, _bh_pop, _bh_push, _bh_data, next };
+	return p;
+}
+
+cle_pipe cle_basic_trigger_start(state (*start)(void* p)) {
+	const cle_pipe p = { start, resp_next, _ok_end, resp_pop, resp_push, resp_data, 0 };
+	return p;
+}
+
+cle_pipe cle_basic_trigger_end(state (*end)(void* p, cdat msg, uint len)) {
+	const cle_pipe p = { _ok_start, resp_next, end, resp_pop, resp_push, resp_data, 0 };
 	return p;
 }

@@ -59,6 +59,11 @@ state resp_pop(void* p);
 state resp_serialize(void* v, st_ptr pt);
 
 uint cle_config_handler(task* t, st_ptr config, const cle_pipe* handler, enum handler_type type);
-cle_pipe cle_basic_handler(state (*start)(void*), state (*next)(void* p, st_ptr ptr), state (*end)(void* p, cdat msg, uint len));
+
+cle_pipe cle_basic_handler(state (*start)(void*), state (*next)(void* p, st_ptr ptr),
+		state (*end)(void* p, cdat msg, uint len));
+
+cle_pipe cle_basic_trigger_start(state (*start)(void*));
+cle_pipe cle_basic_trigger_end(state (*end)(void* p, cdat msg, uint len));
 
 #endif
