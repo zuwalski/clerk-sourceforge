@@ -20,22 +20,50 @@
 
 #include "cle_clerk.h"
 #include "cle_object.h"
+
 /*
  *	The main input-interface to the running system
  *	Commands and external events are "pumped" in through this set of functions
  */
 
+/* pipe interface begin */
+typedef enum handler_state {
+	OK = 0, DONE = 1, FAILED = 2, LEAVE = 3
+} state;
+
+typedef enum handler_type {
+	SYNC_REQUEST_HANDLER = 0, PIPELINE_REQUEST, PIPELINE_RESPONSE
+} handler_type;
+
+typedef struct cle_pipe {
+	state (*start)(void*);
+	state (*next)(void*);
+	state (*end)(void*, cdat, uint);
+	state (*pop)(void*);
+	state (*push)(void*);
+	state (*data)(void*, cdat, uint);
+	state (*next_ptr)(void*, st_ptr);
+} cle_pipe;
+
+typedef struct cle_pipe_inst {
+	const cle_pipe* pipe;
+	void* data;
+} cle_pipe_inst;
+
+/* pipe interface end */
+
 /* event input functions */
 
-typedef struct handler_node _ipt;
+typedef struct handler_node cle_stream;
+typedef void* pcle_stream;
 
-_ipt* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response);
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response);
 
-state cle_close(_ipt* ipt, cdat msg, uint len);
-state cle_next(_ipt* ipt);
-state cle_pop(_ipt* ipt);
-state cle_push(_ipt* ipt);
-state cle_data(_ipt* ipt, cdat data, uint len);
+state cle_close(cle_stream* ipt, cdat msg, uint len);
+state cle_next(cle_stream* ipt);
+state cle_pop(cle_stream* ipt);
+state cle_push(cle_stream* ipt);
+state cle_data(cle_stream* ipt, cdat data, uint len);
 
 struct handler_env {
 	cle_instance inst;

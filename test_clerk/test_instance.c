@@ -221,7 +221,6 @@ void test_instance_c()
 
 	// same id - but not same ptr
 	ASSERT(memcmp(&oidstr,&oidstr2,sizeof(oidstr)) == 0);
-*/
 
 	// EXPRS
 	pt = name;
@@ -232,6 +231,7 @@ void test_instance_c()
 	st_update(t,&pt,testmeth,sizeof(testmeth));
 
 	ASSERT(cle_create_expr(inst,object1,name,meth,&_test_pipe_stdout,0) == 0);
+*/
 
 	tk_drop_task(t);
 }

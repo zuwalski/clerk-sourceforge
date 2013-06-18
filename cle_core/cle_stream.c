@@ -29,7 +29,7 @@
 
 struct _child_task {
 	struct _child_task* next;
-	_ipt* task;
+	cle_stream* task;
 };
 
 struct task_common {
@@ -43,7 +43,7 @@ struct task_common {
 	st_ptr config;
 	ptr_list* free;
 	ptr_list* out;
-	_ipt* ipt;
+	cle_stream* ipt;
 	st_ptr top;
 };
 
@@ -319,7 +319,7 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 	ctx->obj_handler = &_copy_node;
 }
 
-static void _add_child(struct task_common* cmn, _ipt* ipt) {
+static void _add_child(struct task_common* cmn, cle_stream* ipt) {
 	struct _child_task* ct = (struct _child_task*) tk_alloc(cmn->inst.t, sizeof(struct _child_task), 0);
 	ct->next = cmn->childs;
 	cmn->childs = ct;
@@ -349,10 +349,10 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx, cle_pip
 	return cmn;
 }
 
-static _ipt* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response, st_ptr config) {
+static cle_stream* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response, st_ptr config) {
 	struct handler_node* hdl;
 	struct task_common* cmn;
-	_ipt* ipt = ctx->hdltypes[SYNC_REQUEST_HANDLER];
+	cle_stream* ipt = ctx->hdltypes[SYNC_REQUEST_HANDLER];
 
 	if (ctx->allowed == 0 || ipt == 0)
 		return 0;
@@ -389,9 +389,9 @@ static _ipt* _setup_handlers(struct _scanner_ctx* ctx, cle_pipe_inst response, s
 }
 
 // input interface
-_ipt* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response) {
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response) {
 	struct _scanner_ctx ctx;
-	_ipt* ipt = 0;
+	cle_stream* ipt = 0;
 
 	_init_scanner(&ctx, parent, config, user_roles, userid);
 
@@ -412,11 +412,11 @@ _ipt* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_pt
 /**
  * Must be called from the current thread of parent
  */
-_ipt* cle_open_child(void* parent, st_ptr eventid, cle_pipe_inst resp) {
+cle_stream* cle_open_child(void* parent, st_ptr eventid, cle_pipe_inst resp) {
 	struct handler_node* prnt = (struct handler_node*) parent;
 	struct task_common* pcmn = prnt->cmn;
 	struct _child_task* ct;
-	_ipt* ipt = cle_open(pcmn->inst.t, pcmn->config, eventid, pcmn->userid, pcmn->user_roles, resp);
+	cle_stream* ipt = cle_open(pcmn->inst.t, pcmn->config, eventid, pcmn->userid, pcmn->user_roles, resp);
 	if (ipt == 0)
 		return 0;
 
@@ -460,14 +460,18 @@ static state _check_state(struct handler_node* h, state s) {
 				}
 			}
 
-			s = h->handler.pipe->end(h, 0, 0);
+			s = _need_start_call(h);
+			if (s != FAILED)
+				s = h->handler.pipe->end(h, 0, 0);
 			h->handler.pipe = &_ok_node;
 			if (s != DONE)
 				break;
 			h = h->next;
 		} while (h);
 	} else if (s == LEAVE) {
-		s = h->handler.pipe->end(h, 0, 0);
+		s = _need_start_call(h);
+		if (s != FAILED)
+			s = h->handler.pipe->end(h, 0, 0);
 		h->handler.pipe = &_copy_node;
 	}
 
@@ -506,7 +510,7 @@ static state _check_handler(struct handler_node* h, state (*handler)(void*)) {
 }
 
 // TODO msg gets lost ..
-state cle_close(_ipt* ipt, cdat msg, uint len) {
+state cle_close(cle_stream* ipt, cdat msg, uint len) {
 	state s = (len == 0 && (ipt->flags & 1) == 0) ? DONE : FAILED;
 	s = _check_state(ipt, s);
 
@@ -522,28 +526,28 @@ state cle_close(_ipt* ipt, cdat msg, uint len) {
 		}
 	}
 
-	// rollback or commit
-	if (s == DONE) {
-		s = cle_commit(ipt->cmn->inst) == 0 ? DONE : FAILED;
-	} else {
-		tk_drop_task(ipt->cmn->inst.t);
-	}
+	// commit (trace and stream)
+	if (s == DONE)
+		s = cle_commit_objects(ipt->cmn->inst) == 0 ? DONE : FAILED;
+
+	// drop local task
+	tk_drop_task(ipt->cmn->inst.t);
 	return s;
 }
 
-state cle_next(_ipt* ipt) {
+state cle_next(cle_stream* ipt) {
 	return _check_handler(ipt, ipt->handler.pipe->next);
 }
 
-state cle_pop(_ipt* ipt) {
+state cle_pop(cle_stream* ipt) {
 	return _check_handler(ipt, ipt->handler.pipe->pop);
 }
 
-state cle_push(_ipt* ipt) {
+state cle_push(cle_stream* ipt) {
 	return _check_handler(ipt, ipt->handler.pipe->push);
 }
 
-state cle_data(_ipt* ipt, cdat data, uint len) {
+state cle_data(cle_stream* ipt, cdat data, uint len) {
 	state s = _need_start_call(ipt);
 	if (s == OK)
 		s = ipt->handler.pipe->data(ipt, data, len);

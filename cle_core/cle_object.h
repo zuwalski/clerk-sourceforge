@@ -25,6 +25,11 @@
 
 #include "cle_clerk.h"
 
+typedef struct {
+	task* t;
+	st_ptr root;
+} cle_instance;
+
 //root-headers \0\0[Identificer]
 #define IHEAD_SIZE 3	//(sizeof(segment) + 1)
 #define HEAD_NAMES ((cdat)"\0\0n")
@@ -84,37 +89,6 @@ typedef struct {
 	uchar type;
 } cle_typed_identity;
 
-typedef struct {
-	task* t;
-	st_ptr root;
-} cle_instance;
-
-typedef enum handler_state {
-	OK = 0, DONE = 1,FAILED = 2, LEAVE = 3
-} state;
-
-/* pipe interface begin */
-typedef struct cle_pipe {
-	state (*start)(void*);
-	state (*next)(void*);
-	state (*end)(void*, cdat, uint);
-	state (*pop)(void*);
-	state (*push)(void*);
-	state (*data)(void*, cdat, uint);
-	state (*next_ptr)(void*, st_ptr);
-} cle_pipe;
-
-typedef struct cle_pipe_inst {
-	const cle_pipe* pipe;
-	void* data;
-} cle_pipe_inst;
-
-/* pipe interface end */
-
-typedef enum handler_type {
-	SYNC_REQUEST_HANDLER = 0, PIPELINE_REQUEST, PIPELINE_RESPONSE
-} handler_type;
-
 int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), void* ctx);
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
@@ -143,7 +117,7 @@ int cle_set_state(cle_instance inst, st_ptr obj, st_ptr state);
 
 int cle_create_property(cle_instance inst, st_ptr obj, st_ptr propertyname, identity* id);
 
-int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
+//int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data);
 
 int cle_get_handler(cle_instance inst, cle_handler href, st_ptr* obj, st_ptr* handler);
 
@@ -173,6 +147,6 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
 
-int cle_commit(cle_instance inst);
+int cle_commit_objects(cle_instance inst);
 
 #endif

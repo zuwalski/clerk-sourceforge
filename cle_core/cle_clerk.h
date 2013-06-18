@@ -1,20 +1,20 @@
 /* 
-    Clerk application and storage engine.
-    Copyright (C) 2008  Lars Szuwalski
+ Clerk application and storage engine.
+ Copyright (C) 2008  Lars Szuwalski
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #ifndef __CLE_CLERK_H__
 #define __CLE_CLERK_H__
 
@@ -30,21 +30,18 @@ typedef unsigned short segment;
 typedef struct task task;
 //typedef struct page_wrap page_wrap;
 
-typedef struct st_ptr
-{
+typedef struct st_ptr {
 	struct page_wrap* pg;
 	ushort key;
 	ushort offset;
 } st_ptr;
 
-typedef struct ptr_list
-{
+typedef struct ptr_list {
 	struct ptr_list* link;
 	st_ptr pt;
 } ptr_list;
 
-typedef struct it_ptr
-{
+typedef struct it_ptr {
 	struct page_wrap* pg;
 	uchar* kdata;
 	ushort key;
@@ -53,8 +50,7 @@ typedef struct it_ptr
 	ushort kused;
 } it_ptr;
 
-typedef struct
-{
+typedef struct {
 	cdat string;
 	uint length;
 } st_str;
@@ -90,9 +86,9 @@ int st_compare_st(task* t, st_ptr* to, st_ptr* from);
 
 uint st_delete_st(task* t, st_ptr* from, st_ptr* str);
 
-int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx);
+int st_map(task* t, st_ptr* str, uint (*fun)(void*, cdat, uint), void* ctx);
 
-uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx);
+uint st_map_st(task* t, st_ptr* from, uint (*dat)(void*, cdat, uint), uint (*push)(void*), uint (*pop)(void*), void* ctx);
 
 //uint st_map_ptr(task* t, st_ptr* from, st_ptr* to, uint(*dat)(task*,st_ptr*,cdat,uint));
 
@@ -104,8 +100,8 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_offset(task* t, st_ptr* pt, uint offset);
 /*
-uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);
-*/
+ uint st_prepend(task* t, st_ptr* pt, cdat path, uint length, uint replace_length);
+ */
 
 int st_get(task* t, st_ptr* pt, char* buffer, uint buffer_length);
 
@@ -146,7 +142,7 @@ segment tk_new_segment(task* t);
 
 void tk_drop_task(task* t);
 int tk_commit_task(task* t);
-void tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree);
+void tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree);
 
 // removing from h: internal use only!
 void* tk_malloc(task* t, uint size);

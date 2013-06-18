@@ -755,7 +755,7 @@ static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base
 	}
 }
 
-void tk_sync_to(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
+void tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	struct _tk_trace_base base;
 	page_wrap* pgw;
 	

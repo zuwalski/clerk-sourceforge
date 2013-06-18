@@ -17,8 +17,8 @@
  */
 
 #include "test.h"
-#include "../cle_core/cle_stream.h"
-#include "../cle_core/cle_object.h"
+#include "cle_stream.h"
+#include "cle_object.h"
 #include <stdio.h>
 #include <time.h>
 
@@ -116,7 +116,7 @@ void test_stream_c2() {
 	int i;
 	clock_t start,stop;
 
-	_ipt* ipt = cle_open(t, config, eventid, userid, user_roles, pipe_inst);
+	cle_stream* ipt = cle_open(t, config, eventid, userid, user_roles, pipe_inst);
 
 	ASSERT(ipt == 0);
 

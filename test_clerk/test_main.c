@@ -953,7 +953,7 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 	
-	tk_sync_to(t, &del_root, &ins_root);
+	tk_delta(t, &del_root, &ins_root);
 
 	//st_prt_page(&ins_root);
 
@@ -972,7 +972,7 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 	
-	tk_sync_to(t, &del_root, &ins_root);
+	tk_delta(t, &del_root, &ins_root);
 	
 	ASSERT(st_is_empty(&ins_root));
 	ASSERT(st_is_empty(&del_root));
@@ -980,7 +980,7 @@ void test_tk_sync() {
 	tmp = root;
 	st_insert(t, &tmp, t4, sizeof(t4));
 
-	tk_sync_to(t, &del_root, &ins_root);
+	tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_exsist(t, &ins_root, t4, sizeof(t4)));
 
@@ -999,13 +999,13 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 	
-	tk_sync_to(t, &del_root, &ins_root);	
+	tk_delta(t, &del_root, &ins_root);	
 		
 	ASSERT(st_exsist(t, &del_root, t2, 3));
 
 	st_delete(t, &root, t1, sizeof(t1));
 
-	tk_sync_to(t, &del_root, &ins_root);
+	tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_exsist(t, &del_root, t1, sizeof(t1)));
 	ASSERT(st_exsist(t, &root, t1, sizeof(t1)) == 0);
@@ -1033,7 +1033,7 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 
-	tk_sync_to(t, &del_root, &ins_root);
+	tk_delta(t, &del_root, &ins_root);
 	
 	//st_prt_page(&ins_root);
 	

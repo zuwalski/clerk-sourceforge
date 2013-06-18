@@ -31,8 +31,8 @@
 
 typedef struct {
 	oid id;
-	oid ext;
 	ulong version;
+	oid ext;
 } objectheader2;
 // followed by object-content
 
@@ -44,7 +44,7 @@ typedef union {
 	objectheader2 obj;
 } objheader;
 
-extern const oid NOOID = { 0, 0, 0, 0, 0 };
+const oid NOOID = { 0, 0, 0, 0, 0 };
 
 #define ISMEMOBJ(header) ((header).zero == 0)
 // DEV-hdr: (next)identity
@@ -77,7 +77,7 @@ struct _mem_ref {
  
  ****************************************************/
 
-int cle_scan_validate(task* t, st_ptr* from, int(*fun)(void*, uchar*, uint), void* ctx) {
+int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), void* ctx) {
 	uchar buffer[100];
 	int state = 2;
 	while (1) {
@@ -224,10 +224,12 @@ static int _goto_id(cle_instance inst, st_ptr* child, oid id) {
 /****************************************************
  OBJ-BASENAMES */
 
-static const char basenames[] = { 0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x4,'x',0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xa8,0x0,0x0,0x0,0x36,
-	0x0,'i','n','i','t',0x0,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3,0x0,0xc8,0x0,0x58,0x0,0x0,0x0,'t',
-	'o','s','t','r','i','n','g',0x0,0x4,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x4,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x5,0x0,0xc0,0x0,0x0,0x0,0x0,
-	0x0,'m','e','s','s','a','g','e',0x0,0x5,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x3,0x0,0x0,0x0,0x0,0x0,0x0,0x0 };
+static const char basenames[] = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x4, 'x', 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xa8, 0x0, 0x0, 0x0, 0x36, 0x0, 'i', 'n', 'i', 't', 0x0, 0x3, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0xc8, 0x0, 0x58, 0x0, 0x0, 0x0, 't', 'o', 's',
+		't', 'r', 'i', 'n', 'g', 0x0, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x5,
+		0x0, 0xc0, 0x0, 0x0, 0x0, 0x0, 0x0, 'm', 'e', 's', 's', 'a', 'g', 'e', 0x0, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0 };
 
 /****************************************************
  implementations
@@ -261,7 +263,7 @@ static oid _new_oid(cle_instance inst, st_ptr* newobj) {
 				}
 			}
 
-			memcpy(id._high,it.kdata,OID_HIGH_SIZE);
+			memcpy(id._high, it.kdata, OID_HIGH_SIZE);
 
 			it_dispose(inst.t, &it);
 
@@ -291,7 +293,7 @@ int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj) {
 
 	if (extends.pg == 0) {
 		// no extend: root-level object
-		memset(&header.ext,0,sizeof(oid));
+		memset(&header.ext, 0, sizeof(oid));
 		devid = IDMAKE(1,0);
 	} else {
 		_getheader(inst, &extends, (objheader*) &header);
@@ -593,7 +595,7 @@ static identity _identify(cle_instance inst, st_ptr obj, st_ptr name, const enum
 //			if (st_move_st(inst.t, &pt, &hostpart) == 0)
 //				create = 0;
 //			else 
-				if (create == 0)
+			if (create == 0)
 				return 0;
 			break;
 		}
@@ -662,48 +664,50 @@ static void _record_source_and_path(task* app_instance, st_ptr dest, st_ptr path
 }
 
 /* values and exprs shadow names defined at a lower level */
-int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data) {
-	identity id;
-	while (1) {
-		switch (st_scan(inst.t, &expr)) {
-		case ':': // inject named context resource
-			id = _identify(inst, obj, path, TYPE_DEPENDENCY, 1);
-			if (id == 0)
-				return __LINE__;
+/*
+ int cle_create_expr(cle_instance inst, st_ptr obj, st_ptr path, st_ptr expr, cle_pipe* response, void* data) {
+ identity id;
+ while (1) {
+ switch (st_scan(inst.t, &expr)) {
+ case ':': // inject named context resource
+ id = _identify(inst, obj, path, TYPE_DEPENDENCY, 1);
+ if (id == 0)
+ return __LINE__;
 
-			_new_value(inst, obj, id, &obj);
+ _new_value(inst, obj, id, &obj);
 
-			return _copy_validate(inst.t, &obj, expr);
-		case '=': // expr
-			id = _identify(inst, obj, path, TYPE_EXPR, 1);
-			if (id == 0)
-				return __LINE__;
+ return _copy_validate(inst.t, &obj, expr);
+ case '=': // expr
+ id = _identify(inst, obj, path, TYPE_EXPR, 1);
+ if (id == 0)
+ return __LINE__;
 
-			_new_value(inst, obj, id, &obj);
+ _new_value(inst, obj, id, &obj);
 
-			_record_source_and_path(inst.t, obj, path, expr, '=');
-			// call compiler
-			return cmp_expr(inst.t, &obj, &expr, response, data);
-		case '(': // method
-			id = _identify(inst, obj, path, TYPE_METHOD, 1);
-			if (id == 0)
-				return __LINE__;
+ _record_source_and_path(inst.t, obj, path, expr, '=');
+ // call compiler
+ return cmp_expr(inst.t, &obj, &expr, response, data);
+ case '(': // method
+ id = _identify(inst, obj, path, TYPE_METHOD, 1);
+ if (id == 0)
+ return __LINE__;
 
-			_new_value(inst, obj, id, &obj);
+ _new_value(inst, obj, id, &obj);
 
-			_record_source_and_path(inst.t, obj, path, expr, '(');
-			// call compiler
-			return cmp_method(inst.t, &obj, &expr, response, data, 0);
-		case ' ':
-		case '\t':
-		case '\r':
-		case '\n':
-			break;
-		default:
-			return 1;
-		}
-	}
-}
+ _record_source_and_path(inst.t, obj, path, expr, '(');
+ // call compiler
+ return cmp_method(inst.t, &obj, &expr, response, data, 0);
+ case ' ':
+ case '\t':
+ case '\r':
+ case '\n':
+ break;
+ default:
+ return 1;
+ }
+ }
+ }
+ */
 
 int cle_identity_value(cle_instance inst, identity id, st_ptr obj, st_ptr* value) {
 	do {
@@ -992,9 +996,70 @@ static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid) {
 	return 0;
 }
 
-int cle_commit(cle_instance inst) {
+///////////////////////// tracing/delta-streaming commit V1 //////////////
+/**
+ * 0--1-------2-------------3---4---3-----(5)--
+ *	/OID/{Object-header}/content/content|header
+ */
+struct _trace_ctx {
+	cle_instance inst;
+	st_ptr newgen;
+	uint offset;
+	uint state;
+};
 
-	tk_commit_task(inst.t);
+static uint _t_dat(void* p, cdat c, uint l) {
+	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
+	cdat to = c + l;
+
+	for (to = c + l; c < to; c++) {
+		if (ctx->state == 1) {
+			ctx->state = 0;
+		}
+		if (*c == 0)
+			ctx->state = 1;
+	}
+	return 0;
+}
+static uint _t_push(void* p) {
+	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
+	return 0;
+}
+static uint _t_pop(void* p) {
+	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
+	return 0;
+}
+
+/**
+ * Trace all mem-refs and persist.
+ * Stream delta-trees to backend.
+ */
+int cle_commit_objects(cle_instance inst) {
+	struct _trace_ctx ctx;
+	st_ptr del, ins;
+
+	st_empty(inst.t, &del);
+	st_empty(inst.t, &ins);
+
+	// compute delta
+	tk_delta(inst.t, &del, &ins);
+
+	// stream deletes
+
+	ctx.inst = inst;
+
+	// trace and stream persistent objects
+	for (st_empty(inst.t, &ctx.newgen); !st_is_empty(&ins); ins = ctx.newgen) {
+		ctx.offset = 0;
+		ctx.state = 0;
+
+		if (st_map_st(inst.t, &ins, _t_dat, _t_push, _t_pop, &ctx)) {
+			// send rollback
+			return -1;
+		}
+	}
+
+	// send commit
 	return 0;
 }
 

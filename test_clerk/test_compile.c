@@ -172,8 +172,8 @@ static void _do_test(task* t, char* test, int length)
 
 	st_empty(t,&dest);
 	tmp = dest;
-	if(cmp_method(t,&dest,&src,&_test_pipe_stdout,0,1) == 0)
-		_rt_dump_function(t,&tmp);
+//	if(cmp_method(t,&dest,&src,&_test_pipe_stdout,0,1) == 0)
+//		_rt_dump_function(t,&tmp);
 }
 
 #define CMPTEST(f) _do_test(t,(f),sizeof((f)))
