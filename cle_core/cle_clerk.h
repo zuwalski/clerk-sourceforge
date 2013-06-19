@@ -18,7 +18,7 @@
 #ifndef __CLE_CLERK_H__
 #define __CLE_CLERK_H__
 
-#include "cle_pagesource.h"
+#include "cle_source.h"
 
 typedef unsigned int uint;
 typedef unsigned long ulong;
@@ -142,7 +142,7 @@ segment tk_new_segment(task* t);
 
 void tk_drop_task(task* t);
 int tk_commit_task(task* t);
-void tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree);
+int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree);
 
 // removing from h: internal use only!
 void* tk_malloc(task* t, uint size);

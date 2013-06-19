@@ -1002,6 +1002,8 @@ static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid) {
  *	/OID/{Object-header}/content/content|header
  */
 struct _trace_ctx {
+	cle_datasource* src;
+	void* sdat;
 	cle_instance inst;
 	st_ptr newgen;
 	uint offset;
@@ -1019,15 +1021,15 @@ static uint _t_dat(void* p, cdat c, uint l) {
 		if (*c == 0)
 			ctx->state = 1;
 	}
-	return 0;
+	return ctx->src->commit_data(ctx->sdat, c, l);
 }
 static uint _t_push(void* p) {
 	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
-	return 0;
+	return ctx->src->commit_push(ctx->sdat);
 }
 static uint _t_pop(void* p) {
 	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
-	return 0;
+	return ctx->src->commit_pop(ctx->sdat);
 }
 
 /**
@@ -1042,9 +1044,18 @@ int cle_commit_objects(cle_instance inst) {
 	st_empty(inst.t, &ins);
 
 	// compute delta
-	tk_delta(inst.t, &del, &ins);
+	if (tk_delta(inst.t, &del, &ins) == 0)
+		return 0;
+
+	ctx.src->commit_begin(ctx.sdat);
 
 	// stream deletes
+	if (!st_is_empty(&del)) {
+		ctx.src->commit_deletes(ctx.sdat);
+
+		if (st_map_st(inst.t, &del, ctx.src->commit_data, ctx.src->commit_push, ctx.src->commit_pop, ctx.sdat))
+			return -1;
+	}
 
 	ctx.inst = inst;
 
@@ -1060,6 +1071,6 @@ int cle_commit_objects(cle_instance inst) {
 	}
 
 	// send commit
-	return 0;
+	return ctx.src->commit_done(ctx.sdat);
 }
 

@@ -19,7 +19,7 @@
 #ifndef __CLE_BACKENDS_H__
 #define __CLE_BACKENDS_H__
 
-#include "../cle_pagesource.h"
+#include "../cle_source.h"
 
 #define MEM_PAGE_SIZE 1024
 #define PAGER_MAGIC 0x240673

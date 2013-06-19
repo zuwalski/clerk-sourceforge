@@ -18,7 +18,7 @@
 #ifndef __CLE_STRUCT_H__
 #define __CLE_STRUCT_H__
 
-#include "cle_pagesource.h"
+#include "cle_source.h"
 
 /* Config */
 

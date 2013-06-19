@@ -755,7 +755,7 @@ static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base
 	}
 }
 
-void tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
+int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	struct _tk_trace_base base;
 	page_wrap* pgw;
 	
@@ -779,6 +779,8 @@ void tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	}
 	
 	tk_mfree(t, base.kstack);
+
+	return (base.kstack != 0);
 }
 
 
