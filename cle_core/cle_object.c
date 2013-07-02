@@ -31,8 +31,8 @@
 
 typedef struct {
 	oid id;
-	ulong version;
 	oid ext;
+	ulong version;
 } objectheader2;
 // followed by object-content
 
@@ -393,6 +393,9 @@ oid cle_oid_from_cdat(cle_instance inst, cdat name, uint length) {
 		else
 			boid[i >> 1] = val << 4;
 	}
+
+	if (id._low == 0)
+		return NOOID;
 
 	return id;
 }
@@ -879,157 +882,173 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop) {
 	return (enum property_type) _head.type;
 }
 
-//////////// commit V1 ///////////////////
-
-static const char _mem_obj_header[] = { 0, TYPE_REF_MEM };
-static const char _ref_obj_header[] = { 0, TYPE_REF };
-
-static void _write_obj_ref(cle_instance inst, st_ptr* target, st_ptr* obj) {
-	objheader header;
-	st_ptr pt = *obj;
-
-	_getheader(inst, &pt, &header);
-
-	if (ISMEMOBJ(header)) {
-		st_insert(inst.t, target, (cdat) _mem_obj_header, sizeof(_mem_obj_header));
-		st_insert(inst.t, target, (cdat) obj, sizeof(st_ptr));
-
-		tk_ref_ptr(obj);
-	} else {
-		st_insert(inst.t, target, (cdat) _ref_obj_header, sizeof(_ref_obj_header));
-		st_insert(inst.t, target, (cdat) &header.obj.id, sizeof(oid));
-	}
-}
-
-// commit all updates to back-end - persist all new objects
-
-// recursively persist this object and all refs
-static int _persist_object(cle_instance inst, st_ptr* obj, oid* newid) {
-	objheader header;
-	st_ptr newobj, ext, pt = *obj;
-	it_ptr it;
-
-	if (st_get(inst.t, &pt, (char*) &header, sizeof(header)) >= 0)
-		return __LINE__;
-
-	// object needs persisting?
-	if (ISMEMOBJ(header) == 0) {
-		*newid = header.obj.id;
-		return 0;
-	}
-
-	// save extends-ptr
-	ext = header.ext;
-
-	// get an id for this object
-	*newid = header.obj.id = _new_oid(inst, &newobj);
-
-	// write it to prevent endless recursions (obj <-> ext-obj)
-	st_dataupdate(inst.t, obj, (cdat) &header.obj.id, sizeof(oid));
-
-	// check and persist extends (if needed)
-	if (_persist_object(inst, &ext, &header.obj.ext))
-		return __LINE__;
-
-	// state = start
-
-	// update header (all)
-	st_dataupdate(inst.t, obj, (cdat) &header, sizeof(header));
-
-	// link content to id
-	st_link(inst.t, &newobj, obj);
-
-	// recursivly persist all mem-objects on properties as well
-	it_create(inst.t, &it, &pt);
-
-	// for all mem-obj-refs
-	while (it_next(inst.t, &pt, &it, PROPERTY_SIZE)) {
-		st_ptr upd = pt;
-		struct _head _head;
-
-		if (st_get(inst.t, &pt, (char*) &_head, sizeof(_head)) != -2 || _head.zero != 0)
-			continue;
-
-		if (_head.type == TYPE_REF_MEM) {
-			st_ptr mem_ref;
-			struct _new_ref new_ref;
-
-			if (st_get(inst.t, &pt, (char*) &mem_ref, sizeof(mem_ref)) != -1)
-				return __LINE__;
-
-			// persist property object...
-			if (_persist_object(inst, &mem_ref, (oid*) &new_ref.ref))
-				return __LINE__;
-
-			new_ref.hd.zero = 0;
-			new_ref.hd.type = TYPE_REF;
-			st_update(inst.t, &upd, (cdat) &new_ref, sizeof(new_ref));
-		} else if (_head.type == TYPE_COLLECTION) {
-			it_ptr colit;
-			st_ptr newcollection;
-
-			// iterate mem-collection (prevents update from removing pages)
-			it_create(inst.t, &colit, &pt);
-
-			// remove mem-collection
-			st_update(inst.t, &upd, (cdat) &_head, sizeof(_head));
-			newcollection = upd;
-
-			// persist all objects in collection
-			while (it_next(inst.t, 0, &colit, sizeof(st_ptr))) {
-				oid _id;
-				st_ptr tmp = *((st_ptr*) it.kdata);
-
-				if (_persist_object(inst, &tmp, &_id))
-					return __LINE__;
-
-				tmp = newcollection;
-				st_insert(inst.t, &tmp, (cdat) &_id, sizeof(_id));
-			}
-
-			// and release ref to old collection
-			it_dispose(inst.t, &colit);
-		}
-	}
-
-	it_dispose(inst.t, &it);
-	return 0;
-}
-
 ///////////////////////// tracing/delta-streaming commit V1 //////////////
 /**
- * 0--1-------2-------------3---4---3-----(5)--
- *	/OID/{Object-header}/content/content|header
+ * 0--1-------2--------|----3---4---3-----(5)--
+ *	/OID/{Object-header}identity/content/content|header ... content
+ *
+ *	Ref: HEAD_OBJECT (0,o) + OID
+ *	MEM: HEAD_OBJECT (0,o) + (0,st_ptr)
+ *
+ *	Assumes sizeof(OID) != sizeof(st_ptr) + 1
+ *
+ *	E.g. match 0-0-o-0 st_ptr [END]
+ *	if match 0-0-? copy-through
+ *
  */
+#define TRACE_SKIP (sizeof(oid) + sizeof(objectheader2) + sizeof(identity))
+
 struct _trace_ctx {
 	cle_datasource* src;
 	void* sdat;
+
 	cle_instance inst;
 	st_ptr newgen;
-	uint offset;
-	uint state;
+	uint hdbegin;
+	uint at;
+
+	enum {
+		BEFORE = 0, HEAD_BEGIN, HEAD_TYPE, REF_TYPE, JUST_COPY, MEM_PTR, MEM_PTR_COMPLETE
+	} state;
+
+	union {
+		struct {
+			uchar zero;
+			st_ptr ptr;
+		} mem;
+		char chars[1 + sizeof(st_ptr)];
+	} header;
 };
 
-static uint _t_dat(void* p, cdat c, uint l) {
+/**
+ * Translates all mem-refs to obj-refs.
+ *
+ * Referenced mem-obj get persisted and there references are traced.
+ */
+static uint _t_dat(void* p, cdat dat, uint l, uint at) {
 	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
-	cdat to = c + l;
 
-	for (to = c + l; c < to; c++) {
-		if (ctx->state == 1) {
-			ctx->state = 0;
+	// have been reversed - and now moving forward again?
+	if (at < ctx->at) {
+		const int hdoffset = at - ctx->hdbegin;
+
+		switch (hdoffset) {
+		case 1:
+			ctx->state = HEAD_BEGIN;
+			break;
+		case 2:
+			ctx->state = HEAD_TYPE;
+			break;
+		case 3:
+			if (ctx->state != JUST_COPY)
+				ctx->state = REF_TYPE;
+			break;
+		default:
+			if (hdoffset <= 0) {
+				ctx->state = BEFORE;
+				ctx->hdbegin = 0;
+			} else if (ctx->state == MEM_PTR_COMPLETE)
+				ctx->state = MEM_PTR;
 		}
-		if (*c == 0)
-			ctx->state = 1;
 	}
-	return ctx->src->commit_data(ctx->sdat, c, l);
+
+	ctx->at = at + l;
+
+	if (ctx->at >= TRACE_SKIP && ctx->state != JUST_COPY) {
+		cdat c = (at >= TRACE_SKIP) ? dat : dat + TRACE_SKIP - at;
+		cdat to = dat + l;
+
+		if (ctx->state == MEM_PTR)
+			l = 0;
+
+		for (; c < to; c++) {
+			switch (ctx->state) {
+			case BEFORE:
+				if (*c == 0)
+					ctx->state++;
+				break;
+			case HEAD_BEGIN:
+				ctx->state = (*c == 0) ? HEAD_TYPE : BEFORE;
+				break;
+			case HEAD_TYPE:
+				ctx->hdbegin = at + (c - dat) - 2;
+				if (*c == 'o')
+					ctx->state = REF_TYPE;
+				else {
+					ctx->state = JUST_COPY;
+					c = to;
+				}
+				break;
+			case REF_TYPE:
+				ctx->state++;
+				if (*c == 0) {
+					ctx->state++;
+					l = c - dat;
+				}
+				break;
+			case MEM_PTR: {
+				const uint offset = at - ctx->hdbegin + 2 + (c - dat);
+				if (offset <= sizeof(st_ptr)) {
+					ctx->header.chars[offset] = *c;
+					if (offset == sizeof(st_ptr))
+						ctx->state = MEM_PTR_COMPLETE;
+					break;
+				}
+			}
+				/* no break */
+			default:
+				return -1;
+			}
+		}
+	}
+
+	return (l != 0) ? ctx->src->commit_data(ctx->sdat, dat, l, at) : 0;
 }
+
+static oid _t_persist(struct _trace_ctx* ctx, st_ptr pt) {
+	objheader hdr;
+	st_ptr tmp = pt;
+
+	_getheader(ctx->inst, &tmp, &hdr);
+
+	if (hdr.zero != 0)
+		return hdr.obj.id;
+	else {
+		oid ext = (hdr.ext.pg == 0) ? NOOID : _t_persist(ctx, hdr.ext);
+		oid id = _new_oid(ctx->inst, 0);	// change - and if oid already promised, use that
+
+		hdr.obj.version = 0;
+		hdr.obj.ext = ext;
+		hdr.obj.id = id;
+
+		tmp = pt;
+		st_dataupdate(ctx->inst.t, &tmp, (cdat) &hdr, sizeof(objheader));
+
+		tmp = ctx->newgen;
+		st_insert(ctx->inst.t, &tmp, (cdat) &id, sizeof(oid));
+
+		st_link(ctx->inst.t, &tmp, &pt);
+
+		return oid;
+	}
+}
+
+static uint _t_pop(void* p) {
+	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
+	// captured mem-ref
+	if (ctx->state == MEM_PTR_COMPLETE) {
+		oid id = _t_persist(ctx, ctx->header.mem.ptr);
+
+		if (ctx->src->commit_data(ctx->sdat, (cdat) &id, sizeof(oid), ctx->hdbegin + 2))
+			return -1;
+	}
+
+	return ctx->src->commit_pop(ctx->sdat);
+}
+
 static uint _t_push(void* p) {
 	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
 	return ctx->src->commit_push(ctx->sdat);
-}
-static uint _t_pop(void* p) {
-	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
-	return ctx->src->commit_pop(ctx->sdat);
 }
 
 /**
@@ -1043,31 +1062,38 @@ int cle_commit_objects(cle_instance inst) {
 	st_empty(inst.t, &del);
 	st_empty(inst.t, &ins);
 
-	// compute delta
-	if (tk_delta(inst.t, &del, &ins) == 0)
+	if (tk_delta(inst.t, &del, &ins))
 		return 0;
 
-	ctx.src->commit_begin(ctx.sdat);
+	if (ctx.src->commit_begin(ctx.sdat))
+		return -1;
+
+	ctx.inst = inst;
 
 	// stream deletes
 	if (!st_is_empty(&del)) {
-		ctx.src->commit_deletes(ctx.sdat);
+		if (ctx.src->commit_deletes(ctx.sdat))
+			return -1;
 
 		if (st_map_st(inst.t, &del, ctx.src->commit_data, ctx.src->commit_push, ctx.src->commit_pop, ctx.sdat))
 			return -1;
 	}
 
-	ctx.inst = inst;
-
 	// trace and stream persistent objects
-	for (st_empty(inst.t, &ctx.newgen); !st_is_empty(&ins); ins = ctx.newgen) {
-		ctx.offset = 0;
-		ctx.state = 0;
-
-		if (st_map_st(inst.t, &ins, _t_dat, _t_push, _t_pop, &ctx)) {
-			// send rollback
+	if (!st_is_empty(&ins)) {
+		if (ctx.src->commit_inserts(ctx.sdat))
 			return -1;
-		}
+
+		do {
+			st_empty(inst.t, &ctx.newgen);
+			ctx.state = HEAD_BEGIN;
+			ctx.at = ctx.hdbegin = 0;
+
+			if (st_map_st(inst.t, &ins, _t_dat, _t_push, _t_pop, &ctx))
+				return -1;
+
+			ins = ctx.newgen;
+		} while (!st_is_empty(&ins));
 	}
 
 	// send commit

@@ -57,9 +57,9 @@ typedef struct {
 	int (*commit_deletes)(cle_psrc_data);
 	int (*commit_inserts)(cle_psrc_data);
 
-	int (*commit_push)(cle_psrc_data);
-	int (*commit_pop)(cle_psrc_data);
-	int (*commit_data)(cle_psrc_data, const unsigned char*, unsigned int);
+	unsigned int (*commit_push)(cle_psrc_data);
+	unsigned int (*commit_pop)(cle_psrc_data);
+	unsigned int (*commit_data)(cle_psrc_data, const unsigned char*, unsigned int, unsigned int);
 } cle_datasource;
 
 #endif

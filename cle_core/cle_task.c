@@ -780,7 +780,7 @@ int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	
 	tk_mfree(t, base.kstack);
 
-	return (base.kstack != 0);
+	return (base.kstack == 0);
 }
 
 

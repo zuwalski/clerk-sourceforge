@@ -813,12 +813,12 @@ int st_scan(task* t, st_ptr* pt)
 
 static uint _dont_use(void* ctx) {return -2;}
 
-int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint), void* ctx)
+int st_map(task* t, st_ptr* str, uint(*fun)(void*,cdat,uint,uint), void* ctx)
 {
 	return st_map_st(t,str,fun,_dont_use,_dont_use,ctx);
 }
 
-static uint _mv_st(void* p, cdat txt, uint len)
+static uint _mv_st(void* p, cdat txt, uint len, uint at)
 {
 	struct _st_lkup_res* rt = (struct _st_lkup_res*)p;
 	rt->path = txt;
@@ -849,7 +849,7 @@ struct _del_ctx
 };
 
 // TODO: this will not work as expected...
-static uint _del_st(void* p, cdat txt, uint len)
+static uint _del_st(void* p, cdat txt, uint len, uint at)
 {
 	struct _del_ctx* ctx = (struct _del_ctx*)p;
 	return st_delete(ctx->t,&ctx->from,txt,len);
@@ -869,7 +869,7 @@ struct _st_insert
 	uint no_lookup;
 };
 
-static uint _ins_st(void* p, cdat txt, uint len)
+static uint _ins_st(void* p, cdat txt, uint len, uint at)
 {
 	struct _st_insert* sins = (struct _st_insert*)p;
 	sins->rt.path = txt;
@@ -910,7 +910,7 @@ int st_compare_st(task* t, st_ptr* p1, st_ptr* p2)
 	return st_map_st(t,p2,_mv_st,_dont_use,_dont_use,&rt);
 }
 
-static uint _cpy_dat(task* t, st_ptr* to, cdat dat, uint len)
+static uint _cpy_dat(task* t, st_ptr* to, cdat dat, uint len, uint at)
 {
 	st_insert(t,to,dat,len);
 	return 0;
@@ -925,19 +925,20 @@ uint st_copy_st(task* t, st_ptr* to, st_ptr* from)
 
 struct _st_map_worker_struct
 {
-	uint(*dat)(void*,cdat,uint);
+	uint(*dat)(void*,cdat,uint,uint);
 	uint(*push)(void*);
 	uint(*pop)(void*);
 	void* ctx;
 	task* t;
 };
 
-static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, key* me, key* nxt, uint offset)
+static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, key* me, key* nxt, uint offset, uint at)
 {
 	struct {
 		page_wrap* pg;
 		key* me;
 		key* nxt;
+		uint at;
 	} mx[16];
 	uint ret = 0,idx = 0;
 	while(1)
@@ -948,8 +949,9 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page_wrap* pg, ke
 		if(klen != 0)
 		{
 			cdat ckey = KDATA(me) + (offset >> 3);
-			if((ret = work->dat(work->ctx,ckey,klen)))
+			if((ret = work->dat(work->ctx,ckey,klen,at)))
 				break;
+			at += klen;
 		}
 
 		if(nxt == 0)
@@ -961,6 +963,7 @@ _map_pop:
 			me = mx[idx].me;
 			nxt = mx[idx].nxt;
 			pg = mx[idx].pg;
+			at = mx[idx].at;
 
 			offset = nxt->offset;
 			nxt = (nxt->next != 0)? GOOFF(pg,nxt->next) : 0;
@@ -977,7 +980,7 @@ _map_pop:
 					me = (ISPTR(nxt))?_tk_get_ptr(work->t,&pg,nxt) : nxt;
 					nxt = (me->sub != 0)? GOOFF(pg,me->sub) : 0;
 
-					if((ret = _st_map_worker(work,pg,me,nxt,0)))
+					if((ret = _st_map_worker(work,pg,me,nxt,0,at)))
 						break;
 					goto _map_pop;
 				}
@@ -985,6 +988,7 @@ _map_pop:
 				mx[idx].me = me;
 				mx[idx].nxt = nxt;
 				mx[idx].pg = pg;
+				mx[idx].at = at;
 				idx++;
 			}
 
@@ -997,7 +1001,7 @@ _map_pop:
 	return ret;
 }
 
-uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
+uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint,uint),uint(*push)(void*),uint(*pop)(void*), void* ctx)
 {
 	struct _st_map_worker_struct work;
 	work.ctx = ctx;
@@ -1006,7 +1010,7 @@ uint st_map_st(task* t, st_ptr* from, uint(*dat)(void*,cdat,uint),uint(*push)(vo
 	work.push = push;
 	work.t = t;
 
-	return _st_map_worker(&work,from->pg,GOOFF(from->pg,from->key),_trace_nxt(from),from->offset);
+	return _st_map_worker(&work,from->pg,GOOFF(from->pg,from->key),_trace_nxt(from),from->offset,0);
 }
 
 struct _cmp_ctx
@@ -1015,7 +1019,7 @@ struct _cmp_ctx
 	st_ptr ptr;
 };
 
-static uint _cmp_dat(void* p, cdat str, uint len)
+static uint _cmp_dat(void* p, cdat str, uint len, uint at)
 {
 	struct _cmp_ctx* ctx = (struct _cmp_ctx*)p;
 	return 0;

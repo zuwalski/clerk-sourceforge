@@ -141,11 +141,16 @@ static state _rn_end(void* v, cdat c, uint l) {
 static const cle_pipe _response_node = { _rn_start, _rn_next, _rn_end, _rn_pop, _rn_push, _rn_data, 0 };
 
 static struct handler_node* _hnode(struct _scanner_ctx* ctx, const cle_pipe* handler, oid id, enum handler_type type) {
-	struct handler_node* hdl;
+	struct handler_node* hdl = 0;
 
-	if (type == SYNC_REQUEST_HANDLER && ctx->hdltypes[SYNC_REQUEST_HANDLER] != 0)
+	if (type == SYNC_REQUEST_HANDLER) {
 		hdl = ctx->hdltypes[SYNC_REQUEST_HANDLER];
-	else
+
+		if (ctx->state != 0)
+			return hdl;
+	}
+
+	if (hdl == 0)
 		hdl = (struct handler_node*) tk_alloc(ctx->inst.t, sizeof(struct handler_node), 0);
 
 	hdl->next = ctx->hdltypes[type];
@@ -164,33 +169,31 @@ static void _ready_node(struct handler_node* n, struct task_common* cmn) {
 }
 
 static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
-	if (st_move(ctx->inst.t, &pt, HEAD_LINK, HEAD_SIZE) == 0) {
-		it_ptr it;
-		it_create(ctx->inst.t, &it, &pt);
-
-		while (it_next(ctx->inst.t, 0, &it, sizeof(oid) + 1)) {
-			if (*it.kdata != SYNC_REQUEST_HANDLER || ctx->state == 0)
-				_hnode(ctx, ctx->new_obj_handler, *((oid*) (it.kdata + 1)), *it.kdata);
-		}
-
-		it_dispose(ctx->inst.t, &it);
-	}
-
 	// trace last matching (single) object (if no obj-ref seen)
-	if (ctx->state != 1) {
+	if (ctx->state == 0) {
 		st_ptr tpt = pt;
 		oid id;
 		if (st_move(ctx->inst.t, &tpt, HEAD_OBJECTS, HEAD_SIZE) == 0
 				&& st_get(ctx->inst.t, &tpt, (char*) &id, sizeof(oid)) == -1) {
 			_hnode(ctx, ctx->new_obj_handler, id, SYNC_REQUEST_HANDLER);
-
-			ctx->state = 2;
 		}
+	}
+
+	// add user-defined handlers
+	if (st_move(ctx->inst.t, &pt, HEAD_LINK, HEAD_SIZE) == 0) {
+		it_ptr it;
+		it_create(ctx->inst.t, &it, &pt);
+
+		while (it_next(ctx->inst.t, 0, &it, sizeof(oid) + 1)) {
+			_hnode(ctx, ctx->new_obj_handler, *((oid*) (it.kdata + 1)), *it.kdata);
+		}
+
+		it_dispose(ctx->inst.t, &it);
 	}
 }
 
 static int _reg_objhandler(struct _scanner_ctx* ctx, st_ptr pt, cdat stoid, uint oidlen) {
-	oid id = cle_oid_from_cdat(ctx->inst, stoid, oidlen);
+	const oid id = cle_oid_from_cdat(ctx->inst, stoid, oidlen);
 
 	// must be in collection here
 	if (st_move(ctx->inst.t, &pt, HEAD_OBJECTS, HEAD_SIZE) || st_move(ctx->inst.t, &pt, (cdat) &id, sizeof(oid)))
@@ -211,8 +214,7 @@ static void _reg_syshandlers(struct _scanner_ctx* ctx, st_ptr pt) {
 		cle_panic(ctx->inst.t);
 
 	do {
-		if (syshdl->systype != SYNC_REQUEST_HANDLER || ctx->state == 0)
-			_hnode(ctx, syshdl->handler, NOOID, syshdl->systype);
+		_hnode(ctx, syshdl->handler, NOOID, syshdl->systype);
 		// next in list...
 	} while ((syshdl = syshdl->next_handler));
 }
@@ -469,9 +471,8 @@ static state _check_state(struct handler_node* h, state s) {
 			h = h->next;
 		} while (h);
 	} else if (s == LEAVE) {
-		s = _need_start_call(h);
-		if (s != FAILED)
-			s = h->handler.pipe->end(h, 0, 0);
+		// must have started already
+		s = h->handler.pipe->end(h, 0, 0);
 		h->handler.pipe = &_copy_node;
 	}
 
@@ -597,12 +598,15 @@ state resp_pop(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
 	return _check_handler(h->next, h->next->handler.pipe->pop);
 }
+static state _data_serializer(void* p, cdat c, uint l, uint at) {
+	struct handler_node* h = (struct handler_node*) p;
+	return h->handler.pipe->data(p, c, l);
+}
 state resp_serialize(void* v, st_ptr pt) {
 	struct handler_node* h = (struct handler_node*) v;
 	state s = _need_start_call(h);
 	if (s == OK)
-		s = st_map_st(h->cmn->inst.t, &pt, h->next->handler.pipe->data, h->next->handler.pipe->push, h->next->handler.pipe->pop,
-				h->next);
+		s = st_map_st(h->cmn->inst.t, &pt, _data_serializer, h->next->handler.pipe->push, h->next->handler.pipe->pop, h->next);
 
 	return _check_state(h->next, s);
 }
