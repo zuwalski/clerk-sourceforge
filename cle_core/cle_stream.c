@@ -529,7 +529,7 @@ state cle_close(cle_stream* ipt, cdat msg, uint len) {
 
 	// commit (trace and stream)
 	if (s == DONE)
-		s = cle_commit_objects(ipt->cmn->inst) == 0 ? DONE : FAILED;
+		s = cle_commit_objects(ipt->cmn->inst, 0, 0) == 0 ? DONE : FAILED;
 
 	// drop local task
 	tk_drop_task(ipt->cmn->inst.t);

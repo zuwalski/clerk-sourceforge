@@ -21,7 +21,7 @@
 
 #include "../cle_source.h"
 
-#define MEM_PAGE_SIZE 1024
+#define MEM_PAGE_SIZE (1024*4)
 #define PAGER_MAGIC 0x240673
 
 cle_pagesource util_memory_pager;

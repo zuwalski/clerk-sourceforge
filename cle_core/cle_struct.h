@@ -22,7 +22,7 @@
 
 /* Config */
 
-#define PAGE_SIZE 1024
+#define PAGE_SIZE (1024)
 
 #define OVERFLOW_GROW (16*8)
 

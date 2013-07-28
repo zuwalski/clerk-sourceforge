@@ -147,6 +147,6 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
 
-int cle_commit_objects(cle_instance inst);
+int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat);
 
 #endif

@@ -1149,12 +1149,18 @@ static int _setup_base() {
 
 int main(int argc, char* argv[])
 {
-//	_setup_base();
+	time_struct_c();
+
+	test_task_c_2();
+
+	puts("done");
+	//getchar();
+	exit(0);
+	//	_setup_base();
 	
 //	st_prt_page(&basenames);
 //	map_static_page(basenames.pg);
 	
-//	time_struct_c();
 	test_stream_c2();
 	
 	puts("done");
@@ -1163,7 +1169,7 @@ int main(int argc, char* argv[])
 
 	test_struct_c();
 	
-
+	time_struct_c();
 
 	test_instance_c();
 

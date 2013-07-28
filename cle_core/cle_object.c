@@ -44,7 +44,7 @@ typedef union {
 	objectheader2 obj;
 } objheader;
 
-const oid NOOID = { 0, 0, 0, 0, 0 };
+const oid NOOID = { 0, { 0, 0, 0, 0 } };
 
 #define ISMEMOBJ(header) ((header).zero == 0)
 // DEV-hdr: (next)identity
@@ -884,6 +884,10 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop) {
 
 ///////////////////////// tracing/delta-streaming commit V1 //////////////
 /**
+ * Translates all mem-refs to obj-refs.
+ *
+ * Referenced mem-obj get persisted and there references are traced.
+ *
  * 0--1-------2--------|----3---4---3-----(5)--
  *	/OID/{Object-header}identity/content/content|header ... content
  *
@@ -920,11 +924,6 @@ struct _trace_ctx {
 	} header;
 };
 
-/**
- * Translates all mem-refs to obj-refs.
- *
- * Referenced mem-obj get persisted and there references are traced.
- */
 static uint _t_dat(void* p, cdat dat, uint l, uint at) {
 	struct _trace_ctx* ctx = (struct _trace_ctx*) p;
 
@@ -947,8 +946,7 @@ static uint _t_dat(void* p, cdat dat, uint l, uint at) {
 			if (hdoffset <= 0) {
 				ctx->state = BEFORE;
 				ctx->hdbegin = 0;
-			} else if (ctx->state == MEM_PTR_COMPLETE)
-				ctx->state = MEM_PTR;
+			}
 		}
 	}
 
@@ -971,7 +969,7 @@ static uint _t_dat(void* p, cdat dat, uint l, uint at) {
 				ctx->state = (*c == 0) ? HEAD_TYPE : BEFORE;
 				break;
 			case HEAD_TYPE:
-				ctx->hdbegin = at + (c - dat) - 2;
+				ctx->hdbegin = at + (uint)(c - dat) - 2;
 				if (*c == 'o')
 					ctx->state = REF_TYPE;
 				else {
@@ -983,11 +981,11 @@ static uint _t_dat(void* p, cdat dat, uint l, uint at) {
 				ctx->state++;
 				if (*c == 0) {
 					ctx->state++;
-					l = c - dat;
+					l = (uint)(c - dat);
 				}
 				break;
 			case MEM_PTR: {
-				const uint offset = at - ctx->hdbegin + 2 + (c - dat);
+				const uint offset = at - ctx->hdbegin + 2 + (uint)(c - dat);
 				if (offset <= sizeof(st_ptr)) {
 					ctx->header.chars[offset] = *c;
 					if (offset == sizeof(st_ptr))
@@ -1011,11 +1009,11 @@ static oid _t_persist(struct _trace_ctx* ctx, st_ptr pt) {
 
 	_getheader(ctx->inst, &tmp, &hdr);
 
-	if (hdr.zero != 0)
+	if (!ISMEMOBJ(hdr))
 		return hdr.obj.id;
 	else {
 		oid ext = (hdr.ext.pg == 0) ? NOOID : _t_persist(ctx, hdr.ext);
-		oid id = _new_oid(ctx->inst, 0);	// change - and if oid already promised, use that
+		oid id = _new_oid(ctx->inst, 0);	// TODO change - and if oid already promised, use that
 
 		hdr.obj.version = 0;
 		hdr.obj.ext = ext;
@@ -1029,7 +1027,7 @@ static oid _t_persist(struct _trace_ctx* ctx, st_ptr pt) {
 
 		st_link(ctx->inst.t, &tmp, &pt);
 
-		return oid;
+		return id;
 	}
 }
 
@@ -1041,6 +1039,8 @@ static uint _t_pop(void* p) {
 
 		if (ctx->src->commit_data(ctx->sdat, (cdat) &id, sizeof(oid), ctx->hdbegin + 2))
 			return -1;
+
+		ctx->state = MEM_PTR;
 	}
 
 	return ctx->src->commit_pop(ctx->sdat);
@@ -1055,7 +1055,7 @@ static uint _t_push(void* p) {
  * Trace all mem-refs and persist.
  * Stream delta-trees to backend.
  */
-int cle_commit_objects(cle_instance inst) {
+int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	struct _trace_ctx ctx;
 	st_ptr del, ins;
 
@@ -1069,6 +1069,8 @@ int cle_commit_objects(cle_instance inst) {
 		return -1;
 
 	ctx.inst = inst;
+	ctx.sdat = sdat;
+	ctx.src = src;
 
 	// stream deletes
 	if (!st_is_empty(&del)) {
@@ -1086,13 +1088,13 @@ int cle_commit_objects(cle_instance inst) {
 
 		do {
 			st_empty(inst.t, &ctx.newgen);
-			ctx.state = HEAD_BEGIN;
 			ctx.at = ctx.hdbegin = 0;
+			ctx.state = HEAD_BEGIN;
 
 			if (st_map_st(inst.t, &ins, _t_dat, _t_push, _t_pop, &ctx))
 				return -1;
 
-			ins = ctx.newgen;
+			ins = ctx.newgen;	// newly discovered objects
 		} while (!st_is_empty(&ins));
 	}
 

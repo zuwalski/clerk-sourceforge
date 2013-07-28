@@ -24,7 +24,7 @@
 #include "../cle_core/backends/cle_backends.h"
 #include "../cle_core/cle_stream.h"
 
-#define HIGH_ITERATION_COUNT 10000000
+#define HIGH_ITERATION_COUNT 1000000
 
 #define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
 
