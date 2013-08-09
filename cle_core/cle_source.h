@@ -23,17 +23,32 @@ typedef void* cle_psrc_data;
 
 #define ROOT_ID ((cle_pageid)1)
 
+typedef struct overflow {
+	unsigned int used;
+	unsigned int size;
+} overflow;
+
 typedef struct page {
 	cle_pageid id;
+	// move to "writable_page"
+	struct page* next;
+	struct page* parent;
+	overflow*    ovf;
+	struct page* orig;
+	unsigned long refcount;
+	// move end
 	unsigned short size;
 	unsigned short used;
 	unsigned short waste;
 	//short data[0];
 } page;
 
+typedef struct page page_wrap;
+
 typedef struct cle_pagesource {
 	cle_pageid (*new_page)(cle_psrc_data, page*);
 	page* (*read_page)(cle_psrc_data, cle_pageid);
+	page* (*root_page)(cle_psrc_data);
 	void (*write_page)(cle_psrc_data, cle_pageid, page*);
 	void (*remove_page)(cle_psrc_data, cle_pageid);
 	void (*unref_page)(cle_psrc_data, page*);

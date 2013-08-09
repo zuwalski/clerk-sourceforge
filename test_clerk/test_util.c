@@ -44,15 +44,15 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 			ptr* pt = (ptr*) me;
 
 			if (pt->koffset == 0) {
-				page_wrap wrap;
+				page_wrap* wrap;
 				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80
 						>> (o & 7))) ? "+" : "-", pt->offset, pt->pg, meoff,
 						pt->next);
 
 				if (ind < 20) {
-					wrap.pg = pt->pg;
-					printf(" (%d)>>\n", wrap.pg->used);
-					print_struct(&wrap, GOKEY(&wrap, sizeof(page)), ind + 2,
+					wrap = pt->pg;
+					printf(" (%d)>>\n", wrap->used);
+					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2,
 							sizeof(page));
 				} else
 					puts(">>");
@@ -102,8 +102,8 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 
 void st_prt_page(st_ptr* pt) {
 	f = stdout;
-	fprintf(f, "%p(%d/%d)\n", pt->pg->pg->id, pt->pg->pg->used,
-			pt->pg->pg->waste);
+	fprintf(f, "%p(%d/%d)\n", pt->pg->id, pt->pg->used,
+			pt->pg->waste);
 	print_struct(pt->pg, GOOFF(pt->pg, pt->key), 0, pt->key);
 }
 
@@ -178,8 +178,8 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 		}
 
 		// as ptr has high lenght - these wont work with pointers
-		if (ISPTR(me) == 0 && (((me->length + 7) >> 3) + sizeof(key) + (char*) me > (char*) pg->pg
-							   + pg->pg->used)) {
+		if (ISPTR(me) == 0 && (((me->length + 7) >> 3) + sizeof(key) + (char*) me > (char*) pg
+							   + pg->used)) {
 			printf("F0 ");
 		}
 		
@@ -203,10 +203,10 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 				levels[level] += 1;
 				ptr_count++;
 
-				filling[(int) (((float) pw->pg->used / (float) pw->pg->size)
+				filling[(int) (((float) pw->used / (float) pw->size)
 						* 8.0)]++;
 
-				if (pw->pg->used > pw->pg->size) {
+				if (pw->used > pw->size) {
 					printf("p overflow ");
 				}
 
@@ -944,7 +944,7 @@ cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2,
 
 void map_static_page(page_wrap* pgw) {
 	int i;
-	page* pg = pgw->pg;
+	page* pg = pgw;
 	
 	for (i = 0; i < pg->used; i++) {
 		uchar c = *((uchar*) pg + i);

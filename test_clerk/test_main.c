@@ -69,14 +69,14 @@ void test_struct_c()
 	ASSERT(st_empty(t,&root) == 0);
 
 	// we now have an empty node
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	// insert single value
 	tmp = root;
 	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
 
 	// collection not empy anymore
-	ASSERT(st_is_empty(&root) == 0);
+	ASSERT(st_is_empty(t, &root) == 0);
 
 	// value can be found again
 	ASSERT(st_exsist(t,&root,test1,sizeof(test1)));
@@ -91,7 +91,7 @@ void test_struct_c()
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
 	// now tmp points to an empty node
-	ASSERT(st_is_empty(&tmp));
+	ASSERT(st_is_empty(t, &tmp));
 
 	// insert same string again
 	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
@@ -112,7 +112,7 @@ void test_struct_c()
 	tmp = root;
 	ASSERT(st_move(t,&tmp,test1x2,sizeof(test1x2)) == 0);
 
-	ASSERT(st_is_empty(&tmp));
+	ASSERT(st_is_empty(t, &tmp));
 
 	// put 2 more root-values in
 	tmp = root;
@@ -203,7 +203,7 @@ void test_struct_c()
 	ASSERT(st_exsist(t,&root,(cdat)"12",2) == 0);
 	ASSERT(st_exsist(t,&root,(cdat)"1245",4) == 0);
 
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1234567",7);
@@ -212,7 +212,7 @@ void test_struct_c()
 
 	st_delete(t,&root,(cdat)"1",1);
 
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1234567",7);
@@ -241,7 +241,7 @@ void test_struct_c()
 	st_delete(t,&root,(cdat)"1235555",7);
 
 	ASSERT(st_exsist(t,&root,(cdat)"1235555",7) == 0);
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1234567",7);
@@ -423,7 +423,7 @@ void time_struct_c()
 	// create empty node no prob
 	ASSERT(st_empty(t,&root) == 0);
 
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	// insert alot
 	start = clock();
@@ -461,7 +461,7 @@ void time_struct_c()
 	printf("delete %d items. Time %d\n",HIGH_ITERATION_COUNT, stop - start);
 
 	// collection now empty again
-	ASSERT(st_is_empty(&root));
+	ASSERT(st_is_empty(t, &root));
 
 	notfound = 0;
 	start = clock();
@@ -974,8 +974,8 @@ void test_tk_sync() {
 	
 	tk_delta(t, &del_root, &ins_root);
 	
-	ASSERT(st_is_empty(&ins_root));
-	ASSERT(st_is_empty(&del_root));
+	ASSERT(st_is_empty(t, &ins_root));
+	ASSERT(st_is_empty(t, &del_root));
 	
 	tmp = root;
 	st_insert(t, &tmp, t4, sizeof(t4));
@@ -1149,7 +1149,15 @@ static int _setup_base() {
 
 int main(int argc, char* argv[])
 {
+	test_struct_c();
+
 	time_struct_c();
+
+	test_iterate_c();
+
+	test_iterate_fixedlength();
+
+	test_task_c();
 
 	test_task_c_2();
 
@@ -1157,6 +1165,7 @@ int main(int argc, char* argv[])
 	//getchar();
 	exit(0);
 	//	_setup_base();
+	test_task_c_2();
 	
 //	st_prt_page(&basenames);
 //	map_static_page(basenames.pg);

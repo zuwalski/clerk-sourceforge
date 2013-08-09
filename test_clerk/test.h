@@ -19,8 +19,7 @@
 #ifndef __CLE_TEST_H__
 #define __CLE_TEST_H__
 
-#include "../cle_core/cle_clerk.h"
-#include "../cle_core/cle_struct.h"
+#include "cle_struct.h"
 #include "../cle_core/backends/cle_backends.h"
 #include "../cle_core/cle_stream.h"
 

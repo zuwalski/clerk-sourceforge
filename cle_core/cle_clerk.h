@@ -28,10 +28,9 @@ typedef const unsigned char* cdat;
 typedef unsigned short segment;
 
 typedef struct task task;
-//typedef struct page_wrap page_wrap;
 
 typedef struct st_ptr {
-	struct page_wrap* pg;
+	struct page* pg;
 	ushort key;
 	ushort offset;
 } st_ptr;
@@ -42,7 +41,7 @@ typedef struct ptr_list {
 } ptr_list;
 
 typedef struct it_ptr {
-	struct page_wrap* pg;
+	struct page* pg;
 	uchar* kdata;
 	ushort key;
 	ushort offset;
@@ -61,7 +60,7 @@ typedef struct {
 uint st_empty(task* t, st_ptr* pt);
 
 // = 1 if pt points to empty node else = 0
-uint st_is_empty(st_ptr* pt);
+uint st_is_empty(task* t, st_ptr* pt);
 
 // test if path exsist from pt - else = 0
 uint st_exsist(task* t, st_ptr* pt, cdat path, uint length);
@@ -150,8 +149,8 @@ void tk_mfree(task* t, void* mem);
 // deprecated!
 void* tk_realloc(task* t, void* mem, uint size);
 
-void* tk_alloc(task* t, uint size, struct page_wrap** pgref);
-void tk_unref(task* t, struct page_wrap* pg);
+void* tk_alloc(task* t, uint size, struct page** pgref);
+void tk_unref(task* t, struct page* pg);
 
 void tk_ref_ptr(st_ptr* ptr);
 void tk_free_ptr(task* t, st_ptr* ptr);

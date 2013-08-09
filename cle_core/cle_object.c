@@ -1073,7 +1073,7 @@ int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	ctx.src = src;
 
 	// stream deletes
-	if (!st_is_empty(&del)) {
+	if (!st_is_empty(inst.t, &del)) {
 		if (ctx.src->commit_deletes(ctx.sdat))
 			return -1;
 
@@ -1082,7 +1082,7 @@ int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	}
 
 	// trace and stream persistent objects
-	if (!st_is_empty(&ins)) {
+	if (!st_is_empty(inst.t, &ins)) {
 		if (ctx.src->commit_inserts(ctx.sdat))
 			return -1;
 
@@ -1095,7 +1095,7 @@ int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 				return -1;
 
 			ins = ctx.newgen;	// newly discovered objects
-		} while (!st_is_empty(&ins));
+		} while (!st_is_empty(inst.t, &ins));
 	}
 
 	// send commit

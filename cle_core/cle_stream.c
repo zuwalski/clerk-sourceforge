@@ -313,7 +313,7 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 
 	memset(ctx->hdltypes, 0, sizeof(ctx->hdltypes));
 
-	ctx->allowed = st_is_empty(&userid);
+	ctx->allowed = st_is_empty(ctx->inst.t, &userid);
 	ctx->state = 0;
 
 	// TODO read from config
@@ -455,7 +455,7 @@ static state _check_state(struct handler_node* h, state s) {
 	if (s == DONE) {
 		do {
 			// if its a basic handler -> send any last input
-			if (h->handler.pipe->next_ptr != 0 && (!h->cmn->out->link || !st_is_empty(&h->cmn->out->pt))) {
+			if (h->handler.pipe->next_ptr != 0 && (!h->cmn->out->link || !st_is_empty(h->cmn->inst.t, &h->cmn->out->pt))) {
 				if (_bh_next(h) > DONE) {
 					s = FAILED;
 					break;

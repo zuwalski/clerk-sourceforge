@@ -18,7 +18,7 @@
 #ifndef __CLE_STRUCT_H__
 #define __CLE_STRUCT_H__
 
-#include "cle_source.h"
+#include "cle_clerk.h"
 
 /* Config */
 
@@ -28,28 +28,9 @@
 
 #define IT_GROW_SIZE 32
 
-#define PID_CACHE_SIZE 8
-
 #define PTR_ID 0xFFFF
 
-#define PW_BLOCK_SIZE 32
-
 /* Defs */
-typedef struct overflow
-{
-	uint used;
-	uint size;
-} overflow;
-
-typedef struct page_wrap
-{
-	struct page_wrap* next;
-	struct page_wrap* parent;
-	overflow*         ovf;
-	page*             pg;
-	page*             orig;
-	ulong             refcount;
-}page_wrap;
 
 typedef struct key
 {
@@ -68,33 +49,20 @@ typedef struct ptr
 	void*  pg;
 } ptr;
 
-struct pidcache
-{
-	cle_pageid pid;
-	page_wrap* wrapper;
-};
-
-typedef struct pw_block {
-	struct pw_block* next;
-	page_wrap        pws[PW_BLOCK_SIZE];
-} pw_block;
-
 struct task
 {
 	page_wrap*      stack;
 	page_wrap*      wpages;
-	page_wrap*      pwfree;
 	cle_pagesource* ps;
 	cle_psrc_data   psrc_data;
 	page_wrap*      pagemap_root_wrap;
 	ushort          pagemap_root_key;
 	segment         segment;
-	struct pidcache cache[PID_CACHE_SIZE];
-	pw_block        pws;
+	st_ptr			root;
+	st_ptr			pagemap;
 };
 
-//#define GOPAGEWRAP(pag) ((page_wrap*)((char*)(pag) + (pag)->size))
-#define GOKEY(pag,off) ((key*)((char*)((pag)->pg) + (off)))
+#define GOKEY(pag,off) ((key*)((char*)(pag) + (off)))
 #define GOPTR(pag,off) ((key*)(((char*)(pag)->ovf) + (((off) ^ 0x8000)<<4)))
 #define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((unsigned char*)k + sizeof(key))
@@ -105,8 +73,9 @@ key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
 ushort _tk_alloc_ptr(task* t, page_wrap* pg);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
-void _tk_write_copy(task* t, page_wrap* pg);
-void tk_unref(task* t, page_wrap* pg);
-page_wrap _tk_wrap_static_page(page* p);
+page_wrap* _tk_write_copy(task* t, page_wrap* pg);
+//void tk_unref(task* t, page_wrap* pg);
+page* _tk_check_ptr(task* t, st_ptr* pt);
+page* _tk_check_page(task* t, page* pw);
 
 #endif
