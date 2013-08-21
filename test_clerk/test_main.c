@@ -1157,6 +1157,21 @@ int main(int argc, char* argv[])
 
 	test_iterate_fixedlength();
 
+	exit(0);
+
+	test_task_c_2();
+
+	puts("done");
+	//getchar();
+	exit(0);
+	//	_setup_base();
+
+
+
+	test_iterate_c();
+
+	test_iterate_fixedlength();
+
 	test_task_c();
 
 	test_task_c_2();
@@ -1165,7 +1180,6 @@ int main(int argc, char* argv[])
 	//getchar();
 	exit(0);
 	//	_setup_base();
-	test_task_c_2();
 	
 //	st_prt_page(&basenames);
 //	map_static_page(basenames.pg);
@@ -1190,9 +1204,6 @@ int main(int argc, char* argv[])
 
 	test_st_trace();
 
-	test_iterate_c();
-	
-	test_iterate_fixedlength();
 
 	test_task_c();
 

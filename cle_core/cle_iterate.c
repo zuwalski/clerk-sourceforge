@@ -46,46 +46,44 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 	cdat ckey = KDATA(me) + (rt->diff >> 3);
 	uchar* atsub = rt->path - (rt->diff >> 3);
 	uint offset = rt->diff;
+	uint max = me->length - rt->diff;
 
 	rt->high = rt->high_prev = rt->low = rt->low_prev = 0;
 	rt->high_path = rt->low_path = 0;
 	rt->high_diff = rt->low_diff = 0;
 
 	while (1) {
-		uint max = me->length - rt->diff;
+		cdat to, curr = rt->path;
+		uint i, d = 0;
+
 		if (rt->length < max)
 			max = rt->length;
 
-		while (max > 0) {
-			uint a = *(rt->path) ^ *ckey;	// compare bytes
+		to = curr + ((max + 7) >> 3);
 
-			if (a) {
-				// fold 1's after msb
-				a |= (a >> 1);
-				a |= (a >> 2);
-				a |= (a >> 4);
-				// lzc(a)
-				a -= ((a >> 1) & 0x55);
-				a = (((a >> 2) & 0x33) + (a & 0x33));
-				a = (((a >> 4) + a) & 0x0f);
+		while (curr < to && (d = *curr ^ *ckey++) == 0)
+			curr++;
 
-				a = 8 - a;
-				if (a < max)
-					max = a;
-				break;
-			} else if (max < 8)
-				break;
+		i = (curr - rt->path) << 3;
+		rt->path = curr;
 
-			rt->path++;
-			ckey++;
-			rt->length -= 8;
-			rt->diff += 8;
-			max -= 8;
-		}
+		// fold 1's after msb
+		d |= (d >> 1);
+		d |= (d >> 2);
+		d |= (d >> 4);
+		// lzc(a)
+		d -= ((d >> 1) & 0x55);
+		d = (((d >> 2) & 0x33) + (d & 0x33));
+		d = (((d >> 4) + d) & 0x0f);
 
-		rt->diff += max;
+		d = 8 - d;
+
+		max -= i;
+
+		rt->diff += i + (d < max ? d : max);
 		rt->sub = me;
 		rt->prev = 0;
+		rt->length -= i;
 
 		if (me->sub == 0)
 			me = 0;
@@ -145,9 +143,10 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 			me = _tk_get_ptr(rt->t, &rt->pg, me);
 
 		ckey = KDATA(me);
+		atsub = rt->path;
+		max = me->length;
 		rt->diff = 0;
 		offset = 0;
-		atsub = rt->path;
 	}
 }
 
