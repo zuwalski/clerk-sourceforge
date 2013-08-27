@@ -53,7 +53,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 	rt->high_diff = rt->low_diff = 0;
 
 	while (1) {
-		cdat to, curr = rt->path;
+		uchar* to, *curr = rt->path;
 		uint i, d = 0;
 
 		if (rt->length < max)
@@ -65,6 +65,10 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 			curr++;
 
 		i = (curr - rt->path) << 3;
+		if (i > max) {
+			i -= 8;
+			curr--;
+		}
 		rt->path = curr;
 
 		// fold 1's after msb
@@ -76,11 +80,9 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 		d = (((d >> 2) & 0x33) + (d & 0x33));
 		d = (((d >> 4) + d) & 0x0f);
 
-		d = 8 - d;
+		d = i + 8 - d;
 
-		max -= i;
-
-		rt->diff += i + (d < max ? d : max);
+		rt->diff += d < max ? d : max;
 		rt->sub = me;
 		rt->prev = 0;
 		rt->length -= i;

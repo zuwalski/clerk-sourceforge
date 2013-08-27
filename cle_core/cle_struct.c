@@ -51,6 +51,10 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 			curr++;
 
 		i = (curr - rt->path) << 3;
+		if (i > max) {
+			i -= 8;
+			curr--;
+		}
 		rt->path = curr;
 
 		// fold 1's after msb
@@ -62,11 +66,9 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 		d = (((d >> 2) & 0x33) + (d & 0x33));
 		d = (((d >> 4) + d) & 0x0f);
 
-		d = 8 - d;
+		d = i + 8 - d;
 
-		max -= i;
-
-		rt->diff += i + (d < max ? d : max);
+		rt->diff += d < max ? d : max;
 		rt->sub = me;
 		rt->prev = 0;
 		rt->length -= i;
@@ -98,78 +100,6 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 			me = _tk_get_ptr(rt->t, &rt->pg, me);
 		ckey = KDATA(me);
 		max = me->length;
-		rt->diff = 0;
-	}
-	return (rt->length == 0);
-}
-
-static uint _st_lookup_o(struct _st_lkup_res* rt) {
-	key* me = rt->sub;
-	cdat ckey = KDATA(me) + (rt->diff >> 3);
-	rt->d_sub = 0;
-
-	while (1) {
-		uint max = me->length - rt->diff;
-		if (rt->length < max)
-			max = rt->length;
-
-		while (max > 0) {
-			uint a = *(rt->path) ^ *ckey;	// compare bytes
-
-			if (a) {
-				// fold 1's after msb
-				a |= (a >> 1);
-				a |= (a >> 2);
-				a |= (a >> 4);
-				// lzc(a)
-				a -= ((a >> 1) & 0x55);
-				a = (((a >> 2) & 0x33) + (a & 0x33));
-				a = (((a >> 4) + a) & 0x0f);
-
-				a = 8 - a;
-				if (a < max)
-					max = a;
-				break;
-			} else if (max < 8)
-				break;
-
-			rt->path++;
-			ckey++;
-			rt->length -= 8;
-			rt->diff += 8;
-			max -= 8;
-		}
-
-		rt->diff += max;
-		rt->sub = me;
-		rt->prev = 0;
-
-		if (rt->length == 0 || me->sub == 0)
-			break;
-
-		me = GOOFF(rt->pg,me->sub);
-		while (me->offset < rt->diff) {
-			rt->prev = me;
-
-			if (me->next == 0)
-				break;
-
-			me = GOOFF(rt->pg,me->next);
-		}
-
-		if (me->offset != rt->diff)
-			break;
-
-		// for st_delete
-		if (rt->sub->length != me->offset || (rt->d_sub == 0 && rt->sub->length != 0)) {
-			rt->d_pg = rt->pg;
-			rt->d_sub = rt->sub;
-			rt->d_prev = rt->prev;
-		}
-
-		if (ISPTR(me))
-			me = _tk_get_ptr(rt->t, &rt->pg, me);
-		ckey = KDATA(me);
 		rt->diff = 0;
 	}
 	return (rt->length == 0);

@@ -1157,6 +1157,10 @@ int main(int argc, char* argv[])
 
 	test_iterate_fixedlength();
 
+	test_task_c();
+
+	test_task_c_2();
+
 	exit(0);
 
 	test_task_c_2();
