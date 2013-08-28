@@ -543,8 +543,6 @@ void test_task_c()
 	// destroy
 	it_dispose(t,&it);
 
-	st_prt_distribution(&root,t);
-
 	// commit!
 	start = clock();
 	tk_commit_task(t);

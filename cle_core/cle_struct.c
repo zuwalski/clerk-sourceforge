@@ -556,7 +556,7 @@ static key* _trace_nxt(st_ptr* pt) {
 // return read lenght. Or -1 => eof data, -2 more data, buffer full
 int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
 	page* pg = _tk_check_ptr(t, pt);
-	key* me = GOOFF(pt->pg,pt->key);
+	key* me = GOOFF(pg,pt->key);
 	key* nxt;
 	cdat ckey = KDATA(me) + (pt->offset >> 3);
 	uint offset = pt->offset;
@@ -627,8 +627,8 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
 }
 
 uint st_offset(task* t, st_ptr* pt, uint offset) {
-	page* pg = pt->pg;
-	key* me = GOOFF(pt->pg,pt->key);
+	page* pg = _tk_check_ptr(t, pt);
+	key* me = GOOFF(pg,pt->key);
 	key* nxt;
 	uint klen;
 
@@ -672,7 +672,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset) {
 }
 
 int st_scan(task* t, st_ptr* pt) {
-	key* k = GOOFF(pt->pg,pt->key);
+	key* k = GOOFF(_tk_check_ptr(t, pt),pt->key);
 
 	while (1) {
 		uint tmp;
@@ -723,7 +723,7 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str) {
 	uint ret;
 	struct _st_lkup_res rt;
 	rt.t = t;
-	rt.pg = mv->pg;
+	rt.pg = _tk_check_ptr(t, mv);
 	rt.sub = GOOFF(mv->pg,mv->key);
 	rt.diff = mv->offset;
 
@@ -772,7 +772,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 	struct _st_insert sins;
 	uint ret;
 	sins.rt.t = t;
-	sins.rt.pg = to->pg;
+	sins.rt.pg = _tk_check_ptr(t, to);
 	sins.rt.sub = GOOFF(to->pg,to->key);
 	sins.rt.diff = to->offset;
 	sins.no_lookup = 0;
@@ -787,7 +787,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 int st_compare_st(task* t, st_ptr* p1, st_ptr* p2) {
 	struct _st_lkup_res rt;
 	rt.t = t;
-	rt.pg = p1->pg;
+	rt.pg = _tk_check_ptr(t, p1);
 	rt.sub = GOOFF(p1->pg,p1->key);
 	rt.diff = p1->offset;
 
@@ -822,9 +822,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 	} mx[16];
 	uint ret = 0, idx = 0;
 	while (1) {
-		uint klen = (nxt != 0) ? (nxt->offset + 7) : (me->length + 7);
-		klen >>= 3;
-		klen -= offset >> 3;
+		const uint klen = ((nxt != 0 ? nxt->offset : me->length) - offset) >> 3;
 		if (klen != 0) {
 			cdat ckey = KDATA(me) + (offset >> 3);
 			if ((ret = work->dat(work->ctx, ckey, klen, at)))
@@ -836,10 +834,10 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 			_map_pop: if (idx-- == 0 || (ret = work->pop(work->ctx)))
 				break;
 
+			at = mx[idx].at;
 			me = mx[idx].me;
 			nxt = mx[idx].nxt;
-			pg = mx[idx].pg;
-			at = mx[idx].at;
+			pg = _tk_check_page(work->t, mx[idx].pg);
 
 			offset = nxt->offset;
 			nxt = (nxt->next != 0) ? GOOFF(pg,nxt->next) : 0;
@@ -880,6 +878,8 @@ uint st_map_st(task* t, st_ptr* from, uint (*dat)(void*, cdat, uint, uint), uint
 	work.pop = pop;
 	work.push = push;
 	work.t = t;
+
+	_tk_check_ptr(t, from);
 
 	return _st_map_worker(&work, from->pg, GOOFF(from->pg,from->key), _trace_nxt(from), from->offset, 0);
 }

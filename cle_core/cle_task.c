@@ -707,29 +707,6 @@ static void _tk_compact_copy(struct _tk_setup* setup, page_wrap* pw, key* parent
 	}
 }
 
-static void _tk_release_after_compact(task* t, page_wrap* pw, ushort next) {
-	while (next != 0) {
-		key* k = GOOFF(pw,next);
-		// trace to end-of-next's
-		if (k->next != 0)
-			_tk_release_after_compact(t, pw, k->next);
-
-		if (ISPTR(k)) // pointer
-		{
-			ptr* pt = (ptr*) k;
-			if (pt->koffset != 0) {
-				page_wrap* npw = pt->pg;
-				if (npw->orig == 0)
-					tk_unref(t, npw);
-			}
-
-			return;
-		}
-
-		next = k->sub;
-	}
-}
-
 static ushort _tk_link_and_create_page(struct _tk_setup* setup, page_wrap* pw, int ptr_offset) {
 	// first: create a link to new page
 	ptr* pt;
@@ -797,8 +774,6 @@ static uint _tk_cut_key(struct _tk_setup* setup, page_wrap* pw, key* copy, key* 
 	// start compact-copy
 	setup->o_pt = setup->l_pt = 0;
 	_tk_compact_copy(setup, pw, root, &root->sub, (prev != 0) ? prev->next : copy->sub, -(cut_adj & 0xFFF8));
-
-//	_tk_release_after_compact(setup->t, pw, (prev != 0) ? prev->next : copy->sub);
 
 	// link ext-pointer to new page
 	if (prev != 0)
@@ -912,11 +887,12 @@ int tk_commit_task(task* t) {
 	struct _tk_setup setup;
 	page_wrap* pgw;
 	int ret = 0;
+	char bf[5000];
 
 	uint max_size = _tk_link_written_pages(t, t->wpages);
 
 	setup.t = t;
-	setup.dest = tk_malloc(t, max_size);
+	setup.dest = (page*) bf;// tk_malloc(t, max_size);
 
 	for (pgw = t->wpages; pgw != 0 && ret == 0; pgw = pgw->next) {
 		page* pg;
@@ -952,7 +928,7 @@ int tk_commit_task(task* t) {
 		ret = t->ps->pager_error(t->psrc_data);
 	}
 
-	tk_mfree(t, setup.dest);
+	//tk_mfree(t, setup.dest);
 
 	if (ret != 0)
 		t->ps->pager_rollback(t->psrc_data);

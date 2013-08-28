@@ -49,6 +49,18 @@ typedef struct ptr
 	void*  pg;
 } ptr;
 
+typedef struct write_page {
+	cle_pageid id;
+	// move to "writable_page"
+	struct page* next;
+	struct page* parent;
+	overflow*    ovf;
+	struct page* orig;
+	unsigned long refcount;
+
+	page pg;
+} write_page;
+
 struct task
 {
 	page_wrap*      stack;
