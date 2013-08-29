@@ -79,12 +79,12 @@ void test_struct_c()
 	ASSERT(st_is_empty(t, &root) == 0);
 
 	// value can be found again
-	ASSERT(st_exsist(t,&root,test1,sizeof(test1)));
+	ASSERT(st_exist(t,&root,test1,sizeof(test1)));
 
 	// and some other random values can not be found
-	ASSERT(st_exsist(t,&root,test2,sizeof(test2)) == 0);
+	ASSERT(st_exist(t,&root,test2,sizeof(test2)) == 0);
 
-	ASSERT(st_exsist(t,&root,test3,sizeof(test3)) == 0);
+	ASSERT(st_exist(t,&root,test3,sizeof(test3)) == 0);
 
 	// can move pointer there (same as exsist) no prob
 	tmp = root;
@@ -97,16 +97,16 @@ void test_struct_c()
 	ASSERT(st_insert(t,&tmp,test1,sizeof(test1)));
 
 	// we can still find first part alone
-	ASSERT(st_exsist(t,&root,test1,sizeof(test1)));
+	ASSERT(st_exist(t,&root,test1,sizeof(test1)));
 
 	// we can find the combined string
-	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
+	ASSERT(st_exist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move half way and find rest
 	tmp = root;
 	ASSERT(st_move(t,&tmp,test1,sizeof(test1)) == 0);
 
-	ASSERT(st_exsist(t,&tmp,test1,sizeof(test1)));
+	ASSERT(st_exist(t,&tmp,test1,sizeof(test1)));
 
 	// we can move all the way and find an empty node
 	tmp = root;
@@ -122,14 +122,14 @@ void test_struct_c()
 	ASSERT(st_insert(t,&tmp,test3,sizeof(test3)));
 
 	// we can find all 3 distinct values
-	ASSERT(st_exsist(t,&root,test1,sizeof(test1)));
+	ASSERT(st_exist(t,&root,test1,sizeof(test1)));
 
-	ASSERT(st_exsist(t,&root,test2,sizeof(test2)));
+	ASSERT(st_exist(t,&root,test2,sizeof(test2)));
 
-	ASSERT(st_exsist(t,&root,test3,sizeof(test3)));
+	ASSERT(st_exist(t,&root,test3,sizeof(test3)));
 
 	// and we can still find the combined string
-	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
+	ASSERT(st_exist(t,&root,test1x2,sizeof(test1x2)));
 
 	// we can move to one of the new values and start a new collection there
 	tmp = root;
@@ -142,17 +142,17 @@ void test_struct_c()
 	ASSERT(st_insert(t,&tmp2,test3,sizeof(test3)));
 
 	// we can find them relative to tmp ..
-	ASSERT(st_exsist(t,&tmp,test2,sizeof(test2)));
+	ASSERT(st_exist(t,&tmp,test2,sizeof(test2)));
 
-	ASSERT(st_exsist(t,&tmp,test3,sizeof(test3)));
+	ASSERT(st_exist(t,&tmp,test3,sizeof(test3)));
 
 	// .. and from root
-	ASSERT(st_exsist(t,&root,test2_3,sizeof(test2_3)));
+	ASSERT(st_exist(t,&root,test2_3,sizeof(test2_3)));
 
-	ASSERT(st_exsist(t,&root,test2x2,sizeof(test2x2)));
+	ASSERT(st_exist(t,&root,test2x2,sizeof(test2x2)));
 
 	// .. and the old one
-	ASSERT(st_exsist(t,&root,test1x2,sizeof(test1x2)));
+	ASSERT(st_exist(t,&root,test1x2,sizeof(test1x2)));
 
 	// Test copy-move, insert compare
 	ASSERT(st_empty(t,&root) == 0);
@@ -187,28 +187,28 @@ void test_struct_c()
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1234",4);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1245",4) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1245",4) == 0);
 
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1245",4);
 
 	st_delete(t,&root,(cdat)"1234",4);
 
-	ASSERT(st_exsist(t,&root,(cdat)(cdat)"12",2));
-	ASSERT(st_exsist(t,&root,(cdat)"1245",4));
-	ASSERT(st_exsist(t,&root,(cdat)"1234",4) == 0);
+	ASSERT(st_exist(t,&root,(cdat)(cdat)"12",2));
+	ASSERT(st_exist(t,&root,(cdat)"1245",4));
+	ASSERT(st_exist(t,&root,(cdat)"1234",4) == 0);
 
 	st_delete(t,&root,(cdat)"12",2);
 
-	ASSERT(st_exsist(t,&root,(cdat)"12",2) == 0);
-	ASSERT(st_exsist(t,&root,(cdat)"1245",4) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"12",2) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1245",4) == 0);
 
 	ASSERT(st_is_empty(t, &root));
 
 	tmp = root;
 	st_insert(t,&tmp,(cdat)"1234567",7);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1234567",7));
+	ASSERT(st_exist(t,&root,(cdat)"1234567",7));
 
 	st_delete(t,&root,(cdat)"1",1);
 
@@ -228,19 +228,19 @@ void test_struct_c()
 
 	st_delete(t,&root,(cdat)"123456789",9);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1233333",7));
-	ASSERT(st_exsist(t,&root,(cdat)"1235555",7));
-	ASSERT(st_exsist(t,&root,(cdat)"1234567",7) == 0);
-	ASSERT(st_exsist(t,&root,(cdat)"123456789",9) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1233333",7));
+	ASSERT(st_exist(t,&root,(cdat)"1235555",7));
+	ASSERT(st_exist(t,&root,(cdat)"1234567",7) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"123456789",9) == 0);
 
 	st_delete(t,&root,(cdat)"1233333",7);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1233333",7) == 0);
-	ASSERT(st_exsist(t,&root,(cdat)"1235555",7));
+	ASSERT(st_exist(t,&root,(cdat)"1233333",7) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1235555",7));
 
 	st_delete(t,&root,(cdat)"1235555",7);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1235555",7) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1235555",7) == 0);
 	ASSERT(st_is_empty(t, &root));
 
 	tmp = root;
@@ -254,9 +254,9 @@ void test_struct_c()
 
 	st_delete(t,&root,(cdat)"1235555",7);
 
-	ASSERT(st_exsist(t,&root,(cdat)"1233333",7));
-	ASSERT(st_exsist(t,&root,(cdat)"1234567",7));
-	ASSERT(st_exsist(t,&root,(cdat)"1235555",7) == 0);
+	ASSERT(st_exist(t,&root,(cdat)"1233333",7));
+	ASSERT(st_exist(t,&root,(cdat)"1234567",7));
+	ASSERT(st_exist(t,&root,(cdat)"1235555",7) == 0);
 
 	tk_drop_task(t);
 }
@@ -441,7 +441,7 @@ void time_struct_c()
 	start = clock();
 	for(counter = 1; counter <= HIGH_ITERATION_COUNT; counter++)
 	{
-		if(st_exsist(t,&root,(cdat)&counter,sizeof(counter)) == 0)
+		if(st_exist(t,&root,(cdat)&counter,sizeof(counter)) == 0)
 			notfound++;
 	}
 	stop = clock();
@@ -467,7 +467,7 @@ void time_struct_c()
 	start = clock();
 	for(counter = 1; counter <= HIGH_ITERATION_COUNT; counter++)
 	{
-		if(st_exsist(t,&root,(cdat)&counter,sizeof(counter)) == 0)
+		if(st_exist(t,&root,(cdat)&counter,sizeof(counter)) == 0)
 			notfound++;
 	}
 	stop = clock();
@@ -566,7 +566,7 @@ void test_task_c()
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		uint klen = sim_new(keystore,sizeof(keystore));
-		if(st_exsist(t,&root,keystore,klen) == 0)
+		if(st_exist(t,&root,keystore,klen) == 0)
 			break;
 	}
 	stop = clock();
@@ -669,7 +669,7 @@ void test_task_c_2()
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
-		ASSERT(st_exsist(t,&root,(cdat)&i,sizeof(int)));
+		ASSERT(st_exist(t,&root,(cdat)&i,sizeof(int)));
 	}
 	stop = clock();
 
@@ -729,7 +729,7 @@ void test_task_c_2()
 	start = clock();
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
-		ASSERT(st_exsist(t,&root,(cdat)&i,sizeof(int)));
+		ASSERT(st_exist(t,&root,(cdat)&i,sizeof(int)));
 	}
 	stop = clock();
 
@@ -766,7 +766,7 @@ void test_task_c_3() {
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 	
-	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	ASSERT(st_exist(t,&root,(cdat)keystore,sizeof(keystore)));
 	
 	st_prt_distribution(&root,t);
 	
@@ -788,15 +788,15 @@ void test_task_c_3() {
 
 	keystore[1000] = 0;
 	keystore[1500] = 0;
-	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	ASSERT(st_exist(t,&root,(cdat)keystore,sizeof(keystore)));
 	
 	keystore[1000] = 1;
 	keystore[1500] = 0;
-	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	ASSERT(st_exist(t,&root,(cdat)keystore,sizeof(keystore)));
 
 	keystore[1000] = 0;
 	keystore[1500] = 1;
-	ASSERT(st_exsist(t,&root,(cdat)keystore,sizeof(keystore)));
+	ASSERT(st_exist(t,&root,(cdat)keystore,sizeof(keystore)));
 
 	tk_drop_task(t);
 }
@@ -885,7 +885,7 @@ void test_task_c_filepager()
 	for(i = 0; i < HIGH_ITERATION_COUNT; i++)
 	{
 		uint klen = sim_new(keystore,sizeof(keystore));
-		if(st_exsist(t,&root,keystore,klen) == 0)
+		if(st_exist(t,&root,keystore,klen) == 0)
 			break;
 	}
 	stop = clock();
@@ -955,9 +955,9 @@ void test_tk_sync() {
 
 	//st_prt_page(&ins_root);
 
-	ASSERT(st_exsist(t, &ins_root, t1, sizeof(t1)));
-	ASSERT(st_exsist(t, &ins_root, t2, sizeof(t2)));
-	ASSERT(st_exsist(t, &ins_root, t3, sizeof(t3)));
+	ASSERT(st_exist(t, &ins_root, t1, sizeof(t1)));
+	ASSERT(st_exist(t, &ins_root, t2, sizeof(t2)));
+	ASSERT(st_exist(t, &ins_root, t3, sizeof(t3)));
 	
 	tk_commit_task(t);
 	
@@ -980,7 +980,7 @@ void test_tk_sync() {
 
 	tk_delta(t, &del_root, &ins_root);
 
-	ASSERT(st_exsist(t, &ins_root, t4, sizeof(t4)));
+	ASSERT(st_exist(t, &ins_root, t4, sizeof(t4)));
 
 	tk_commit_task(t);
 	
@@ -990,7 +990,7 @@ void test_tk_sync() {
 	// set pagesource-root
 	tk_root_ptr(t,&root);
 	
-	ASSERT(st_exsist(t, &root, t4, sizeof(t4)));
+	ASSERT(st_exist(t, &root, t4, sizeof(t4)));
 	
 	st_delete(t, &root, t2, sizeof(t2));
 	
@@ -999,16 +999,16 @@ void test_tk_sync() {
 	
 	tk_delta(t, &del_root, &ins_root);	
 		
-	ASSERT(st_exsist(t, &del_root, t2, 3));
+	ASSERT(st_exist(t, &del_root, t2, 3));
 
 	st_delete(t, &root, t1, sizeof(t1));
 
 	tk_delta(t, &del_root, &ins_root);
 
-	ASSERT(st_exsist(t, &del_root, t1, sizeof(t1)));
-	ASSERT(st_exsist(t, &root, t1, sizeof(t1)) == 0);
-	ASSERT(st_exsist(t, &root, t4, sizeof(t4)));
-	ASSERT(st_exsist(t, &root, t3, sizeof(t3)));
+	ASSERT(st_exist(t, &del_root, t1, sizeof(t1)));
+	ASSERT(st_exist(t, &root, t1, sizeof(t1)) == 0);
+	ASSERT(st_exist(t, &root, t4, sizeof(t4)));
+	ASSERT(st_exist(t, &root, t3, sizeof(t3)));
 	
 	memcmp(big, "1234", 4);
 	
@@ -1037,7 +1037,7 @@ void test_tk_sync() {
 	
 	tmp = ins_root;
 	ASSERT(st_move(t, &tmp, big, sizeof(big)) == 0);
-	ASSERT(st_exsist(t, &tmp, t1, sizeof(t1)));
+	ASSERT(st_exist(t, &tmp, t1, sizeof(t1)));
 	
 	tk_drop_task(t);
 }

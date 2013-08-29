@@ -63,7 +63,7 @@ uint st_empty(task* t, st_ptr* pt);
 uint st_is_empty(task* t, st_ptr* pt);
 
 // test if path exsist from pt - else = 0
-uint st_exsist(task* t, st_ptr* pt, cdat path, uint length);
+uint st_exist(task* t, st_ptr* pt, cdat path, uint length);
 
 // move ptr to path - else = 1
 uint st_move(task* t, st_ptr* pt, cdat path, uint length);
@@ -81,7 +81,7 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str);
 
 uint st_insert_st(task* t, st_ptr* to, st_ptr* from);
 
-int st_compare_st(task* t, st_ptr* to, st_ptr* from);
+int st_exist_st(task* t, st_ptr* to, st_ptr* from);
 
 uint st_delete_st(task* t, st_ptr* from, st_ptr* str);
 

@@ -292,7 +292,7 @@ uint st_is_empty(task* t, st_ptr* pt) {
 	}
 }
 
-uint st_exsist(task* t, st_ptr* pt, cdat path, uint length) {
+uint st_exist(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
 
 	return _st_lookup(&rt);
@@ -740,11 +740,8 @@ uint st_delete_st(task* t, st_ptr* from, st_ptr* str) {
 	struct _st_lkup_res rt = _init_res(t, from, 0, 0);
 	uint ret = st_map_st(t, str, _mv_st, _dont_use, _dont_use, &rt);
 
-	if (ret == 0) {
-		if (_st_do_delete(&rt))
-			_st_prepare_update(&rt, t, from);
-		return 0;
-	}
+	if (ret == 0 && _st_do_delete(&rt))
+		_st_prepare_update(&rt, t, from);
 
 	return ret;
 }
@@ -781,7 +778,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 	return 0;
 }
 
-int st_compare_st(task* t, st_ptr* p1, st_ptr* p2) {
+int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 	struct _st_lkup_res rt;
 	rt.t = t;
 	rt.pg = _tk_check_ptr(t, p1);
