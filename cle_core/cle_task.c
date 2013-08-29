@@ -887,12 +887,10 @@ int tk_commit_task(task* t) {
 	struct _tk_setup setup;
 	page_wrap* pgw;
 	int ret = 0;
-	char bf[5000];
 
 	uint max_size = _tk_link_written_pages(t, t->wpages);
 
 	setup.t = t;
-	setup.dest = (page*) bf;// tk_malloc(t, max_size);
 
 	for (pgw = t->wpages; pgw != 0 && ret == 0; pgw = pgw->next) {
 		page* pg;
@@ -903,7 +901,10 @@ int tk_commit_task(task* t) {
 		/* overflowed or cluttered? */
 		pg = pgw;
 		if (pgw->ovf || pg->waste > pg->size / 2) {
+			char bf[max_size];
 			ushort sub = 0;
+
+			setup.dest = (page*) bf;
 
 			setup.dest->size = pg->size;
 			setup.dest->waste = 0;
@@ -920,15 +921,13 @@ int tk_commit_task(task* t) {
 
 			_tk_compact_copy(&setup, pgw, 0, &sub, sizeof(page), 0);
 
-			pg = setup.dest;
+			t->ps->write_page(t->psrc_data, setup.dest->id, setup.dest);
 		}
-
-		t->ps->write_page(t->psrc_data, pg->id, pg);
+		else
+			t->ps->write_page(t->psrc_data, pg->id, pg);
 
 		ret = t->ps->pager_error(t->psrc_data);
 	}
-
-	//tk_mfree(t, setup.dest);
 
 	if (ret != 0)
 		t->ps->pager_rollback(t->psrc_data);

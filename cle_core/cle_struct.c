@@ -22,9 +22,9 @@
 struct _st_lkup_res {
 	task* t;
 	page* pg;
-	page* d_pg;
 	key* prev;
 	key* sub;
+	page* d_pg;
 	key* d_prev;
 	key* d_sub;
 	cdat path;
@@ -36,7 +36,6 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 	key* me = rt->sub;
 	cdat ckey = KDATA(me) + (rt->diff >> 3);
 	uint max = me->length - rt->diff;
-	rt->d_sub = 0;
 
 	while (1) {
 		cdat to, curr = rt->path;
@@ -259,6 +258,7 @@ static struct _st_lkup_res _init_res(task* t, st_ptr* pt, cdat path, uint length
 	rt.sub = GOOFF(rt.pg,pt->key);
 	rt.prev = 0;
 	rt.diff = pt->offset;
+	rt.d_sub = 0;
 	return rt;
 }
 
@@ -386,58 +386,64 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length) {
 	return 0;
 }
 
+static uint _st_do_delete(struct _st_lkup_res* rt) {
+	if (rt->prev == 0 && rt->sub->sub) {
+		key* k = GOOFF(rt->pg,rt->sub->sub);
+		while (k->offset < rt->diff) {
+			rt->prev = k;
+			if (k->next == 0)
+				break;
+			k = GOOFF(rt->pg,k->next);
+		}
+	}
+
+	if (rt->prev) {
+		_st_make_writable(rt);
+		//waste  = rt.sub->length - rt.prev->offset;
+		//remove = rt.prev->next;
+		//rm_pg  = rt.pg;
+
+		rt->sub->length = rt->prev->offset;
+		rt->prev->next = 0;
+	} else if (rt->d_sub) {
+		page* orig = rt->d_pg;
+		key* k;
+
+		_st_make_writable(rt);
+
+		// fix pointer
+		rt->d_sub = GOKEY(rt->d_pg,(char*)rt->d_sub - (char*)orig);
+
+		if (rt->d_prev) {
+			// fix pointer
+			rt->d_prev = GOKEY(rt->d_pg,(char*)rt->d_prev - (char*)orig);
+
+			k = GOOFF(rt->d_pg,rt->d_prev->next);
+			rt->d_prev->next = k->next;
+
+			if (k->offset == rt->d_sub->length)
+				rt->d_sub->length = rt->d_prev->offset;
+		} else {
+			k = GOOFF(rt->d_pg,rt->d_sub->sub);
+			rt->d_sub->sub = k->next;
+
+			if (k->offset == rt->d_sub->length)
+				rt->d_sub->length = 0;
+		}
+	} else
+		return 1;
+
+	return 0;
+}
+
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
 
 	if (_st_lookup(&rt) == 0)
 		return 1;
 
-	if (rt.prev == 0 && rt.sub->sub) {
-		key* k = GOOFF(rt.pg,rt.sub->sub);
-		while (k->offset < rt.diff) {
-			rt.prev = k;
-			if (k->next == 0)
-				break;
-			k = GOOFF(rt.pg,k->next);
-		}
-	}
-
-	if (rt.prev) {
-		_st_make_writable(&rt);
-		//waste  = rt.sub->length - rt.prev->offset;
-		//remove = rt.prev->next;
-		//rm_pg  = rt.pg;
-
-		rt.sub->length = rt.prev->offset;
-		rt.prev->next = 0;
-	} else if (rt.d_sub) {
-		page* orig = rt.d_pg;
-		key* k;
-
-		_st_make_writable(&rt);
-
-		// fix pointer
-		rt.d_sub = GOKEY(rt.d_pg,(char*)rt.d_sub - (char*)orig);
-
-		if (rt.d_prev) {
-			// fix pointer
-			rt.d_prev = GOKEY(rt.d_pg,(char*)rt.d_prev - (char*)orig);
-
-			k = GOOFF(rt.d_pg,rt.d_prev->next);
-			rt.d_prev->next = k->next;
-
-			if (k->offset == rt.d_sub->length)
-				rt.d_sub->length = rt.d_prev->offset;
-		} else {
-			k = GOOFF(rt.d_pg,rt.d_sub->sub);
-			rt.d_sub->sub = k->next;
-
-			if (k->offset == rt.d_sub->length)
-				rt.d_sub->length = 0;
-		}
-	} else
+	if (_st_do_delete(&rt))
 		_st_prepare_update(&rt, t, pt);
-
 	return 0;
 }
 
@@ -720,12 +726,8 @@ static uint _mv_st(void* p, cdat txt, uint len, uint at) {
 }
 
 uint st_move_st(task* t, st_ptr* mv, st_ptr* str) {
+	struct _st_lkup_res rt = _init_res(t, mv, 0, 0);
 	uint ret;
-	struct _st_lkup_res rt;
-	rt.t = t;
-	rt.pg = _tk_check_ptr(t, mv);
-	rt.sub = GOOFF(mv->pg,mv->key);
-	rt.diff = mv->offset;
 
 	if ((ret = st_map_st(t, str, _mv_st, _dont_use, _dont_use, &rt)))
 		return ret;
@@ -734,22 +736,17 @@ uint st_move_st(task* t, st_ptr* mv, st_ptr* str) {
 	return 0;
 }
 
-struct _del_ctx {
-	task* t;
-	st_ptr from;
-};
-
-// TODO: this will not work as expected...
-static uint _del_st(void* p, cdat txt, uint len, uint at) {
-	struct _del_ctx* ctx = (struct _del_ctx*) p;
-	return st_delete(ctx->t, &ctx->from, txt, len);
-}
-
 uint st_delete_st(task* t, st_ptr* from, st_ptr* str) {
-	struct _del_ctx del;
-	del.from = *from;
-	del.t = t;
-	return st_map_st(t, str, _del_st, _dont_use, _dont_use, &del);
+	struct _st_lkup_res rt = _init_res(t, from, 0, 0);
+	uint ret = st_map_st(t, str, _mv_st, _dont_use, _dont_use, &rt);
+
+	if (ret == 0) {
+		if (_st_do_delete(&rt))
+			_st_prepare_update(&rt, t, from);
+		return 0;
+	}
+
+	return ret;
 }
 
 struct _st_insert {
@@ -792,11 +789,6 @@ int st_compare_st(task* t, st_ptr* p1, st_ptr* p2) {
 	rt.diff = p1->offset;
 
 	return st_map_st(t, p2, _mv_st, _dont_use, _dont_use, &rt);
-}
-
-static uint _cpy_dat(task* t, st_ptr* to, cdat dat, uint len, uint at) {
-	st_insert(t, to, dat, len);
-	return 0;
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
