@@ -779,20 +779,33 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 }
 
 int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
-	struct _st_lkup_res rt;
-	rt.t = t;
-	rt.pg = _tk_check_ptr(t, p1);
-	rt.sub = GOOFF(p1->pg,p1->key);
-	rt.diff = p1->offset;
+	struct st_send* snd = st_create_send(t, st_move, t, p1);
 
-	return st_map_st(t, p2, _mv_st, _dont_use, _dont_use, &rt);
+	uint ret = st_map_st(t, p2, st_send_data, st_send_push, st_send_pop, snd);
+
+	st_destroy_send(snd);
+	return ret;
+}
+
+static uint _st_cp_ins(void* t, st_ptr* pt, cdat dat, uint l) {
+	st_insert((task*) t, pt, dat, l);
+	return 0;
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
-	return 1;
-//	st_ptr _to = *to;
-//	return st_map_ptr(t,from,&_to,_cpy_dat);
+	struct st_send* snd = st_create_send(t, _st_cp_ins, t, to);
+
+	uint ret = st_map_st(t, from, st_send_data, st_send_push, st_send_pop, snd);
+
+	st_destroy_send(snd);
+	return ret;
 }
+
+uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2) {
+	return 1;
+}
+
+// structure mapper
 
 struct _st_map_worker_struct {
 	uint (*dat)(void*, cdat, uint, uint);
@@ -811,7 +824,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 	} mx[16];
 	uint ret = 0, idx = 0;
 	while (1) {
-		const uint klen = ((nxt != 0 ? nxt->offset : me->length) - offset) >> 3;
+		const uint klen = ((nxt != 0 ? nxt->offset : me->length) >> 3) - (offset >> 3);
 		if (klen != 0) {
 			cdat ckey = KDATA(me) + (offset >> 3);
 			if ((ret = work->dat(work->ctx, ckey, klen, at)))
@@ -873,32 +886,92 @@ uint st_map_st(task* t, st_ptr* from, uint (*dat)(void*, cdat, uint, uint), uint
 	return _st_map_worker(&work, from->pg, GOOFF(from->pg,from->key), _trace_nxt(from), from->offset, 0);
 }
 
-struct _cmp_ctx {
-	task* t;
-	st_ptr ptr;
+// sending functions
+
+struct _st_ptr_arr {
+	st_ptr ptr[8];
+	struct _st_ptr_arr* prev;
 };
 
-static uint _cmp_dat(void* p, cdat str, uint len, uint at) {
-	struct _cmp_ctx* ctx = (struct _cmp_ctx*) p;
+struct st_send {
+	struct _st_ptr_arr* free;
+	struct _st_ptr_arr* top;
+	uint (*fun)(void*, st_ptr*, cdat, uint);
+	void* ctx;
+	task* t;
+	uint idx;
+};
+
+struct st_send* st_create_send(task* t, uint (*fun)(void*, st_ptr*, cdat, uint), void* ctx, st_ptr* start) {
+	struct _st_ptr_arr* n = tk_malloc(t, sizeof(struct _st_ptr_arr));
+	struct st_send* d = tk_malloc(t, sizeof(struct st_send));
+
+	n->prev = 0;
+	d->top = n;
+	d->free = 0;
+	d->t = t;
+	d->idx = 0;
+	d->ctx = ctx;
+	d->fun = fun;
+
+	n->ptr[0] = *start;
+	return d;
+}
+
+static void _st_free_arr(task* t, struct _st_ptr_arr* n) {
+	while (n) {
+		struct _st_ptr_arr* tmp = n->prev;
+		tk_mfree(t, n);
+		n = tmp;
+	}
+}
+
+void st_destroy_send(struct st_send* ctx) {
+	_st_free_arr(ctx->t, ctx->top);
+	_st_free_arr(ctx->t, ctx->free);
+
+	tk_mfree(ctx->t, ctx);
+}
+
+uint st_send_data(struct st_send* ctx, cdat dat, uint length, uint at) {
+	return ctx->fun(ctx->ctx, &ctx->top->ptr[ctx->idx], dat, length);
+}
+
+uint st_send_push(struct st_send* ctx) {
+	st_ptr top = ctx->top->ptr[ctx->idx];
+
+	if (ctx->idx++ > 7) {
+		struct _st_ptr_arr* n = ctx->free;
+		if (n)
+			ctx->free = n->prev;
+		else
+			n = tk_malloc(ctx->t, sizeof(struct _st_ptr_arr));
+
+		n->prev = ctx->top;
+		ctx->top = n;
+		ctx->idx = 0;
+	}
+
+	ctx->top->ptr[ctx->idx] = top;
 	return 0;
 }
 
-static uint _cmp_pop(void* p) {
-	struct _cmp_ctx* ctx = (struct _cmp_ctx*) p;
+uint st_send_pop(struct st_send* ctx) {
+	if (ctx->idx-- <= 0) {
+		if (ctx->top == 0)
+			return 1;
+		ctx->free = ctx->top;
+		ctx->top = ctx->top->prev;
+		if (ctx->top == 0)
+			return 1;
+
+		ctx->idx = 7;
+	}
+
 	return 0;
 }
 
-static uint _cmp_push(void* p) {
-	struct _cmp_ctx* ctx = (struct _cmp_ctx*) p;
-	return 0;
-}
-
-uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2) {
-	struct _cmp_ctx ctx;
-	ctx.t = t;
-
-	return st_map_st(t, pt1, _cmp_dat, _cmp_push, _cmp_pop, &ctx);
-}
+// ptr list
 
 ptr_list* ptr_list_reverse(ptr_list* e) {
 	ptr_list* link = 0;

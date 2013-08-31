@@ -54,6 +54,8 @@ typedef struct {
 	uint length;
 } st_str;
 
+struct st_send;
+
 /* generel functions */
 // create empty node
 // = 0 if ok - 1 if t is readonly
@@ -129,6 +131,13 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const int length);
 uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length);
 
 uint it_current(task* t, it_ptr* it, st_ptr* pt);
+
+/* Sending functions */
+struct st_send* st_create_send(task* t, uint (*fun)(void*, st_ptr*, cdat, uint), void* ctx, st_ptr* start);
+void st_destroy_send(struct st_send* ctx);
+uint st_send_data(struct st_send* ctx, cdat dat, uint length, uint at);
+uint st_send_push(struct st_send* ctx);
+uint st_send_pop(struct st_send* ctx);
 
 /* Task functions */
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
