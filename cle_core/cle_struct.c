@@ -486,21 +486,21 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length) {
 }
 
 uint st_link(task* t, st_ptr* to, st_ptr* from) {
-	struct _st_lkup_res rt;
-	struct _prepare_update pu = _st_prepare_update(&rt, t, to);
-	ptr* pt = _st_page_overflow(&rt, 0);
-
 	if (from->offset != 0) {
-		cle_panic(t);	// unimpl
+		return 1;
 	} else {
+		struct _st_lkup_res rt;
+		struct _prepare_update pu = _st_prepare_update(&rt, t, to);
+		ptr* pt = _st_page_overflow(&rt, 0);
+
 		pt->pg = from->pg;
 		pt->koffset = from->key;
-	}
 
-	if (rt.pg->id)	// should we care about cleanup?
-	{
-		rt.pg->waste += pu.waste >> 3;
-		_tk_remove_tree(t, rt.pg, pu.remove);
+		if (rt.pg->id)	// should we care about cleanup?
+		{
+			rt.pg->waste += pu.waste >> 3;
+			_tk_remove_tree(t, rt.pg, pu.remove);
+		}
 	}
 	return 0;
 }
@@ -746,6 +746,16 @@ uint st_delete_st(task* t, st_ptr* from, st_ptr* str) {
 	return ret;
 }
 
+// 0 = equal, -1 = pt1 < pt2, 1 = pt1 > pt2
+uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2) {
+	struct _st_lkup_res rt = _init_res(t, pt1, 0, 0);
+
+	if (st_map_st(t, pt2, _mv_st, _dont_use, _dont_use, &rt))
+		return *rt.path & (1 << (rt.diff & 7)) ? 1 : -1;
+
+	return 0;
+}
+
 struct _st_insert {
 	struct _st_lkup_res rt;
 	uint no_lookup;
@@ -787,8 +797,8 @@ int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 	return ret;
 }
 
-static uint _st_cp_ins(void* t, st_ptr* pt, cdat dat, uint l) {
-	st_insert((task*) t, pt, dat, l);
+static uint _st_cp_ins(void* p, st_ptr* pt, cdat dat, uint l) {
+	st_insert((task*) p, pt, dat, l);
 	return 0;
 }
 
@@ -799,10 +809,6 @@ uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
 
 	st_destroy_send(snd);
 	return ret;
-}
-
-uint st_compare(task* t, st_ptr* pt1, st_ptr* pt2) {
-	return 1;
 }
 
 // structure mapper
@@ -896,11 +902,26 @@ struct _st_ptr_arr {
 struct st_send {
 	struct _st_ptr_arr* free;
 	struct _st_ptr_arr* top;
-	uint (*fun)(void*, st_ptr*, cdat, uint);
+	uint (*dat_fun)(void*, st_ptr*, cdat, uint);
+	uint (*pop_fun)(struct st_send*);
 	void* ctx;
 	task* t;
 	uint idx;
 };
+
+static uint _deleter_dat(void* p, st_ptr* st, cdat c, uint l) {
+	return 0;
+}
+
+static uint _deleter_pop(struct st_send* ctx) {
+	return 0;
+}
+
+struct st_send* st_create_deleter(task* t, st_ptr* start) {
+	struct st_send* s = st_create_send(t, _deleter_dat, 0, start);
+	s->pop_fun = _deleter_pop;
+	return s;
+}
 
 struct st_send* st_create_send(task* t, uint (*fun)(void*, st_ptr*, cdat, uint), void* ctx, st_ptr* start) {
 	struct _st_ptr_arr* n = tk_malloc(t, sizeof(struct _st_ptr_arr));
@@ -912,7 +933,8 @@ struct st_send* st_create_send(task* t, uint (*fun)(void*, st_ptr*, cdat, uint),
 	d->t = t;
 	d->idx = 0;
 	d->ctx = ctx;
-	d->fun = fun;
+	d->dat_fun = fun;
+	d->pop_fun = 0;
 
 	n->ptr[0] = *start;
 	return d;
@@ -934,7 +956,7 @@ void st_destroy_send(struct st_send* ctx) {
 }
 
 uint st_send_data(struct st_send* ctx, cdat dat, uint length, uint at) {
-	return ctx->fun(ctx->ctx, &ctx->top->ptr[ctx->idx], dat, length);
+	return ctx->dat_fun(ctx->ctx, &ctx->top->ptr[ctx->idx], dat, length);
 }
 
 uint st_send_push(struct st_send* ctx) {
@@ -957,6 +979,12 @@ uint st_send_push(struct st_send* ctx) {
 }
 
 uint st_send_pop(struct st_send* ctx) {
+	if (ctx->pop_fun != 0) {
+		uint ret = ctx->pop_fun(ctx);
+		if (ret)
+			return ret;
+	}
+
 	if (ctx->idx-- <= 0) {
 		if (ctx->top == 0)
 			return 1;
