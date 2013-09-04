@@ -151,33 +151,6 @@ void test_struct_c() {
 	// .. and the old one
 	ASSERT(st_exist(t, &root, test1x2, sizeof(test1x2)));
 
-	// Test copy-move, insert compare
-	ASSERT(st_empty(t, &root) == 0);
-
-	tmp = root;
-	ASSERT(st_insert(t, &tmp, test1, sizeof(test1)));
-
-	ASSERT(st_empty(t, &tmp) == 0);
-
-	tmp2 = tmp;
-	ASSERT(st_insert(t, &tmp2, test1, sizeof(test1)));
-
-	tmp2 = root;
-	ASSERT(st_move_st(t, &tmp2, &tmp) == 0);
-
-	ASSERT(st_insert(t, &tmp2, test1, sizeof(test1)));
-
-	tmp2 = tmp;
-	st_update(t, &tmp2, test1x2, sizeof(test1x2));
-
-	tmp2 = root;
-	ASSERT(st_move_st(t, &tmp2, &tmp) == 0);
-
-	root = tmp2;
-	ASSERT(st_insert_st(t, &root, &tmp) == 0);
-
-	ASSERT(st_move(t, &tmp2, test1x2, sizeof(test1x2)) == 0);
-
 	// Testing st_delete
 	st_empty(t, &root);
 
@@ -260,7 +233,7 @@ void test_struct_c() {
 
 void test_struct_st() {
 	task* t;
-	struct st_send* snd;
+	struct st_stream* snd;
 	st_ptr root, to;
 
 	//  new task
@@ -271,18 +244,18 @@ void test_struct_st() {
 
 	ASSERT(st_empty(t, &root) == 0);
 
-	snd = st_create_send(t, st_insert, t, &root);
+	snd = st_merge_stream(t, &root);
 
-	ASSERT(st_send_data(snd, (cdat )"1234", 4, 0));
-	ASSERT(st_send_push(snd) == 0);
-	ASSERT(st_send_data(snd, (cdat )"5678", 4, 0));
-	ASSERT(st_send_pop(snd) == 0);
-	ASSERT(st_send_data(snd, (cdat )"9012", 4, 0));
-	ASSERT(st_send_push(snd) == 0);
-	ASSERT(st_send_data(snd, (cdat )"34", 2, 0));
-	ASSERT(st_send_data(snd, (cdat )"56", 2, 0));
+	ASSERT(st_stream_data(snd, (cdat )"1234", 4, 0) == 0);
+	ASSERT(st_stream_push(snd) == 0);
+	ASSERT(st_stream_data(snd, (cdat )"5678", 4, 0) == 0);
+	ASSERT(st_stream_pop(snd) == 0);
+	ASSERT(st_stream_data(snd, (cdat )"9012", 4, 0) == 0);
+	ASSERT(st_stream_push(snd) == 0);
+	ASSERT(st_stream_data(snd, (cdat )"34", 2, 0) == 0);
+	ASSERT(st_stream_data(snd, (cdat )"56", 2, 0) == 0);
 
-	st_destroy_send(snd);
+	st_destroy_stream(snd);
 
 	ASSERT(st_exist(t, &root, (cdat )"1234", 4));
 	ASSERT(st_exist(t, &root, (cdat )"12345678", 8));
@@ -300,8 +273,79 @@ void test_struct_st() {
 	ASSERT(st_exist(t, &to, (cdat )"1234901234", 10));
 	ASSERT(st_exist(t, &to, (cdat )"123490123456", 12));
 
-	ASSERT(st_exist_st(t, &to, &root) == 0);
-	ASSERT(st_exist_st(t, &root, &to) == 0);
+	ASSERT(st_exist_st(t, &to, &root));
+	ASSERT(st_exist_st(t, &root, &to));
+
+	// delete stream
+	snd = st_delete_stream(t, &root);
+
+	ASSERT(st_stream_data(snd, (cdat )"1234", 4, 0) == 0);
+	ASSERT(st_stream_push(snd) == 0);
+	ASSERT(st_stream_data(snd, (cdat )"5678", 4, 0) == 0);
+	ASSERT(st_stream_pop(snd) == 0);
+
+	ASSERT(st_exist(t, &root, (cdat )"12345678", 8) == 0);
+	ASSERT(st_exist(t, &root, (cdat )"12349012", 8));
+
+	ASSERT(st_stream_data(snd, (cdat )"90123456", 8, 0) == 0);
+
+	// remove all
+	ASSERT(st_stream_pop(snd) == 0);
+
+	ASSERT(st_is_empty(t, &root));
+
+	// Test copy-move, insert compare
+	{
+		st_ptr root1, root2, tmp1, tmp2;
+		ASSERT(st_empty(t, &root1) == 0);
+
+		ASSERT(st_empty(t, &root2) == 0);
+
+		tmp1 = root1;
+		ASSERT(st_insert(t, &tmp1, test1, sizeof(test1)));
+
+		tmp2 = root2;
+		ASSERT(st_insert(t, &tmp2, test1, sizeof(test1)));
+
+		// 1 & 2 point are test1
+		tmp1 = root1;
+		tmp2 = root2;
+		// move one from the other
+		ASSERT(st_move_st(t, &tmp1, &tmp2) == 0);
+		tmp1 = root1;
+		tmp2 = root2;
+		// move one from the other
+		ASSERT(st_move_st(t, &tmp2, &tmp1) == 0);
+
+		// extend to build test1x2 in 2
+		ASSERT(st_insert(t, &tmp2, test1, sizeof(test1)));
+
+		// override root1 with test1x2
+		tmp1 = root1;
+		st_update(t, &tmp1, test1x2, sizeof(test1x2));
+
+		// combined string found both ways
+		tmp1 = root1;
+		tmp2 = root2;
+		ASSERT(st_move_st(t, &tmp2, &tmp1) == 0);
+		tmp1 = root1;
+		tmp2 = root2;
+		ASSERT(st_move_st(t, &tmp1, &tmp2) == 0);
+
+		// nothing to write
+		tmp1 = root1;
+		tmp2 = root2;
+		ASSERT(st_insert_st(t, &tmp1, &tmp2) == 0);
+		// but writing extend
+		ASSERT(st_insert_st(t, &tmp1, &tmp2));
+
+		// pure-style works too
+		tmp1 = root1;
+		ASSERT(st_move(t, &tmp1, test1x2, sizeof(test1x2)) == 0);
+
+		// and read extends
+		ASSERT(st_move(t, &tmp1, test1x2, sizeof(test1x2)) == 0);
+	}
 
 	tk_drop_task(t);
 }

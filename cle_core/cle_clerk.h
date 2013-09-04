@@ -54,7 +54,7 @@ typedef struct {
 	uint length;
 } st_str;
 
-struct st_send;
+struct st_stream;
 
 /* generel functions */
 // create empty node
@@ -78,6 +78,8 @@ uint st_update(task* t, st_ptr* pt, cdat path, uint length);
 uint st_append(task* t, st_ptr* pt, cdat path, uint length);
 
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length);
+
+uint st_clear(task* t, st_ptr* pt);
 
 uint st_move_st(task* t, st_ptr* mv, st_ptr* str);
 
@@ -132,12 +134,14 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length);
 
 uint it_current(task* t, it_ptr* it, st_ptr* pt);
 
-/* Sending functions */
-struct st_send* st_create_send(task* t, uint (*fun)(void*, st_ptr*, cdat, uint), void* ctx, st_ptr* start);
-void st_destroy_send(struct st_send* ctx);
-uint st_send_data(struct st_send* ctx, cdat dat, uint length, uint at);
-uint st_send_push(struct st_send* ctx);
-uint st_send_pop(struct st_send* ctx);
+/* Streaming functions */
+struct st_stream* st_exist_stream(task* t, st_ptr* pt);
+struct st_stream* st_merge_stream(task* t, st_ptr* pt);
+struct st_stream* st_delete_stream(task* t, st_ptr* pt);
+uint st_destroy_stream(struct st_stream* ctx);
+uint st_stream_data(struct st_stream* ctx, cdat dat, uint length, uint at);
+uint st_stream_push(struct st_stream* ctx);
+uint st_stream_pop(struct st_stream* ctx);
 
 /* Task functions */
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
