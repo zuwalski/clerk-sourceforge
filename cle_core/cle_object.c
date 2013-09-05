@@ -1058,11 +1058,12 @@ static uint _t_push(void* p) {
 int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	struct _trace_ctx ctx;
 	st_ptr del, ins;
+	int delta;
 
 	st_empty(inst.t, &del);
 	st_empty(inst.t, &ins);
 
-	if (tk_delta(inst.t, &del, &ins))
+	if ((delta = tk_delta(inst.t, &del, &ins)) == 0)
 		return 0;
 
 	if (ctx.src->commit_begin(ctx.sdat))
@@ -1073,7 +1074,7 @@ int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	ctx.src = src;
 
 	// stream deletes
-	if (!st_is_empty(inst.t, &del)) {
+	if (delta & 1) {
 		if (ctx.src->commit_deletes(ctx.sdat))
 			return -1;
 
@@ -1082,7 +1083,7 @@ int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
 	}
 
 	// trace and stream persistent objects
-	if (!st_is_empty(inst.t, &ins)) {
+	if (delta & 2) {
 		if (ctx.src->commit_inserts(ctx.sdat))
 			return -1;
 

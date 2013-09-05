@@ -406,25 +406,27 @@ static uint _st_do_delete(struct _st_lkup_res* rt) {
 		rt->sub->length = rt->prev->offset;
 		rt->prev->next = 0;
 	} else if (rt->d_sub) {
-		page* orig = rt->d_pg;
-		key* k;
+		if (rt->d_pg->id != 0 && rt->d_pg->orig == 0) {
+			page* orig = rt->d_pg;
 
-		_st_make_writable(rt);
+			rt->d_pg = _tk_write_copy(rt->t, rt->d_pg);
 
-		// fix pointer
-		rt->d_sub = GOKEY(rt->d_pg,(char*)rt->d_sub - (char*)orig);
+			// fix pointer
+			rt->d_sub = GOKEY(rt->d_pg,(char*)rt->d_sub - (char*)orig);
+
+			if (rt->d_prev)
+				// fix pointer
+				rt->d_prev = GOKEY(rt->d_pg,(char*)rt->d_prev - (char*)orig);
+		}
 
 		if (rt->d_prev) {
-			// fix pointer
-			rt->d_prev = GOKEY(rt->d_pg,(char*)rt->d_prev - (char*)orig);
-
-			k = GOOFF(rt->d_pg,rt->d_prev->next);
+			key* k = GOOFF(rt->d_pg,rt->d_prev->next);
 			rt->d_prev->next = k->next;
 
 			if (k->offset == rt->d_sub->length)
 				rt->d_sub->length = rt->d_prev->offset;
 		} else {
-			k = GOOFF(rt->d_pg,rt->d_sub->sub);
+			key* k = GOOFF(rt->d_pg,rt->d_sub->sub);
 			rt->d_sub->sub = k->next;
 
 			if (k->offset == rt->d_sub->length)

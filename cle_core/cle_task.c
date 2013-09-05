@@ -159,6 +159,7 @@ page_wrap* _tk_write_copy(task* t, page_wrap* pg) {
 	t->wpages = npg;
 
 	npg->orig = pg;
+	npg->refcount++;
 
 	// add to map of written pages
 	root_ptr = t->pagemap;
@@ -606,9 +607,11 @@ static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base
 	}
 }
 
+// returns res & 1 => deletes , res & 2 => inserts
 int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	struct _tk_trace_base base;
 	page_wrap* pgw;
+	int res = 0;
 
 	base.sused = base.ssize = 0;
 	base.chain = base.free = 0;
@@ -624,6 +627,7 @@ int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 			t_delete.ptr.pg = t_insert.ptr.pg = 0;
 
 			_tk_trace_change(&base, pgw, &t_delete, &t_insert);
+			res |= (t_delete.ptr.pg != 0) | (t_insert.ptr.pg != 0) << 1;
 		}
 
 		_tk_base_reset(&base);
@@ -631,7 +635,7 @@ int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 
 	tk_mfree(t, base.kstack);
 
-	return (base.kstack == 0);
+	return res;
 }
 
 /////////////////////////////// Commit v4 /////////////////////////////////

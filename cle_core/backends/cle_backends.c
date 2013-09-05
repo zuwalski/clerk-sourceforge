@@ -53,6 +53,13 @@ static cle_pageid mem_new_page(cle_psrc_data pd, page* data) {
 	}
 	memcpy(pg, data, data->used);
 	pg->id = pg;
+
+	pg->next = 0;
+	pg->orig = 0;
+	pg->ovf = 0;
+	pg->parent = 0;
+	pg->refcount = 1;
+
 	md->pagecount++;
 	return (cle_pageid) pg;
 }
@@ -67,6 +74,7 @@ static page* mem_root_page(cle_psrc_data pd) {
 }
 
 static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
+	page* npg;
 	if (pg->used > pg->size) {
 		printf("not good");
 	}
@@ -80,10 +88,18 @@ static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
 
 		memcpy(md->root, pg, pg->used);
 		md->root->id = ROOT_ID;
+		npg = md->root;
 	} else {
-		memcpy(id, pg, pg->used);
-		((page*) id)->id = id;
+		npg = (page*) id;
+		memcpy(npg, pg, pg->used);
+		npg->id = id;
 	}
+
+	npg->next = 0;
+	npg->orig = 0;
+	npg->ovf = 0;
+	npg->parent = 0;
+	npg->refcount = 1;
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id) {

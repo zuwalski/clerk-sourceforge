@@ -981,9 +981,10 @@ void test_task_c_filepager() {
 	tk_drop_task(t);
 }
 
-void test_tk_sync() {
+void test_tk_delta() {
 	st_ptr root, tmp, ins_root, del_root;
 	task* t;
+	int delta;
 
 	unsigned char big[PAGE_SIZE * 2];
 	const unsigned char t1[] = "abc";
@@ -1012,7 +1013,7 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	//st_prt_page(&ins_root);
 
@@ -1028,10 +1029,14 @@ void test_tk_sync() {
 	// set pagesource-root
 	tk_root_ptr(t, &root);
 
+	ASSERT(st_exist(t, &root, t1, sizeof(t1)));
+	ASSERT(st_exist(t, &root, t2, sizeof(t2)));
+	ASSERT(st_exist(t, &root, t3, sizeof(t3)));
+
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_is_empty(t, &ins_root));
 	ASSERT(st_is_empty(t, &del_root));
@@ -1039,7 +1044,7 @@ void test_tk_sync() {
 	tmp = root;
 	st_insert(t, &tmp, t4, sizeof(t4));
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_exist(t, &ins_root, t4, sizeof(t4)));
 
@@ -1058,13 +1063,13 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_exist(t, &del_root, t2, 3));
 
 	st_delete(t, &root, t1, sizeof(t1));
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	ASSERT(st_exist(t, &del_root, t1, sizeof(t1)));
 	ASSERT(st_exist(t, &root, t1, sizeof(t1)) == 0);
@@ -1092,7 +1097,7 @@ void test_tk_sync() {
 	st_empty(t, &ins_root);
 	st_empty(t, &del_root);
 
-	tk_delta(t, &del_root, &ins_root);
+	delta = tk_delta(t, &del_root, &ins_root);
 
 	//st_prt_page(&ins_root);
 
@@ -1202,6 +1207,8 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
+	test_tk_delta();
+
 	test_struct_st();
 
 	test_struct_c();
@@ -1215,7 +1222,6 @@ int main(int argc, char* argv[]) {
 	test_task_c();
 
 	test_task_c_2();
-
 	exit(0);
 
 	test_task_c_2();
@@ -1253,7 +1259,7 @@ int main(int argc, char* argv[]) {
 
 	test_instance_c();
 
-	test_tk_sync();
+	test_tk_delta();
 
 	test_task_c_3();
 
