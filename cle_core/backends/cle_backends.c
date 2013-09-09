@@ -53,13 +53,6 @@ static cle_pageid mem_new_page(cle_psrc_data pd, page* data) {
 	}
 	memcpy(pg, data, data->used);
 	pg->id = pg;
-
-	pg->next = 0;
-	pg->orig = 0;
-	pg->ovf = 0;
-	pg->parent = 0;
-	pg->refcount = 1;
-
 	md->pagecount++;
 	return (cle_pageid) pg;
 }
@@ -94,12 +87,6 @@ static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
 		memcpy(npg, pg, pg->used);
 		npg->id = id;
 	}
-
-	npg->next = 0;
-	npg->orig = 0;
-	npg->ovf = 0;
-	npg->parent = 0;
-	npg->refcount = 1;
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id) {

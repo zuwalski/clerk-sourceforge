@@ -447,7 +447,7 @@ static state _need_start_call(struct handler_node* h) {
 	return s;
 }
 
-static state _check_state(struct handler_node* h, state s) {
+static state _check_state(struct handler_node* h, state s, cdat msg, uint length) {
 	struct _child_task* c;
 	if (s == OK)
 		return OK;
@@ -483,9 +483,14 @@ static state _check_state(struct handler_node* h, state s) {
 	h = h->cmn->ipt;
 	c = h->cmn->childs;
 
+	if (msg == 0 || length == 0) {
+		msg = (cdat) "broken pipe";
+		length = 12;
+	}
+
 	do {
 		h->flags |= 1;
-		h->handler.pipe->end(h, (cdat) "broken pipe", 12);
+		h->handler.pipe->end(h, msg, length);
 		h->handler.pipe = &_ok_node;
 		h = h->next;
 	} while (h);
@@ -507,13 +512,12 @@ static state _check_handler(struct handler_node* h, state (*handler)(void*)) {
 	if (s == OK)
 		s = handler(h);
 
-	return _check_state(h, s);
+	return _check_state(h, s, 0, 0);
 }
 
-// TODO msg gets lost ..
 state cle_close(cle_stream* ipt, cdat msg, uint len) {
 	state s = (len == 0 && (ipt->flags & 1) == 0) ? DONE : FAILED;
-	s = _check_state(ipt, s);
+	s = _check_state(ipt, s, msg, len);
 
 	// detach from parent (if any)
 	if (ipt->cmn->parent) {
@@ -553,7 +557,7 @@ state cle_data(cle_stream* ipt, cdat data, uint len) {
 	if (s == OK)
 		s = ipt->handler.pipe->data(ipt, data, len);
 
-	return _check_state(ipt, s);
+	return _check_state(ipt, s, 0, 0);
 }
 
 // response
@@ -584,7 +588,7 @@ state resp_data(void* p, cdat c, uint l) {
 	if (s == OK)
 		s = h->next->handler.pipe->data(h->next, c, l);
 
-	return _check_state(h->next, s);
+	return _check_state(h->next, s, 0, 0);
 }
 state resp_next(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
@@ -608,7 +612,7 @@ state resp_serialize(void* v, st_ptr pt) {
 	if (s == OK)
 		s = st_map_st(h->cmn->inst.t, &pt, _data_serializer, h->next->handler.pipe->push, h->next->handler.pipe->pop, h->next);
 
-	return _check_state(h->next, s);
+	return _check_state(h->next, s, 0, 0);
 }
 
 // add handler to config

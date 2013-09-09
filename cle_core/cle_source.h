@@ -23,20 +23,9 @@ typedef void* cle_psrc_data;
 
 #define ROOT_ID ((cle_pageid)1)
 
-typedef struct overflow {
-	unsigned int used;
-	unsigned int size;
-} overflow;
-
 typedef struct page {
 	cle_pageid id;
-	// move to "writable_page"
-	struct page* next;
 	struct page* parent;
-	overflow*    ovf;
-	struct page* orig;
-	unsigned long refcount;
-	// move end
 	unsigned short size;
 	unsigned short used;
 	unsigned short waste;
@@ -58,23 +47,5 @@ typedef struct cle_pagesource {
 	int (*pager_close)(cle_psrc_data);
 	cle_psrc_data (*pager_clone)(cle_psrc_data);
 } cle_pagesource;
-
-typedef struct {
-	page* (*read_page)(cle_psrc_data, cle_pageid);
-	void (*unref_page)(cle_psrc_data, page*);
-	cle_psrc_data (*source_clone)(cle_psrc_data);
-	int (*source_close)(cle_psrc_data);
-
-	int (*commit_begin)(cle_psrc_data);
-	int (*commit_done)(cle_psrc_data);
-	int (*commit_fail)(cle_psrc_data);
-
-	int (*commit_deletes)(cle_psrc_data);
-	int (*commit_inserts)(cle_psrc_data);
-
-	unsigned int (*commit_push)(cle_psrc_data);
-	unsigned int (*commit_pop)(cle_psrc_data);
-	unsigned int (*commit_data)(cle_psrc_data, const unsigned char*, unsigned int, unsigned int);
-} cle_datasource;
 
 #endif

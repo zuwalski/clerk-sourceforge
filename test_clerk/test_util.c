@@ -196,17 +196,17 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 			{
 				ptr* pt = (ptr*) me;
 				st_ptr tmp;
-				page_wrap* pw = pg;
+				task_page* pw = TO_TASK_PAGE(pg);
 				key* root = _tk_get_ptr(t, &pw, me);
 				// keep page-wrapper (forever)
 				pw->refcount++;
 				levels[level] += 1;
 				ptr_count++;
 
-				filling[(int) (((float) pw->used / (float) pw->size)
+				filling[(int) (((float) pw->pg.used / (float) pw->pg.size)
 						* 8.0)]++;
 
-				if (pw->used > pw->size) {
+				if (pw->pg.used > pw->pg.size) {
 					printf("p overflow ");
 				}
 
@@ -255,7 +255,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 }
 
 void st_prt_distribution(st_ptr* pt, task* tsk) {
-	page_wrap* pw;
+	task_page* pw;
 	int i;
 
 	t = tsk;

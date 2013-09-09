@@ -834,8 +834,6 @@ void test_task_c_3() {
 
 	ASSERT(st_exist(t, &root, (cdat )keystore, sizeof(keystore)));
 
-	st_prt_distribution(&root, t);
-
 	keystore[1000] = 1;
 	tmp = root;
 	st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
@@ -1108,65 +1106,6 @@ void test_tk_delta() {
 	tk_drop_task(t);
 }
 
-static uint dat(void* ctx, cdat dat, uint len) {
-	printf("dat %d %.*s\n", len, len, dat);
-	return 0;
-}
-
-static uint push(void* ctx) {
-	puts("push");
-	return 0;
-}
-
-static uint pop(void* ctx) {
-	puts("pop");
-	return 0;
-}
-
-void test_st_trace() {
-	st_ptr root, tmp;
-	task* t;
-
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
-
-	//  new task
-	t = tk_create_task(0, 0);
-
-	// should not happen.. but
-	ASSERT(t);
-
-	ASSERT(st_empty(t, &root) == 0);
-
-	tmp = root;
-	st_insert(t, &tmp, "aaa", 4);
-	tmp = root;
-	st_insert(t, &tmp, "abb", 4);
-	tmp = root;
-	st_insert(t, &tmp, "aac", 4);
-	tmp = root;
-	st_insert(t, &tmp, "abc", 4);
-	tmp = root;
-	st_insert(t, &tmp, "aaa\0a", 6);	// continue 1
-
-//	st_map_st(t,&root,dat,push,pop,0);
-
-	ASSERT(st_empty(t, &tmp) == 0);
-
-	/*ASSERT(st_copy_st(t,&tmp,&root) == 0);
-
-	 ASSERT(st_exsist(t,&tmp,"aaa",4));
-	 ASSERT(st_exsist(t,&tmp,"abb",4));
-	 ASSERT(st_exsist(t,&tmp,"aac",4));
-	 ASSERT(st_exsist(t,&tmp,"abc",4));
-	 ASSERT(st_exsist(t,&tmp,"aaa\0a",6));
-
-	 ASSERT(st_compare_st(t,&root,&tmp) == 0);
-	 */
-	tk_drop_task(t);
-}
-
 /////////// basenames ////////////
 
 static st_ptr basenames;
@@ -1207,11 +1146,13 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
-	test_tk_delta();
+	test_struct_c();
 
 	test_struct_st();
 
-	test_struct_c();
+	test_task_c_3();
+
+	test_tk_delta();
 
 	time_struct_c();
 
@@ -1222,26 +1163,10 @@ int main(int argc, char* argv[]) {
 	test_task_c();
 
 	test_task_c_2();
+
 	exit(0);
 
-	test_task_c_2();
 
-	puts("done");
-	//getchar();
-	exit(0);
-	//	_setup_base();
-
-	test_iterate_c();
-
-	test_iterate_fixedlength();
-
-	test_task_c();
-
-	test_task_c_2();
-
-	puts("done");
-	//getchar();
-	exit(0);
 	//	_setup_base();
 
 //	st_prt_page(&basenames);
@@ -1249,36 +1174,9 @@ int main(int argc, char* argv[]) {
 
 	test_stream_c2();
 
-	puts("done");
-	//getchar();
-	exit(0);
-
-	test_struct_c();
-
-	time_struct_c();
-
 	test_instance_c();
-
-	test_tk_delta();
-
-	test_task_c_3();
-
-	time_struct_c();
-
-	test_st_trace();
-
-	test_task_c();
-
-	test_task_c_2();
 
 	test_compile_c();
 
-	//test_task_c_filepager();
-
-	//test_stream_c();
-
-	// test
-	puts("\nTesting done...");
-	getchar();
 	return 0;
 }

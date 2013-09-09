@@ -89,6 +89,21 @@ typedef struct {
 	uchar type;
 } cle_typed_identity;
 
+typedef void* cle_obj_target_ctx;
+
+typedef struct {
+	int (*commit_begin)(cle_obj_target_ctx);
+	int (*commit_done)(cle_obj_target_ctx);
+	int (*commit_fail)(cle_obj_target_ctx);
+
+	int (*commit_deletes)(cle_obj_target_ctx);
+	int (*commit_inserts)(cle_obj_target_ctx);
+
+	unsigned int (*commit_push)(cle_obj_target_ctx);
+	unsigned int (*commit_pop)(cle_obj_target_ctx);
+	unsigned int (*commit_data)(cle_obj_target_ctx, cdat*, uint, uint);
+} cle_object_target;
+
 int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), void* ctx);
 
 int cle_new(cle_instance inst, st_ptr name, st_ptr extends, st_ptr* obj);
@@ -147,6 +162,6 @@ enum property_type cle_get_property_type(cle_instance inst, st_ptr obj, identity
 
 enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop);
 
-int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat);
+int cle_commit_objects(cle_instance inst, cle_object_target* src, cle_obj_target_ctx sdat);
 
 #endif

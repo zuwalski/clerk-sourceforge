@@ -886,7 +886,7 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop) {
 /**
  * Translates all mem-refs to obj-refs.
  *
- * Referenced mem-obj get persisted and there references are traced.
+ * Referenced mem-obj get persisted and there references are traced and persisted if needed.
  *
  * 0--1-------2--------|----3---4---3-----(5)--
  *	/OID/{Object-header}identity/content/content|header ... content
@@ -903,8 +903,8 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop) {
 #define TRACE_SKIP (sizeof(oid) + sizeof(objectheader2) + sizeof(identity))
 
 struct _trace_ctx {
-	cle_datasource* src;
-	void* sdat;
+	cle_object_target* src;
+	cle_obj_target_ctx sdat;
 
 	cle_instance inst;
 	st_ptr newgen;
@@ -1055,7 +1055,7 @@ static uint _t_push(void* p) {
  * Trace all mem-refs and persist.
  * Stream delta-trees to backend.
  */
-int cle_commit_objects(cle_instance inst, cle_datasource* src, void* sdat) {
+int cle_commit_objects(cle_instance inst, cle_object_target* src, cle_obj_target_ctx sdat) {
 	struct _trace_ctx ctx;
 	st_ptr del, ins;
 	int delta;

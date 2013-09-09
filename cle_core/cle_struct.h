@@ -49,43 +49,43 @@ typedef struct ptr
 	void*  pg;
 } ptr;
 
-typedef struct write_page {
-	cle_pageid id;
-	// move to "writable_page"
-	struct page* next;
-	struct page* parent;
+typedef struct overflow {
+	unsigned int used;
+	unsigned int size;
+} overflow;
+
+typedef struct task_page {
+	struct task_page* next;
 	overflow*    ovf;
-	struct page* orig;
 	unsigned long refcount;
 
 	page pg;
-} write_page;
+} task_page;
 
 struct task
 {
-	page_wrap*      stack;
-	page_wrap*      wpages;
+	task_page*      stack;
+	task_page*      wpages;
 	cle_pagesource* ps;
 	cle_psrc_data   psrc_data;
-	page_wrap*      pagemap_root_wrap;
-	ushort          pagemap_root_key;
 	segment         segment;
 	st_ptr			root;
 	st_ptr			pagemap;
 };
 
+#define TO_TASK_PAGE(pag) ((task_page*)((char*)(pag) - (unsigned long)(&((task_page*)0)->pg)))
 #define GOKEY(pag,off) ((key*)((char*)(pag) + (off)))
-#define GOPTR(pag,off) ((key*)(((char*)(pag)->ovf) + (((off) ^ 0x8000)<<4)))
+#define GOPTR(pag,off) ((key*)(((char*)(TO_TASK_PAGE(pag))->ovf) + (((off) ^ 0x8000)<<4)))
 #define GOOFF(pag,off) ((off & 0x8000)? GOPTR(pag,off):GOKEY(pag,off))
 #define KDATA(k) ((unsigned char*)k + sizeof(key))
 #define CEILBYTE(l)(((l) + 7) >> 3)
 #define ISPTR(k) ((k)->length == PTR_ID)
 
-key* _tk_get_ptr(task* t, page_wrap** pg, key* me);
-ushort _tk_alloc_ptr(task* t, page_wrap* pg);
+key* _tk_get_ptr(task* t, page** pg, key* me);
+ushort _tk_alloc_ptr(task* t, task_page* pg);
 void _tk_stack_new(task* t);
-void _tk_remove_tree(task* t, page_wrap* pg, ushort key);
-page_wrap* _tk_write_copy(task* t, page_wrap* pg);
+void _tk_remove_tree(task* t, page* pg, ushort key);
+page* _tk_write_copy(task* t, page* pg);
 //void tk_unref(task* t, page_wrap* pg);
 page* _tk_check_ptr(task* t, st_ptr* pt);
 page* _tk_check_page(task* t, page* pw);

@@ -104,33 +104,34 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 	return rt->length;
 }
 
-static uint _prev_offset(page_wrap* pg, key* prev) {
+static uint _prev_offset(task_page* pg, key* prev) {
 	return (pg->ovf != 0 && (char*) prev > (char*) pg->ovf && (char*) prev < (char*) pg->ovf + pg->ovf->size) ?
 			(uint) ((char*) prev - (char*) pg->ovf) : 0;
 }
 
 static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size) {
+	task_page* tp = TO_TASK_PAGE(rt->pg);
 	ptr* pt;
 
 	// rt->prev might move in _tk_alloc_ptr
-	uint prev_offset = _prev_offset(rt->pg, rt->prev);
+	uint prev_offset = _prev_offset(tp, rt->prev);
 
 	// allocate pointer
-	ushort ptr_off = _tk_alloc_ptr(rt->t, rt->pg);
+	ushort ptr_off = _tk_alloc_ptr(rt->t, tp);
 
 	/* rebuild prev-pointer in (possibly) new ovf */
 	if (prev_offset)
-		rt->prev = (key*) ((char*) rt->pg->ovf + prev_offset);
+		rt->prev = (key*) ((char*) tp->ovf + prev_offset);
 
 	// +1 make sure new data can be aligned as well
-	if (size + rt->t->stack->used + (rt->t->stack->used & 1) > rt->t->stack->size)
+	if (size + rt->t->stack->pg.used + (rt->t->stack->pg.used & 1) > rt->t->stack->pg.size)
 		_tk_stack_new(rt->t);
 
 	// init mem-pointer
 	pt = (ptr*) GOPTR(rt->pg,ptr_off);
 
-	pt->pg = rt->t->stack;
-	pt->koffset = rt->t->stack->used + (rt->t->stack->used & 1);
+	pt->pg = &rt->t->stack->pg;
+	pt->koffset = rt->t->stack->pg.used + (rt->t->stack->pg.used & 1);
 	pt->offset = rt->diff;
 	pt->ptr_id = PTR_ID;
 
@@ -144,7 +145,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size) {
 	}
 
 	/* reset values */
-	rt->pg = rt->t->stack;
+	rt->pg = &rt->t->stack->pg;
 	rt->prev = rt->sub = 0;
 
 	return pt;
@@ -154,10 +155,9 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size) {
 static void _st_make_writable(struct _st_lkup_res* rt) {
 	page* old = rt->pg;
 
-	if (old->id == 0 || rt->pg->orig != 0)
-		return;
-
 	rt->pg = _tk_write_copy(rt->t, rt->pg);
+	if (rt->pg == old)
+		return;
 
 	/* fix pointers */
 	if (rt->prev)
@@ -406,27 +406,25 @@ static uint _st_do_delete(struct _st_lkup_res* rt) {
 		rt->sub->length = rt->prev->offset;
 		rt->prev->next = 0;
 	} else if (rt->d_sub) {
-		if (rt->d_pg->id != 0 && rt->d_pg->orig == 0) {
-			page* orig = rt->d_pg;
-
-			rt->d_pg = _tk_write_copy(rt->t, rt->d_pg);
-
-			// fix pointer
-			rt->d_sub = GOKEY(rt->d_pg,(char*)rt->d_sub - (char*)orig);
-
-			if (rt->d_prev)
-				// fix pointer
-				rt->d_prev = GOKEY(rt->d_pg,(char*)rt->d_prev - (char*)orig);
-		}
+		page* orig = rt->d_pg;
+		rt->d_pg = _tk_write_copy(rt->t, rt->d_pg);
 
 		if (rt->d_prev) {
-			key* k = GOOFF(rt->d_pg,rt->d_prev->next);
+			key* k;
+			// fix pointer
+			rt->d_prev = GOKEY(rt->d_pg,(char*)rt->d_prev - (char*)orig);
+
+			k = GOOFF(rt->d_pg,rt->d_prev->next);
 			rt->d_prev->next = k->next;
 
 			if (k->offset == rt->d_sub->length)
 				rt->d_sub->length = rt->d_prev->offset;
 		} else {
-			key* k = GOOFF(rt->d_pg,rt->d_sub->sub);
+			key* k;
+			// fix pointer
+			rt->d_sub = GOKEY(rt->d_pg,(char*)rt->d_sub - (char*)orig);
+
+			k = GOOFF(rt->d_pg,rt->d_sub->sub);
 			rt->d_sub->sub = k->next;
 
 			if (k->offset == rt->d_sub->length)

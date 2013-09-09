@@ -23,9 +23,9 @@
 
 struct _st_lkup_it_res {
 	task* t;
-	page_wrap* pg;
-	page_wrap* low_pg;
-	page_wrap* high_pg;
+	page* pg;
+	page* low_pg;
+	page* high_pg;
 	key* prev;
 	key* sub;
 	key* low;
@@ -456,7 +456,7 @@ void it_create(task* t, it_ptr* it, st_ptr* pt) {
 	it->kdata = 0;
 	it->ksize = it->kused = 0;
 
-	it->pg->refcount++;
+	//it->pg->refcount++;
 }
 
 void it_dispose(task* t, it_ptr* it) {
