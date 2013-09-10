@@ -45,21 +45,18 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 
 			if (pt->koffset == 0) {
 				page_wrap* wrap;
-				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80
-						>> (o & 7))) ? "+" : "-", pt->offset, pt->pg, meoff,
-						pt->next);
+				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset, pt->pg,
+						meoff, pt->next);
 
 				if (ind < 20) {
 					wrap = pt->pg;
 					printf(" (%d)>>\n", wrap->used);
-					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2,
-							sizeof(page));
+					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2, sizeof(page));
 				} else
 					puts(">>");
 			} else {
-				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path
-						& (0x80 >> (o & 7))) ? "+" : "-", pt->offset, pt->pg,
-						pt->koffset, meoff, pt->next);
+				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset,
+						pt->pg, pt->koffset, meoff, pt->next);
 
 				print_struct((page_wrap*) pt->pg, GOKEY((page_wrap*) pt->pg,
 						pt->koffset), ind + 2, pt->koffset);
@@ -67,9 +64,8 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 		} else {
 			int i;
 
-			fprintf(f, "(%s%d/%d) %s (%d - s:%d n:%d) [", (o < l && *path
-					& (0x80 >> (o & 7))) ? "+" : "-", o, l, "" /*path*/, meoff,
-					me->sub, me->next);
+			fprintf(f, "(%s%d/%d) %s (%d - s:%d n:%d) [", (o < l && *path & (0x80 >> (o & 7))) ? "+" : "-", o, l, "" /*path*/,
+					meoff, me->sub, me->next);
 
 			//printf("%s",path);
 			for (i = 0; i < (l + 7) >> 3; i++) {
@@ -102,8 +98,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 
 void st_prt_page(st_ptr* pt) {
 	f = stdout;
-	fprintf(f, "%p(%d/%d)\n", pt->pg->id, pt->pg->used,
-			pt->pg->waste);
+	fprintf(f, "%p(%d/%d)\n", pt->pg->id, pt->pg->used, pt->pg->waste);
 	print_struct(pt->pg, GOOFF(pt->pg, pt->key), 0, pt->key);
 }
 
@@ -111,7 +106,7 @@ int _tk_validate(page* pg, uint* kcount, ushort koff) {
 	while (koff != 0) {
 		key* k = (key*) ((char*) pg + koff);
 
-		if (*kcount > (uint)(pg->used / 8)) {
+		if (*kcount > (uint) (pg->used / 8)) {
 			return 1;
 		}
 		*kcount += 1;
@@ -143,8 +138,7 @@ void _tk_print(page* pg) {
 
 			koff += sizeof(ptr);
 		} else {
-			printf("%d key l:%d o:%d s:%d n:%d\n", koff, k->length, k->offset,
-					k->sub, k->next);
+			printf("%d key l:%d o:%d s:%d n:%d\n", koff, k->length, k->offset, k->sub, k->next);
 			koff += sizeof(key) + ((k->length + 7) >> 3);
 		}
 
@@ -160,7 +154,7 @@ static int offset_zero;
 static int key_count;
 static int ptr_count;
 
-static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
+static void calc_dist(page* pg, key* me, key* parent, int level) {
 	if (level >= 100)
 		return;
 
@@ -172,41 +166,38 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 			offset_zero++;
 		}
 
-
 		if (me->length == 0) {
 			empty_keys++;
 		}
 
 		// as ptr has high lenght - these wont work with pointers
-		if (ISPTR(me) == 0 && (((me->length + 7) >> 3) + sizeof(key) + (char*) me > (char*) pg
-							   + pg->used)) {
+		if (ISPTR(me) == 0 && (((me->length + 7) >> 3) + sizeof(key) + (char*) me > (char*) pg + pg->used)) {
 			printf("F0 ");
 		}
-		
+
 		if (parent == 0 && me->offset != 0) {
 			//printf("F1 ");
 		}
-		
+
 		if (parent != 0 && ISPTR(parent) == 0 && me->offset > parent->length) {
 			printf("F2 ");
 		}
-		
+
 		if (ISPTR(me)) {
 			//if(me->sub != 0)
 			{
 				ptr* pt = (ptr*) me;
 				st_ptr tmp;
-				task_page* pw = TO_TASK_PAGE(pg);
+				page* pw = pg;
 				key* root = _tk_get_ptr(t, &pw, me);
-				// keep page-wrapper (forever)
-				pw->refcount++;
+				//// keep page-wrapper (forever)
+				//pw->refcount++;
 				levels[level] += 1;
 				ptr_count++;
 
-				filling[(int) (((float) pw->pg.used / (float) pw->pg.size)
-						* 8.0)]++;
+				filling[(int) (((float) pw->used / (float) pw->size) * 8.0)]++;
 
-				if (pw->pg.used > pw->pg.size) {
+				if (pw->used > pw->size) {
 					printf("p overflow ");
 				}
 
@@ -238,7 +229,7 @@ static void calc_dist(page_wrap* pg, key* me, key* parent, int level) {
 
 		if (!me->next)
 			break;
-		
+
 		pme = me;
 
 		me = GOOFF(pg, me->next);
@@ -274,7 +265,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 	//puts("\n");
 	//st_prt_page(pt);
 	//puts("\n");
-	
+
 	tk_ref_ptr(pt);
 
 	calc_dist(pt->pg, GOKEY(pt->pg, pt->key), 0, 0);
@@ -328,7 +319,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 
 uint sim_new(uchar kdata[], uint ksize) {
 	if (kdata[0] == 0) // init 1.index
-	{
+			{
 		kdata[0] = kdata[1] = 1;
 		kdata[2] = 0;
 	} else { // incr. index
@@ -355,13 +346,13 @@ uint sim_new(uchar kdata[], uint ksize) {
 }
 
 st_ptr str(task* t, char* cs) {
-	st_ptr pt,org;
-	
+	st_ptr pt, org;
+
 	st_empty(t, &pt);
 	org = pt;
-	
-	st_insert(t, &pt, (cdat)cs, strlen(cs));
-	
+
+	st_insert(t, &pt, (cdat) cs, strlen(cs));
+
 	return org;
 }
 
@@ -384,7 +375,6 @@ st_ptr root(task* t) {
  [...] <- values
  */
 // code-header
-
 static void _cle_indent(uint indent, const char* str, uint length) {
 	while (indent-- > 0)
 		printf("  ");
@@ -616,20 +606,16 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			return;
 		}
 
-		bptr = bptr2 = (char*) tk_malloc(t, body.codesize
-				- sizeof(struct _body_));
-		if (st_get(t, &tmpptr, bptr, body.codesize - sizeof(struct _body_))
-				!= -1) {
+		bptr = bptr2 = (char*) tk_malloc(t, body.codesize - sizeof(struct _body_));
+		if (st_get(t, &tmpptr, bptr, body.codesize - sizeof(struct _body_)) != -1) {
 			tk_mfree(t, bptr);
 			err(__LINE__);
 			return;
 		}
 
 		len = body.codesize - sizeof(struct _body_);
-		printf(
-				"\nCodesize %d, Params %d, Vars %d, Stacksize: %d, Firsthandler: %d\n",
-				body.codesize, body.maxparams, body.maxvars, body.maxstack,
-				body.firsthandler);
+		printf("\nCodesize %d, Params %d, Vars %d, Stacksize: %d, Firsthandler: %d\n", body.codesize, body.maxparams,
+				body.maxvars, body.maxstack, body.firsthandler);
 	}
 
 	while (len > 0) {
@@ -750,8 +736,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort) + 1;
-			printf("%-10s %d %04d\n", _rt_opc_name(opc), tmpuchar, tmpushort
-					+ (char*) bptr - (char*) bptr2);
+			printf("%-10s %d %04d\n", _rt_opc_name(opc), tmpuchar, tmpushort + (char*) bptr - (char*) bptr2);
 			break;
 
 		case OP_BNZ:
@@ -762,8 +747,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
-			printf("%-10s %04d\n", _rt_opc_name(opc), tmpushort + (char*) bptr
-					- (char*) bptr2);
+			printf("%-10s %04d\n", _rt_opc_name(opc), tmpushort + (char*) bptr - (char*) bptr2);
 			break;
 
 		case OP_LOOP:
@@ -774,8 +758,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
-			printf("%-10s %04d\n", _rt_opc_name(opc), (char*) bptr
-					- (char*) bptr2 - tmpushort);
+			printf("%-10s %04d\n", _rt_opc_name(opc), (char*) bptr - (char*) bptr2 - tmpushort);
 			break;
 
 		case OP_FREE:
@@ -872,8 +855,7 @@ static uint _data2(void* v, cdat c, uint u) {
 }
 
 // defs
-cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2,
-		0 };
+cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2, 0 };
 
 /*
 
@@ -945,19 +927,19 @@ cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2,
 void map_static_page(page_wrap* pgw) {
 	int i;
 	page* pg = pgw;
-	
+
 	for (i = 0; i < pg->used; i++) {
 		uchar c = *((uchar*) pg + i);
 		if (i != 0)
 			printf(",");
 		if ((i & 31) == 31)
 			printf("\n");
-		
-		if(c >= 'a' && c <= 'z')
+
+		if (c >= 'a' && c <= 'z')
 			printf("'%c'", c);
 		else
 			printf("0x%x", c);
 	}
-	
+
 	puts("\n");
 }

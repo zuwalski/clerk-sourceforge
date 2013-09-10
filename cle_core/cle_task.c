@@ -126,8 +126,11 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 	return pw;
 }
 
-static page* _tk_load_orig(page* p) {
-	return (p->id) ? (page*) p->id : p;
+static page* _tk_load_orig(task* t, page* p) {
+	if (p->id)
+		p = (p->id == ROOT_ID ) ? t->ps->root_page(t->psrc_data) : (page*) p->id;
+
+	return p;
 }
 
 page* _tk_check_page(task* t, page* pw) {
@@ -153,13 +156,16 @@ page* _tk_write_copy(task* t, page* pg) {
 	task_page* npg;
 
 	if (pg->id == 0)
-		return TO_TASK_PAGE(pg) ;
+		return pg;
 
 	// add to map of written pages
 	root_ptr = t->pagemap;
 
-	if (st_insert(t, &root_ptr, (cdat) &pg->id, sizeof(cle_pageid)) == 0)
-		return TO_TASK_PAGE(pg) ;
+	if (st_insert(t, &root_ptr, (cdat) &pg->id, sizeof(cle_pageid)) == 0) {
+		if (st_get(t, &root_ptr, (char*) &pg, sizeof(pg)) != -1)
+			cle_panic(t); // map corrupted
+		return pg;
+	}
 
 	npg = _tk_alloc_page(t, pg->size);
 
@@ -169,9 +175,11 @@ page* _tk_write_copy(task* t, page* pg) {
 	npg->next = t->wpages;
 	t->wpages = npg;
 
-	st_append(t, &root_ptr, (cdat) &npg->pg, sizeof(page*));
+	pg = &npg->pg;
 
-	return &npg->pg;
+	st_append(t, &root_ptr, (cdat) &pg, sizeof(page*));
+
+	return pg;
 }
 
 key* _tk_get_ptr(task* t, page** pg, key* me) {
@@ -422,7 +430,7 @@ static void _tk_insert_trace(struct _tk_trace_base* base, page* pgw, struct trac
 	// round up - make sure the last (diff'ed on) byte is there
 	st_ptr root = _tk_trace(base, pgw, insert_tree, start_depth, offset + 7);
 
-	ushort pt = _tk_alloc_ptr(base->t, TO_TASK_PAGE(root.pg));
+	ushort pt = _tk_alloc_ptr(base->t, TO_TASK_PAGE(root.pg) );
 
 	key* kp = GOOFF(root.pg,root.key);
 
@@ -451,7 +459,7 @@ static void _tk_insert_trace(struct _tk_trace_base* base, page* pgw, struct trac
 
 static void _tk_delete_trace(struct _tk_trace_base* base, page_wrap* pgw, struct trace_ptr* del_tree, uint start_depth,
 		ushort found, ushort expect) {
-	const page* orig = _tk_load_orig(pgw);
+	const page* orig = _tk_load_orig(base->t, pgw);
 	const ushort lim = orig->used;
 	// skip new keys
 	while (found >= lim) {
@@ -474,7 +482,7 @@ static void _tk_delete_trace(struct _tk_trace_base* base, page_wrap* pgw, struct
 
 static void _tk_trace_change(struct _tk_trace_base* base, page* pgw, struct trace_ptr* delete_tree,
 		struct trace_ptr* insert_tree) {
-	const page* orig = _tk_load_orig(pgw);
+	const page* orig = _tk_load_orig(base->t, pgw);
 	const uint start_depth = base->sused, lim = orig->used;
 	uint k = sizeof(page);
 
@@ -610,7 +618,7 @@ int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 			t_insert.base = insert_tree;
 			t_delete.ptr.pg = t_insert.ptr.pg = 0;
 
-			_tk_trace_change(&base, pgw, &t_delete, &t_insert);
+			_tk_trace_change(&base, &pgw->pg, &t_delete, &t_insert);
 			res |= (t_delete.ptr.pg != 0) | (t_insert.ptr.pg != 0) << 1;
 		}
 
@@ -711,7 +719,7 @@ static ushort _tk_link_and_create_page(struct _tk_setup* setup, page* pw, int pt
 		pt = (ptr*) GOKEY(pw,pt_offset);
 		pw->used += sizeof(ptr);
 	} else {
-		pt_offset = _tk_alloc_ptr(setup->t, TO_TASK_PAGE(pw)); // might change ptr-address!
+		pt_offset = _tk_alloc_ptr(setup->t, TO_TASK_PAGE(pw) ); // might change ptr-address!
 		pt = (ptr*) GOPTR(pw,pt_offset);
 	}
 
@@ -831,7 +839,7 @@ static uint _tk_to_mem_ptr(task* t, page* pw, page* to, ushort k) {
 				pt->pg = to;
 
 				// fix offset like mem-ptr
-				GOKEY(to,sizeof(page))->offset = pt->offset;
+				GOKEY(to,sizeof(page)) ->offset = pt->offset;
 				return 1;
 			}
 		} else if (_tk_to_mem_ptr(t, pw, to, kp->sub))
@@ -885,7 +893,7 @@ int tk_commit_task(task* t) {
 			continue;
 
 		/* overflowed or cluttered? */
-		pg = pgw;
+		pg = &pgw->pg;
 		if (pgw->ovf || pg->waste > pg->size / 2) {
 			char bf[max_size];
 			ushort sub = 0;
@@ -899,13 +907,13 @@ int tk_commit_task(task* t) {
 			setup.halfsize = setup.fullsize >> 1;
 			setup.fullsize -= setup.halfsize >> 1;
 
-			_tk_measure(&setup, &pgw->pg, 0, sizeof(page));
+			_tk_measure(&setup, pg, 0, sizeof(page));
 
 			// reset and copy remaining rootpage
 			setup.dest->used = sizeof(page);
 			setup.dest->id = pg->id;
 
-			_tk_compact_copy(&setup, pgw, 0, &sub, sizeof(page), 0);
+			_tk_compact_copy(&setup, pg, 0, &sub, sizeof(page), 0);
 
 			t->ps->write_page(t->psrc_data, setup.dest->id, setup.dest);
 		} else

@@ -41,7 +41,7 @@ struct _mem_psrc_data {
 struct _dummy_rt {
 	page pg;
 	short s[6];
-} _dummy_root = { { ROOT_ID, 0,0,0,0,0, MEM_PAGE_SIZE, sizeof(page) + 10, 0 }, { 0, 1, 0, 0, 0, 0 } };
+} _dummy_root = { { ROOT_ID, 0, MEM_PAGE_SIZE, sizeof(page) + 10, 0 }, { 0, 1, 0, 0, 0, 0 } };
 
 static cle_pageid mem_new_page(cle_psrc_data pd, page* data) {
 	struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
