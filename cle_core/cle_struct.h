@@ -90,4 +90,6 @@ page* _tk_write_copy(task* t, page* pg);
 page* _tk_check_ptr(task* t, st_ptr* pt);
 page* _tk_check_page(task* t, page* pw);
 
+void tk_stats();
+
 #endif

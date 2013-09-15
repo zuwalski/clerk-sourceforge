@@ -28,7 +28,7 @@
 #include "../cle_core/cle_runtime.h"
 
 static FILE* f;
-static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
+static void print_struct(page* pg, const key* me, int ind, int meoff) {
 	while (1) {
 		int i;
 
@@ -44,7 +44,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 			ptr* pt = (ptr*) me;
 
 			if (pt->koffset == 0) {
-				page_wrap* wrap;
+				page* wrap;
 				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset, pt->pg,
 						meoff, pt->next);
 
@@ -58,7 +58,7 @@ static void print_struct(page_wrap* pg, const key* me, int ind, int meoff) {
 				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset,
 						pt->pg, pt->koffset, meoff, pt->next);
 
-				print_struct((page_wrap*) pt->pg, GOKEY((page_wrap*) pt->pg,
+				print_struct((page*) pt->pg, GOKEY((page*) pt->pg,
 						pt->koffset), ind + 2, pt->koffset);
 			}
 		} else {
@@ -924,7 +924,7 @@ cle_pipe _test_pipe_stdout = { _start2, _next2, _end2, _pop2, _push2, _data2, 0 
 
  */
 
-void map_static_page(page_wrap* pgw) {
+void map_static_page(page* pgw) {
 	int i;
 	page* pg = pgw;
 

@@ -32,8 +32,6 @@ typedef struct page {
 	//short data[0];
 } page;
 
-typedef struct page page_wrap;
-
 typedef struct cle_pagesource {
 	cle_pageid (*new_page)(cle_psrc_data, page*);
 	page* (*read_page)(cle_psrc_data, cle_pageid);

@@ -748,8 +748,16 @@ void test_task_c_2() {
 	tk_drop_task(t);
 	//tk_commit_task(t);
 
+	tk_stats();
+
+	// create a new mempager
+	pdata = util_create_mempager();
+
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
+		if(i == 9190){
+			i = 9190;
+		}
 		//  new task
 		t = tk_create_task(psource, pdata);
 
@@ -766,12 +774,14 @@ void test_task_c_2() {
 	stop = clock();
 
 	printf("Multi-commit Time %d\n", stop - start);
+	tk_stats();
 
 	//  new task
 	t = tk_create_task(psource, pdata);
 
 	// should not happen.. but
 	ASSERT(t);
+	printf("size %d\n", mempager_get_pagecount(pdata));
 
 	// set pagesource-root
 	tk_root_ptr(t, &root);
@@ -1146,6 +1156,8 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
+	test_task_c_2();
+
 	test_struct_c();
 
 	test_struct_st();
@@ -1162,7 +1174,6 @@ int main(int argc, char* argv[]) {
 
 	test_task_c();
 
-	test_task_c_2();
 
 	exit(0);
 

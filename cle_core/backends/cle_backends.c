@@ -53,11 +53,16 @@ static cle_pageid mem_new_page(cle_psrc_data pd, page* data) {
 	}
 	memcpy(pg, data, data->used);
 	pg->id = pg;
+	pg->parent = 0;
 	md->pagecount++;
 	return (cle_pageid) pg;
 }
 
 static page* mem_read_page(cle_psrc_data pd, cle_pageid id) {
+	if (id == ROOT_ID ) {
+		struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
+		return md->root;
+	}
 	return (page*) id;
 }
 
