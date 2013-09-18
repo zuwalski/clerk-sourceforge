@@ -34,6 +34,7 @@
  */
 struct _mem_psrc_data {
 	page* root;
+	page* free;
 	int pagecount;
 };
 
@@ -45,12 +46,19 @@ struct _dummy_rt {
 
 static cle_pageid mem_new_page(cle_psrc_data pd, page* data) {
 	struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
-	page* pg = malloc(data->size);
-	if (pg == 0)
-		return 0;
+	page* pg = md->free;
+
+	if (pg == 0) {
+		pg = malloc(data->size);
+		if (pg == 0)
+			return 0;
+	} else
+		md->free = pg->parent;
+
 	if (data->used > data->size) {
 		printf("not good");
 	}
+
 	memcpy(pg, data, data->used);
 	pg->id = pg;
 	pg->parent = 0;
@@ -85,25 +93,29 @@ static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
 		}
 
 		memcpy(md->root, pg, pg->used);
-		md->root->id = ROOT_ID;
 		npg = md->root;
 	} else {
 		npg = (page*) id;
 		memcpy(npg, pg, pg->used);
-		npg->id = id;
 	}
+	npg->id = id;
+	npg->parent = 0;
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id) {
 	struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
+	page* pg;
+
 	if (id != ROOT_ID ) {
-		free(id);
-		md->pagecount--;
+		pg = (page*) id;
 	} else {
-		free(md->root);
+		pg = md->root;
 		md->root = 0;
-		md->pagecount = 0;
 	}
+
+	pg->parent = md->free;
+	md->free = pg;
+	md->pagecount--;
 }
 
 static void mem_unref_page(cle_psrc_data pd, page* pg) {
@@ -123,6 +135,7 @@ cle_pagesource util_memory_pager = { mem_new_page, mem_read_page, mem_root_page,
 cle_psrc_data util_create_mempager() {
 	struct _mem_psrc_data* md = (struct _mem_psrc_data*) malloc(sizeof(struct _mem_psrc_data));
 	md->root = 0;
+	md->free = 0;
 	md->pagecount = 0;
 	return (cle_psrc_data) md;
 }

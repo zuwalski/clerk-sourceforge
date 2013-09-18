@@ -755,8 +755,8 @@ void test_task_c_2() {
 
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		if(i == 9190){
-			i = 9190;
+		if(i == 9188){
+			i = 9188;
 		}
 		//  new task
 		t = tk_create_task(psource, pdata);

@@ -116,7 +116,7 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 		// TODO get from pager (if first time)
 		pw = t->ps->read_page(t->psrc_data, pid);
 
-		if (parent != 0 && pw->parent == 0)
+		if (parent != 0 && pw->parent != parent)
 			pw->parent = parent;
 	}
 	// found: read address of page-copy
@@ -179,9 +179,6 @@ page* _tk_write_copy(task* t, page* pg) {
 
 	st_append(t, &root_ptr, (cdat) &newpage, sizeof(page*));
 
-	if (newpage->id == 0) {
-		newpage->id = 0;
-	}
 	return newpage;
 }
 
