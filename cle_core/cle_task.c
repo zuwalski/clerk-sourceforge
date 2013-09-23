@@ -127,14 +127,11 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 }
 
 static page* _tk_load_orig(task* t, page* p) {
-	if (p->id)
-		p = (p->id == ROOT_ID ) ? t->ps->root_page(t->psrc_data) : (page*) p->id;
-
-	return p;
+	return (p->id) ? (page*) p->id : p;
 }
 
 page* _tk_check_page(task* t, page* pw) {
-	if (pw->id != 0 && t->wpages != 0) {
+	if (pw->id == pw && t->wpages != 0) {
 		st_ptr root_ptr = t->pagemap;
 
 		// have a writable copy of the page?
@@ -156,7 +153,7 @@ page* _tk_write_copy(task* t, page* pg) {
 	task_page* tpg;
 	page* newpage;
 
-	if (pg->id == 0)
+	if (pg->id != pg)
 		return pg;
 
 	// add to map of written pages
@@ -723,6 +720,10 @@ static ushort _tk_link_and_create_page(struct _tk_setup* setup, page* pw, int pt
 		pt = (ptr*) GOPTR(pw,pt_offset);
 	}
 
+	if (pt_offset == 1) {
+		pt_offset = 0;
+	}
+
 	pt->offset = ptr_offset;
 	pt->ptr_id = PTR_ID;
 	pt->koffset = pt->next = 0;
@@ -763,6 +764,10 @@ static uint _tk_cut_key(struct _tk_setup* setup, page* pw, key* copy, key* prev,
 	int cut_adj = _tk_adjust_cut(pw, copy, prev, cut_bid);
 
 	key* root = _tk_create_root_key(setup, copy, cut_adj);
+
+	if ((page*) pw->id == pw) {
+		int i = 0;
+	}
 
 	// cut-off 'copy'
 	copy->length = cut_adj;
@@ -806,10 +811,10 @@ static uint _tk_measure(struct _tk_setup* setup, page* pw, key* parent, ushort k
 	} else // cut k below limit (length | sub->offset)
 	{
 		uint subsize = (k->sub == 0) ? 0 : _tk_measure(setup, pw, k, k->sub); // + size);
-		const uint target_size = (sizeof(key) * 8) - (k->length > setup->halfsize ? setup->fullsize : setup->halfsize);
+		const uint target_size = setup->halfsize; //(sizeof(key) * 8) - (k->length > setup->halfsize ? setup->fullsize : setup->halfsize);
 
 		while (1) {
-			int cut_offset = subsize + k->length + target_size;
+			int cut_offset = subsize + k->length - target_size;
 			//			int cut_offset = subsize + k->length + (sizeof(key)*8) - setup->halfsize;
 			if (cut_offset < 0)
 				break;
@@ -870,7 +875,7 @@ static uint _tk_link_written_pages(task* t, task_page* pgw) {
 
 			// this page will be rebuild from parent (or dont need to after all)
 			pgw->refcount = 0;
-			t->ps->remove_page(t->psrc_data, pg->id);
+			//t->ps->remove_page(t->psrc_data, pg->id);
 		}
 
 		pgw = pgw->next;
@@ -929,6 +934,13 @@ int tk_commit_task(task* t) {
 		}
 
 		ret = t->ps->pager_error(t->psrc_data);
+	}
+
+	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
+		if (pgw->refcount == 0) {
+			page* pg = &pgw->pg;
+			t->ps->remove_page(t->psrc_data, pg->id);
+		}
 	}
 
 	if (ret != 0)

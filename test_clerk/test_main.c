@@ -697,6 +697,9 @@ void test_task_c_2() {
 
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		tmp = root;
+		if(i == 21){
+			printf("");
+		}
 		memcpy(keystore, (char* )&i, sizeof(int));
 		st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
 	}
@@ -755,8 +758,8 @@ void test_task_c_2() {
 
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		if(i == 9188){
-			i = 9188;
+		if(i == 10251){
+			i = 10251;
 		}
 		//  new task
 		t = tk_create_task(psource, pdata);
@@ -871,120 +874,6 @@ void test_task_c_3() {
 	keystore[1000] = 0;
 	keystore[1500] = 1;
 	ASSERT(st_exist(t, &root, (cdat )keystore, sizeof(keystore)));
-
-	tk_drop_task(t);
-}
-
-void test_task_c_filepager() {
-	clock_t start, stop;
-
-	st_ptr root, tmp;
-	it_ptr it;
-	task* t;
-	int i;
-	uchar keystore[100];
-
-	cle_pagesource* psource = &util_file_pager;
-	cle_psrc_data pdata;
-
-	puts("\nRunning filepager\n");
-	// remove old test-database first
-	unlink(testdbfilename);
-
-	pdata = util_create_filepager(testdbfilename);
-
-	//  new task
-	t = tk_create_task(psource, pdata);
-
-	// should not happen.. but
-	ASSERT(t);
-
-	// set pagesource-root
-	tk_root_ptr(t, &root);
-
-	// create
-	it_create(t, &it, &root);
-
-	// insert data
-	start = clock();
-	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		if (it_new(t, &it, &tmp))
-			break;
-	}
-	stop = clock();
-
-	printf("(pre-commit)it_new. Time %d\n", stop - start);
-
-	it_reset(&it);
-
-	i = 0;
-	start = clock();
-	while (it_next(t, 0, &it, 0)) {
-		i++;
-		ASSERT(i <= HIGH_ITERATION_COUNT);
-	}
-	stop = clock();
-
-	// should have same count
-	ASSERT(i == HIGH_ITERATION_COUNT);
-
-	printf("(pre-commit)it_next. Time %d\n", stop - start);
-
-	// destroy
-	it_dispose(t, &it);
-
-//	printf("(pre-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
-
-	// commit!
-	start = clock();
-	tk_commit_task(t);
-	stop = clock();
-
-	printf("filepager: tk_commit_task. Time %d\n", stop - start);
-
-	// reopen
-	pdata = util_create_filepager(testdbfilename);
-
-	// new task, same source
-	t = tk_create_task(psource, pdata);
-
-	// set pagesource-root
-	tk_root_ptr(t, &root);
-
-	keystore[0] = 0;
-	start = clock();
-	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		uint klen = sim_new(keystore, sizeof(keystore));
-		if (st_exist(t, &root, keystore, klen) == 0)
-			break;
-	}
-	stop = clock();
-
-	// should have same count
-	ASSERT(i == HIGH_ITERATION_COUNT);
-
-	printf("(commit)st_exsist. Time %d\n", stop - start);
-
-	// read back collection
-	it_create(t, &it, &root);
-
-	i = 0;
-	start = clock();
-	while (it_next(t, &tmp, &it, 0)) {
-		i++;
-		ASSERT(i <= HIGH_ITERATION_COUNT);
-	}
-	stop = clock();
-
-	// should have same count
-	ASSERT(i == HIGH_ITERATION_COUNT);
-
-	printf("(commit)it_next. Time %d\n", stop - start);
-
-	// destroy
-	it_dispose(t, &it);
-
-//	printf("(post-commit) pagecount %d, overflowsize %d, resize-count %d\n",page_size,overflow_size,resize_count);
 
 	tk_drop_task(t);
 }
@@ -1156,11 +1045,11 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
-	test_task_c_2();
-
 	test_struct_c();
 
 	test_struct_st();
+
+	test_task_c_2();
 
 	test_task_c_3();
 

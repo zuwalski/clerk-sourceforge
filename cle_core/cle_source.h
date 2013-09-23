@@ -21,8 +21,6 @@
 typedef void* cle_pageid;
 typedef void* cle_psrc_data;
 
-#define ROOT_ID ((cle_pageid)1)
-
 typedef struct page {
 	cle_pageid id;
 	struct page* parent;

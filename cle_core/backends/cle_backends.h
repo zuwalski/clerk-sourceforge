@@ -30,10 +30,4 @@ cle_psrc_data util_create_mempager();
 
 int mempager_get_pagecount(cle_psrc_data);
 
-cle_pagesource util_file_pager;
-
-cle_psrc_data util_create_filepager(const char* filename);
-
-int filepager_get_pagecount(cle_psrc_data);
-
 #endif
