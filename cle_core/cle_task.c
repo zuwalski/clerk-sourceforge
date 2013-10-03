@@ -113,8 +113,7 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 
 	// have a writable copy of the page?
 	if (t->wpages == 0 || st_move(t, &root_ptr, (cdat) &pid, sizeof(pid))) {
-		// TODO get from pager (if first time)
-		pw = t->ps->read_page(t->psrc_data, pid);
+		pw = (page*) pid;
 
 		if (parent != 0 && pw->parent != parent)
 			pw->parent = parent;
@@ -124,10 +123,6 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 		cle_panic(t); // map corrupted
 
 	return pw;
-}
-
-static page* _tk_load_orig(task* t, page* p) {
-	return (p->id) ? (page*) p->id : p;
 }
 
 page* _tk_check_page(task* t, page* pw) {
@@ -345,6 +340,8 @@ struct _tk_trace_base {
 	uint sused;
 };
 
+#define _tk_load_orig(p) (((p)->id) ? (page*) (p)->id : (p))
+
 static void _tk_base_reset(struct _tk_trace_base* base) {
 	base->sused = 0;
 
@@ -456,7 +453,7 @@ static void _tk_insert_trace(struct _tk_trace_base* base, page* pgw, struct trac
 
 static void _tk_delete_trace(struct _tk_trace_base* base, page* pgw, struct trace_ptr* del_tree, uint start_depth, ushort found,
 		ushort expect) {
-	const page* orig = _tk_load_orig(base->t, pgw);
+	const page* orig = _tk_load_orig(pgw);
 	const ushort lim = orig->used;
 	// skip new keys
 	while (found >= lim) {
@@ -479,7 +476,7 @@ static void _tk_delete_trace(struct _tk_trace_base* base, page* pgw, struct trac
 
 static void _tk_trace_change(struct _tk_trace_base* base, page* pgw, struct trace_ptr* delete_tree,
 		struct trace_ptr* insert_tree) {
-	const page* orig = _tk_load_orig(base->t, pgw);
+	const page* orig = _tk_load_orig(pgw);
 	const uint start_depth = base->sused, lim = orig->used;
 	uint k = sizeof(page);
 
@@ -868,7 +865,7 @@ static uint _tk_link_written_pages(task* t, task_page* pgw) {
 			max_size = pg->size;
 
 		if (pg->parent != 0 && (pgw->ovf != 0 || pg->waste > pg->size / 2)) {
-			page* parent = _tk_load_page(t, pg->parent->id, 0); // pgw->parent;
+			page* parent = _tk_check_page(t, (page*) pg->parent->id);
 
 			// make mem-ptr from parent -> pg (if not found - link was deleted, then just dont build it)
 			_tk_to_mem_ptr(t, parent, pg, sizeof(page));
@@ -959,3 +956,4 @@ void tk_stats() {
 	printf("rebuild %d write %d\n", rebuild, just_write);
 	rebuild = just_write = 0;
 }
+
