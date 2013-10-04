@@ -23,15 +23,17 @@
 struct _cmt_base {
 	task* t;
 	ushort* stack;
-	uint idx;
-	uint max;
-	ushort r, n;
 	page* cpg;
+	uint idx, max;
+	ushort target, size;
+	ushort r, n;
+
+	st_ptr cut1;
 };
 
 #define STACK_GROW 256
 
-static void _tk_push_key(struct _cmt_base* b, ushort k) {
+static void _cmt_push_key(struct _cmt_base* b, ushort k) {
 	if (b->max <= b->idx) {
 		b->max += STACK_GROW;
 		b->stack = tk_realloc(b->t, b->stack, sizeof(ushort) * b->max);
@@ -40,7 +42,7 @@ static void _tk_push_key(struct _cmt_base* b, ushort k) {
 	b->stack[b->idx++] = k;
 }
 
-static uint _tk_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
+static uint _cmt_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
 	const uint stop = b->idx;
 
 	while (1) {
@@ -72,60 +74,103 @@ static uint _tk_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
 	return 0;
 }
 
-static int _pop(struct _cmt_base* b) {
+static void _cmt_cut_over(struct _cmt_base* b, ushort cut_key, ushort cut_over_key) {
+	key* cut = GOOFF(b->cpg, cut_key);
+	key* over = GOOFF(b->cpg, cut_over_key);
+
+	if (cut->length == over->offset && b->size >= sizeof(key))
+		// key-continue
+		b->size -= sizeof(key);
+
+	printf("cut %d over %d (s: %d)\n", cut_key, cut_over_key, b->size);
+}
+
+static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
+	key* cut = GOOFF(b->cpg, cut_key);
+	uint max = (cut->sub) ? GOOFF(b->cpg, cut->sub)->offset : cut->length + 1;
+
+	b->size += sizeof(key) + (cut->length >> 3);
+
+	printf("low-cut %d (max %d / %d) (s: %d)\n", cut_key, max, cut->length, b->size);
+}
+
+static int _cmt_pop(struct _cmt_base* b) {
 	const ushort tr = b->r;
 	const ushort tn = b->n;
 
-	if (b->idx == 0) {
-		b->n = b->r = 0;
-	} else {
-		b->n = b->stack[--b->idx];
-		b->r = b->stack[--b->idx];
+	b->n = b->stack[--b->idx];
+	b->r = b->stack[--b->idx];
+
+	// if tn didn't promote to root it's stand-alone
+	if (b->r != tn)
+		//printf("cut %d any\n", tn);
+		_cmt_cut_low(b, tn);
+
+	if (b->r != tr) {
+		// root changed
+		if (b->r == tn) {
+			// push to new branch (push sum)
+			_cmt_push_key(b, 0);
+
+			b->stack[b->idx - 1] = b->stack[b->idx - 2];
+			b->stack[b->idx - 2] = b->stack[b->idx - 3];
+			b->stack[b->idx - 3] = b->size;
+
+			b->size = 0;
+		} else {
+			// pop from branch
+			b->size += b->stack[--b->idx];
+
+			//printf("cut %d low (add to pop sum %d)\n", tr, b->size);
+			_cmt_cut_low(b, tr);
+		}
 	}
 
-	if (tn != b->r)
-		printf("cut %d any\n", tn);
+	// measure cut on root over b->n->offset
+	if (b->r != 0)
+		//printf("cut %d over %d\n", b->r, b->n);
+		_cmt_cut_over(b, b->r, b->n);
 
-	if (tr != b->r) {
-		if (b->r == tn)
-			printf("push sum \n");
-		else
-			printf("cut %d low (add to pop sum)\n", tr);
-	}
-
-	if (b->r == 0)
-		return 0;
-
-	printf("cut %d over %d\n", b->r, b->n);
-	return 1;
+	return b->r;
 }
 
-static void _tk_measure(struct _cmt_base* b, page* cpg, uint n) {
+static key* _cmt_ptr(struct _cmt_base* b, ptr* pt) {
+	if (pt->koffset == 0) {
+		b->size += sizeof(ptr);
+		return 0;
+	}
+	// push b->cpg
+	b->cpg = pt->pg;
+	return GOOFF(b->cpg,pt->koffset);
+}
+
+static void _cmt_measure(struct _cmt_base* b, page* cpg, uint n) {
 	b->n = b->r = n;
 	b->cpg = cpg;
+	b->size = 0;
 	b->idx = 0;
+
+	_cmt_push_key(b, 0);
+	_cmt_push_key(b, 0);
+	_cmt_push_key(b, 0);
 
 	do {
 		key* kp = GOOFF(b->cpg,b->n);
 
-		if (ISPTR(kp)) {
-			ptr* pt = (ptr*) kp;
-			if (pt->koffset != 0) {
-				// push b->cpg
-				b->cpg = pt->pg;
-				kp = GOOFF(b->cpg,pt->koffset);
+		if (ISPTR(kp))
+			kp = _cmt_ptr(b, (ptr*) kp);
+
+		if (kp) {
+			for (n = kp->sub; n != 0; n = kp->next) {
+				_cmt_push_key(b, b->n);
+				_cmt_push_key(b, n);
+				kp = GOOFF(b->cpg,n);
 			}
 		}
-
-		for (n = kp->sub; n != 0; n = kp->next) {
-			_tk_push_key(b, b->n);
-			_tk_push_key(b, n);
-			kp = GOOFF(b->cpg,n);
-		}
-	} while (_pop(b));
+	} while (_cmt_pop(b));
 }
 
-static page* _tk_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
+static page* _cmt_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
 	page* org;
 	ptr* pt;
 	ushort k = sizeof(page);
@@ -144,7 +189,7 @@ static page* _tk_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
 
 		if (ISPTR(kp) == 0 && kp->sub != 0) {
 			// push content step
-			_tk_push_key(b, k);
+			_cmt_push_key(b, k);
 			k = kp->sub;
 		} else if (kp->next != 0)
 			k = kp->next;
@@ -185,7 +230,7 @@ static page* _tk_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
  *
  * return 0 if ok - also if no changes was written.
  */
-int tk_commit_task2(task* t) {
+int cmt_commit_task(task* t) {
 	struct _cmt_base base;
 	task_page* tp;
 	page* root = 0;
@@ -204,7 +249,7 @@ int tk_commit_task2(task* t) {
 		page *rpg, *parent, *find = &tp->pg;
 
 		for (parent = tp->pg.parent; parent != 0; find = parent, parent = parent->parent) {
-			rpg = _tk_mark_and_link(&base, parent, find);
+			rpg = _cmt_mark_and_link(&base, parent, find);
 			if (rpg == 0)
 				break;
 		}
@@ -217,10 +262,10 @@ int tk_commit_task2(task* t) {
 // rebuild from root => next root
 	if (root) {
 		// start measure from root
-		_tk_measure(&base, root, sizeof(page));
+		_cmt_measure(&base, root, sizeof(page));
 
 		// copy "rest" to new root
-		_tk_copy(&base, root, sizeof(page), 0);
+		_cmt_copy(&base, root, sizeof(page), 0);
 	}
 
 	tk_mfree(t, base.stack);
@@ -256,7 +301,9 @@ int main() {
 	p = root;
 	st_insert(t, &p, "12364", 6);
 
-	_tk_measure(&base, root.pg, root.key);
+	_cmt_measure(&base, root.pg, root.key);
+
+	printf("size %d\n", base.size);
 
 	return 0;
 }
