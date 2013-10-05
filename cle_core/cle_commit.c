@@ -34,7 +34,7 @@ struct _cmt_base {
 #define STACK_GROW 256
 
 static void _cmt_push_key(struct _cmt_base* b, ushort k) {
-	if (b->max <= b->idx) {
+	if (b->idx <= b->max) {
 		b->max += STACK_GROW;
 		b->stack = tk_realloc(b->t, b->stack, sizeof(ushort) * b->max);
 	}
@@ -75,14 +75,17 @@ static uint _cmt_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
 }
 
 static void _cmt_cut_over(struct _cmt_base* b, ushort cut_key, ushort cut_over_key) {
-	key* cut = GOOFF(b->cpg, cut_key);
 	key* over = GOOFF(b->cpg, cut_over_key);
+	key* cut = GOOFF(b->cpg, cut_key);
 
-	if (cut->length == over->offset && b->size >= sizeof(key))
-		// key-continue
-		b->size -= sizeof(key);
+	if (cut->length == over->offset) {
+		// key-continue (no cut-over)
+		if (b->size >= sizeof(key))
+			b->size -= sizeof(key);
+	} else {
 
-	printf("cut %d over %d (s: %d)\n", cut_key, cut_over_key, b->size);
+		printf("cut %d over %d (s: %d)\n", cut_key, cut_over_key, b->size);
+	}
 }
 
 static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
@@ -95,34 +98,28 @@ static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
 }
 
 static int _cmt_pop(struct _cmt_base* b) {
-	const ushort tr = b->r;
-	const ushort tn = b->n;
+	const ushort pr = b->r;
+	const ushort pn = b->n;
 
 	b->n = b->stack[--b->idx];
 	b->r = b->stack[--b->idx];
 
 	// if tn didn't promote to root it's stand-alone
-	if (b->r != tn)
+	if (b->r != pn)
 		//printf("cut %d any\n", tn);
-		_cmt_cut_low(b, tn);
+		_cmt_cut_low(b, pn);
 
-	if (b->r != tr) {
+	if (b->r != pr) {
 		// root changed
-		if (b->r == tn) {
-			// push to new branch (push sum)
-			_cmt_push_key(b, 0);
-
-			b->stack[b->idx - 1] = b->stack[b->idx - 2];
-			b->stack[b->idx - 2] = b->stack[b->idx - 3];
-			b->stack[b->idx - 3] = b->size;
-
+		if (b->r == pn) {
+			// push to new branch
 			b->size = 0;
 		} else {
 			// pop from branch
 			b->size += b->stack[--b->idx];
 
 			//printf("cut %d low (add to pop sum %d)\n", tr, b->size);
-			_cmt_cut_low(b, tr);
+			_cmt_cut_low(b, pr);
 		}
 	}
 
@@ -160,12 +157,18 @@ static void _cmt_measure(struct _cmt_base* b, page* cpg, uint n) {
 		if (ISPTR(kp))
 			kp = _cmt_ptr(b, (ptr*) kp);
 
-		if (kp) {
-			for (n = kp->sub; n != 0; n = kp->next) {
+		if (kp && kp->sub) {
+			_cmt_push_key(b, 0);
+			b->stack[b->idx - 1] = b->stack[b->idx - 2];
+			b->stack[b->idx - 2] = b->stack[b->idx - 3];
+			b->stack[b->idx - 3] = b->size;
+
+			n = kp->sub;
+			do {
 				_cmt_push_key(b, b->n);
 				_cmt_push_key(b, n);
 				kp = GOOFF(b->cpg,n);
-			}
+			} while ((n = kp->next));
 		}
 	} while (_cmt_pop(b));
 }
