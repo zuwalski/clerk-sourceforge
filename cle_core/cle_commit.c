@@ -1,6 +1,6 @@
 /*
  Clerk application and storage engine.
- Copyright (C) 2008  Lars Szuwalski
+ Copyright (C) 2013  Lars Szuwalski
 
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -24,17 +24,22 @@ struct _cmt_base {
 	task* t;
 	ushort* stack;
 	page* cpg;
-	uint idx, max;
-	ushort target, size;
-	ushort r, n;
+	uint idx;
+	uint max;
+	ushort target;
+	ushort size;
+	ushort r;
+	ushort n;
 
-	st_ptr cut1;
+	ushort* cut_link;
+	st_ptr cut;
+	ushort cut_size;
 };
 
 #define STACK_GROW 256
 
 static void _cmt_push_key(struct _cmt_base* b, ushort k) {
-	if (b->idx <= b->max) {
+	if (b->idx == b->max) {
 		b->max += STACK_GROW;
 		b->stack = tk_realloc(b->t, b->stack, sizeof(ushort) * b->max);
 	}
@@ -42,7 +47,7 @@ static void _cmt_push_key(struct _cmt_base* b, ushort k) {
 	b->stack[b->idx++] = k;
 }
 
-static uint _cmt_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
+static uint _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
 	const uint stop = b->idx;
 
 	while (1) {
@@ -74,27 +79,67 @@ static uint _cmt_copy(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
 	return 0;
 }
 
+static void _cmt_set_cut(struct _cmt_base* b, ushort* link, ushort offset, ushort key) {
+	b->cut.key = key;
+	b->cut.pg = b->cpg;
+	b->cut_link = link;
+	b->cut_size = b->size;
+	b->cut.offset = offset;
+}
+
+static void _cmt_cut_between(struct _cmt_base* b, key* cut, ushort* link, const ushort low) {
+	const ushort high = (*link) ? GOOFF(b->cpg, *link)->offset : cut->length;
+	const ushort k = (char*) cut - (char*) b->cpg;
+	int offset;
+
+	if (b->size + sizeof(key) + ((cut->length - high) >> 3) > b->target) {
+
+		_cmt_copy_page(b, b->cut.pg, b->cut.key, b->cut.offset);
+
+		b->size -= b->cut_size;
+	}
+
+	offset = cut->length - ((b->target - b->size - sizeof(key)) << 3);
+
+	if (offset >= low) {
+
+		_cmt_copy_page(b, b->cpg, k, offset);
+
+		b->size = 0;
+	}
+
+	_cmt_set_cut(b, link, low, k);
+}
+
 static void _cmt_cut_over(struct _cmt_base* b, ushort cut_key, ushort cut_over_key) {
 	key* over = GOOFF(b->cpg, cut_over_key);
 	key* cut = GOOFF(b->cpg, cut_key);
+	const uint cut_size = cut->length - over->offset;
 
-	if (cut->length == over->offset) {
+	if (cut_size == 0) {
 		// key-continue (no cut-over)
-		if (b->size >= sizeof(key))
-			b->size -= sizeof(key);
-	} else {
+		b->size -= (b->size > sizeof(key)) ? sizeof(key) : b->size;
 
-		printf("cut %d over %d (s: %d)\n", cut_key, cut_over_key, b->size);
-	}
+	} else if (b->size + sizeof(key) + (cut_size >> 3) < b->target) {
+
+		_cmt_set_cut(b, &over->next, over->offset + 1, cut_key);
+	} else
+		_cmt_cut_between(b, cut, &over->next, over->offset + 1);
 }
 
 static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
 	key* cut = GOOFF(b->cpg, cut_key);
-	uint max = (cut->sub) ? GOOFF(b->cpg, cut->sub)->offset : cut->length + 1;
+	const uint size_all = b->size + sizeof(key) + (cut->length >> 3);
 
-	b->size += sizeof(key) + (cut->length >> 3);
+	if (size_all < b->target) {
+		b->size = size_all;
 
-	printf("low-cut %d (max %d / %d) (s: %d)\n", cut_key, max, cut->length, b->size);
+		_cmt_set_cut(b, &cut->sub, 0, cut_key);
+	} else {
+		_cmt_cut_between(b, cut, &cut->sub, 0);
+
+		b->size += sizeof(key) + (cut->length >> 3);
+	}
 }
 
 static int _cmt_pop(struct _cmt_base* b) {
@@ -104,9 +149,8 @@ static int _cmt_pop(struct _cmt_base* b) {
 	b->n = b->stack[--b->idx];
 	b->r = b->stack[--b->idx];
 
-	// if tn didn't promote to root it's stand-alone
+// if tn didn't promote to root it's stand-alone
 	if (b->r != pn)
-		//printf("cut %d any\n", tn);
 		_cmt_cut_low(b, pn);
 
 	if (b->r != pr) {
@@ -118,25 +162,25 @@ static int _cmt_pop(struct _cmt_base* b) {
 			// pop from branch
 			b->size += b->stack[--b->idx];
 
-			//printf("cut %d low (add to pop sum %d)\n", tr, b->size);
 			_cmt_cut_low(b, pr);
 		}
 	}
 
-	// measure cut on root over b->n->offset
-	if (b->r != 0)
-		//printf("cut %d over %d\n", b->r, b->n);
+// measure cut on root over b->n->offset
+	if (b->r)
 		_cmt_cut_over(b, b->r, b->n);
 
 	return b->r;
 }
 
-static key* _cmt_ptr(struct _cmt_base* b, ptr* pt) {
+static const key EMPTY = { 0, 0, 0, 0 };
+
+static const key* _cmt_ptr(struct _cmt_base* b, ptr* pt) {
 	if (pt->koffset == 0) {
 		b->size += sizeof(ptr);
-		return 0;
+		return &EMPTY;
 	}
-	// push b->cpg
+// push b->cpg
 	b->cpg = pt->pg;
 	return GOOFF(b->cpg,pt->koffset);
 }
@@ -147,23 +191,23 @@ static void _cmt_measure(struct _cmt_base* b, page* cpg, uint n) {
 	b->size = 0;
 	b->idx = 0;
 
-	_cmt_push_key(b, 0);
+	_cmt_set_cut(b, 0, 0, n);
+
 	_cmt_push_key(b, 0);
 	_cmt_push_key(b, 0);
 
 	do {
-		key* kp = GOOFF(b->cpg,b->n);
+		const key* kp = GOOFF(b->cpg,b->n);
 
 		if (ISPTR(kp))
 			kp = _cmt_ptr(b, (ptr*) kp);
 
-		if (kp && kp->sub) {
+		if ((n = kp->sub)) {
 			_cmt_push_key(b, 0);
 			b->stack[b->idx - 1] = b->stack[b->idx - 2];
 			b->stack[b->idx - 2] = b->stack[b->idx - 3];
 			b->stack[b->idx - 3] = b->size;
 
-			n = kp->sub;
 			do {
 				_cmt_push_key(b, b->n);
 				_cmt_push_key(b, n);
@@ -238,11 +282,6 @@ int cmt_commit_task(task* t) {
 	task_page* tp;
 	page* root = 0;
 
-	if (t->wpages == 0) {
-		tk_drop_task(t);
-		return 0;
-	}
-
 	base.t = t;
 	base.stack = 0;
 	base.max = base.idx = 0;
@@ -264,11 +303,12 @@ int cmt_commit_task(task* t) {
 
 // rebuild from root => next root
 	if (root) {
+		base.target = root->size - sizeof(key);
 		// start measure from root
 		_cmt_measure(&base, root, sizeof(page));
 
 		// copy "rest" to new root
-		_cmt_copy(&base, root, sizeof(page), 0);
+		_cmt_copy_page(&base, root, sizeof(page), 0);
 	}
 
 	tk_mfree(t, base.stack);
@@ -290,6 +330,7 @@ int main() {
 	base.t = t;
 	base.stack = 0;
 	base.max = base.idx = 0;
+	base.target = 30;
 
 	st_empty(t, &root);
 
