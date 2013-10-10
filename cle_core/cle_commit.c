@@ -38,6 +38,8 @@ struct _cmt_base {
 
 #define STACK_GROW 256
 
+#define ALIGN2(a) ((a) + ((uint)(a) & 1))
+
 static void _cmt_push_key(struct _cmt_base* b, ushort k) {
 	if (b->idx == b->max) {
 		b->max += STACK_GROW;
@@ -47,63 +49,94 @@ static void _cmt_push_key(struct _cmt_base* b, ushort k) {
 	b->stack[b->idx++] = k;
 }
 
-static uint _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort offset) {
+static void _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort adjoff) {
+	page* npage;
+	char* dest;
+	key* nk = 0;
 	const uint stop = b->idx;
+	ushort n = k, r = k;
 
 	while (1) {
-		key* kp = GOOFF(cpg,k);
+		const key* rt = GOOFF(cpg,r);
+		const key* kp = GOOFF(cpg,n);
 
 		if (ISPTR(kp)) {
-			ptr* pt = (ptr*) kp;
+			ptr* p = (ptr*) kp;
+
+			if (p->koffset == 0) {
+				ptr* nptr = (ptr*) (dest + ((long long) dest & 1));
+				dest += sizeof(ptr);
+
+				nptr->ptr_id = PTR_ID;
+				nptr->koffset = 0;
+				nptr->offset = p->offset - adjoff;
+				nptr->pg = p->pg;
+				nptr->next = 0;
+			} else {
+				// push cpg
+				cpg = p->pg;
+				kp = GOOFF(cpg, p->koffset);
+			}
 		}
 
-		if (ISPTR(kp) == 0 && kp->sub != 0) {
-			// push content step
-			b->stack[b->idx++] = k;
-			k = kp->sub;
-		} else if (kp->next != 0)
-			k = kp->next;
-		else {
-			// pop content step
-			do {
-				if (b->idx == stop)
-					return 1;	// link deleted => stop
-
-				k = b->stack[--b->idx];
-				kp = GOOFF(cpg,k);
-				k = kp->next;
-			} while (k == 0);
+		for (k = kp->sub; k != 0; k = kp->next) {
+			_cmt_push_key(b, n);
+			_cmt_push_key(b, k);
+			kp = GOOFF(cpg,k);
 		}
+
+		if (nk == 0 || (rt->length != 0 && rt->length != kp->offset)) {
+			// create key
+			nk = (key*) (dest + ((long long) dest & 1));
+			dest += sizeof(key);
+
+			nk->offset = rt->offset - adjoff;
+			nk->length = nk->sub = 0;
+			nk->next = 0;
+		}
+
+		memcpy(dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
+		dest += CEILBYTE(rt->length - adjoff);
+
+		nk->length += rt->length - adjoff;
+
+		if (b->idx == stop)
+			break;
+
+		n = b->stack[--b->idx];
+		k = b->stack[--b->idx];
+
+		if (r != k)
+			adjoff = 0;
+		r = k;
 	}
-
-	return 0;
 }
 
 static void _cmt_set_cut(struct _cmt_base* b, ushort* link, ushort offset, ushort key) {
 	b->cut.key = key;
 	b->cut.pg = b->cpg;
 	b->cut_link = link;
-	b->cut_size = b->size;
+	b->cut_size = ALIGN2(b->size);
 	b->cut.offset = offset;
 }
 
 static void _cmt_cut_between(struct _cmt_base* b, key* cut, ushort* link, const ushort low) {
 	const ushort high = (*link) ? GOOFF(b->cpg, *link)->offset : cut->length;
 	const ushort k = (char*) cut - (char*) b->cpg;
-	int offset;
+	int optimal_cut;
 
 	if (b->size + sizeof(key) + ((cut->length - high) >> 3) > b->target) {
-
+		// execute last cut
 		_cmt_copy_page(b, b->cut.pg, b->cut.key, b->cut.offset);
 
 		b->size -= b->cut_size;
 	}
 
-	offset = cut->length - ((b->target - b->size - sizeof(key)) << 3);
+	optimal_cut = cut->length - ((b->target - b->size - sizeof(key)) << 3);
 
-	if (offset >= low) {
+	if (optimal_cut >= low) {
 
-		_cmt_copy_page(b, b->cpg, k, offset);
+		_cmt_copy_page(b, b->cpg, k, optimal_cut);
 
 		b->size = 0;
 	}
@@ -120,7 +153,7 @@ static void _cmt_cut_over(struct _cmt_base* b, ushort cut_key, ushort cut_over_k
 		// key-continue (no cut-over)
 		b->size -= (b->size > sizeof(key)) ? sizeof(key) : b->size;
 
-	} else if (b->size + sizeof(key) + (cut_size >> 3) < b->target) {
+	} else if (b->size + sizeof(key) + CEILBYTE(cut_size) < b->target) {
 
 		_cmt_set_cut(b, &over->next, over->offset + 1, cut_key);
 	} else
@@ -129,7 +162,7 @@ static void _cmt_cut_over(struct _cmt_base* b, ushort cut_key, ushort cut_over_k
 
 static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
 	key* cut = GOOFF(b->cpg, cut_key);
-	const uint size_all = b->size + sizeof(key) + (cut->length >> 3);
+	const uint size_all = b->size + sizeof(key) + CEILBYTE(cut->length);
 
 	if (size_all < b->target) {
 		b->size = size_all;
@@ -138,7 +171,7 @@ static void _cmt_cut_low(struct _cmt_base* b, ushort cut_key) {
 	} else {
 		_cmt_cut_between(b, cut, &cut->sub, 0);
 
-		b->size += sizeof(key) + (cut->length >> 3);
+		b->size += sizeof(key) + ALIGN2(CEILBYTE(cut->length));
 	}
 }
 
