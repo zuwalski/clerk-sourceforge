@@ -24,6 +24,8 @@ struct _cmt_base {
 	task* t;
 	ushort* stack;
 	page* cpg;
+	char* dest;
+	char* dest_begin;
 	uint idx;
 	uint max;
 	ushort target;
@@ -49,12 +51,30 @@ static void _cmt_push_key(struct _cmt_base* b, ushort k) {
 	b->stack[b->idx++] = k;
 }
 
+static void* _cmt_alloc(struct _cmt_base* b, uint size) {
+	void* r;
+	b->dest += (long long) b->dest & 1;
+	r = b->dest;
+	b->dest += size;
+	return r;
+}
+
+static void _cmt_pop_page(struct _cmt_base* b) {
+	while (b->stack[b->idx - 1] == 0xFFFF) {
+		b->cpg = b->cpg->parent;
+		b->idx--;
+	}
+}
+
 static void _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort adjoff) {
-	page* npage;
-	char* dest;
-	key* nk = 0;
+	key* nk = (key*) _cmt_alloc(b, sizeof(key));
+	ushort* parent;
 	const uint stop = b->idx;
 	ushort n = k, r = k;
+
+	memset(nk, 0, sizeof(key));
+
+	parent = &nk->sub;
 
 	while (1) {
 		const key* rt = GOOFF(cpg,r);
@@ -64,16 +84,18 @@ static void _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort adjo
 			ptr* p = (ptr*) kp;
 
 			if (p->koffset == 0) {
-				ptr* nptr = (ptr*) (dest + ((long long) dest & 1));
-				dest += sizeof(ptr);
+				ptr* nptr = (ptr*) _cmt_alloc(b, sizeof(ptr));
 
 				nptr->ptr_id = PTR_ID;
 				nptr->koffset = 0;
 				nptr->offset = p->offset - adjoff;
 				nptr->pg = p->pg;
-				nptr->next = 0;
+
+				nptr->next = *parent;
+				*parent = (ushort) ((char*) nptr - b->dest_begin);
 			} else {
-				// push cpg
+				_cmt_push_key(b, 0xFFFF);
+
 				cpg = p->pg;
 				kp = GOOFF(cpg, p->koffset);
 			}
@@ -85,23 +107,26 @@ static void _cmt_copy_page(struct _cmt_base* b, page* cpg, ushort k, ushort adjo
 			kp = GOOFF(cpg,k);
 		}
 
-		if (nk == 0 || (rt->length != 0 && rt->length != kp->offset)) {
+		if (rt->length != 0 && rt->length != kp->offset) {
 			// create key
-			nk = (key*) (dest + ((long long) dest & 1));
-			dest += sizeof(key);
+			nk = (key*) _cmt_alloc(b, sizeof(key));
 
 			nk->offset = rt->offset - adjoff;
 			nk->length = nk->sub = 0;
-			nk->next = 0;
+
+			nk->next = *parent;
+			*parent = (ushort) ((char*) nk - b->dest_begin);
 		}
 
-		memcpy(dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
-		dest += CEILBYTE(rt->length - adjoff);
+		memcpy(b->dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
+		b->dest += CEILBYTE(rt->length - adjoff);
 
 		nk->length += rt->length - adjoff;
 
 		if (b->idx == stop)
 			break;
+
+		_cmt_pop_page(b);
 
 		n = b->stack[--b->idx];
 		k = b->stack[--b->idx];
@@ -179,10 +204,12 @@ static int _cmt_pop(struct _cmt_base* b) {
 	const ushort pr = b->r;
 	const ushort pn = b->n;
 
+	_cmt_pop_page(b);
+
 	b->n = b->stack[--b->idx];
 	b->r = b->stack[--b->idx];
 
-// if tn didn't promote to root it's stand-alone
+	// if tn didn't promote to root it's stand-alone
 	if (b->r != pn)
 		_cmt_cut_low(b, pn);
 
@@ -199,7 +226,7 @@ static int _cmt_pop(struct _cmt_base* b) {
 		}
 	}
 
-// measure cut on root over b->n->offset
+	// measure cut on root over b->n->offset
 	if (b->r)
 		_cmt_cut_over(b, b->r, b->n);
 
@@ -213,7 +240,10 @@ static const key* _cmt_ptr(struct _cmt_base* b, ptr* pt) {
 		b->size += sizeof(ptr);
 		return &EMPTY;
 	}
-// push b->cpg
+
+	// mark page-change
+	_cmt_push_key(b, 0xFFFF);
+
 	b->cpg = pt->pg;
 	return GOOFF(b->cpg,pt->koffset);
 }
@@ -286,7 +316,7 @@ static page* _cmt_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
 		}
 	}
 
-// is it writable? Make sure
+	// is it writable? Make sure
 	org = _tk_check_page(b->t, cpg);
 
 	if (org == org->id)
@@ -299,7 +329,7 @@ static page* _cmt_mark_and_link(struct _cmt_base* b, page* cpg, page* find) {
 	pt->koffset = sizeof(page);
 	pt->pg = find;
 
-// fix offset like mem-ptr
+	// fix offset like mem-ptr
 	GOKEY(find,sizeof(page)) ->offset = pt->offset;
 
 	return org != org->id ? 0 : cpg;
@@ -319,7 +349,7 @@ int cmt_commit_task(task* t) {
 	base.stack = 0;
 	base.max = base.idx = 0;
 
-// link up all pages back to root (and make them writable)
+	// link up all pages back to root (and make them writable)
 	for (tp = t->wpages; tp != 0; tp = tp->next) {
 		page *rpg, *parent, *find = &tp->pg;
 
@@ -334,7 +364,7 @@ int cmt_commit_task(task* t) {
 			root = rpg;
 	}
 
-// rebuild from root => next root
+	// rebuild from root => next root
 	if (root) {
 		base.target = root->size - sizeof(key);
 		// start measure from root
