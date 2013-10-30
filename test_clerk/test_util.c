@@ -351,9 +351,13 @@ st_ptr str(task* t, char* cs) {
 	st_empty(t, &pt);
 	org = pt;
 
-	st_insert(t, &pt, (cdat) cs, strlen(cs));
+	st_insert(t, &pt, (cdat) cs, (uint)strlen(cs));
 
 	return org;
+}
+
+uint add(task* t, st_ptr p, char* cs){
+    return st_insert(t, &p, (cdat)cs, (uint)strlen(cs));
 }
 
 st_ptr root(task* t) {

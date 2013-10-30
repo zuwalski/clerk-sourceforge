@@ -26,13 +26,13 @@ struct _cmt_base {
 	page* cpg;
 	char* dest;
 	char* dest_begin;
+	ushort* parent_key;
 	uint idx;
 	uint idx_max;
 	ushort target;
 	ushort size;
 	ushort r;
 	ushort n;
-	ushort lastkey;
 
 	ushort* cut_link;
 	st_ptr cut;
@@ -54,13 +54,23 @@ static void _cmt_push_key(struct _cmt_base* const b, ushort k) {
 	b->stack[b->idx++] = k;
 }
 
-static void* _cmt_alloc(struct _cmt_base* const b, uint size) {
-	char* r;
+static key* _cmt_alloc(struct _cmt_base* const b, uint size) {
+	key* r;
 	b->dest += (long long) b->dest & 1;
-	r = b->dest;
+	r = (key*) b->dest;
+
+	memset(r, 0, sizeof(key));
+
+	r->next = *b->parent_key;
+	*b->parent_key = b->dest - b->dest_begin;
+
 	b->dest += size;
-	b->lastkey = r - b->dest_begin;
 	return r;
+}
+
+static void _cmt_copy_key(struct _cmt_base* const b, const key* k, const int adj) {
+	memcpy(b->dest, KDATA(k), CEILBYTE(k->length + adj));
+	b->dest += CEILBYTE(k->length + adj);
 }
 
 static void _cmt_pop_page(struct _cmt_base* const b) {
@@ -70,20 +80,58 @@ static void _cmt_pop_page(struct _cmt_base* const b) {
 	}
 }
 
-static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, ushort adjoff) {
-	key* nk = 0;
-	ushort* parent;
-	ushort n = k, r = k;
+static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short adjoff) {
+	const key* rt = GOKEY(cpg, k);
+	const key* kp;
+	key* nk;
+	const uint stop = b->idx;
+	ushort tmp = 0, r = k, n = rt->sub;
 
-	ushort tmp = 0;
-	parent = &tmp;
+	// skip keys below cut
+	while (n != 0) {
+		kp = GOOFF(cpg,n);
 
-	_cmt_push_key(b, 0);
-	_cmt_push_key(b, 0);
+		if (kp->offset >= adjoff)
+			break;
 
-	while (r != 0) {
-		const key* const rt = GOOFF(cpg,r);
-		const key* kp = GOOFF(cpg,n);
+		n = kp->next;
+	}
+
+	// push root-linked keys
+	while (n != 0) {
+		_cmt_push_key(b, r);
+		_cmt_push_key(b, n);
+		kp = GOOFF(cpg,n);
+		n = kp->next;
+	}
+
+	// allocate and copy root key
+	b->parent_key = &tmp;
+	nk = _cmt_alloc(b, sizeof(key));
+
+	adjoff = (adjoff & 0xFFF8) * -1;
+
+	_cmt_copy_key(b, rt, adjoff);
+
+	// tree copy rest of page-content
+	while (b->idx != stop) {
+		_cmt_pop_page(b);
+
+		n = b->stack[--b->idx];
+
+		if (n == 0) {
+			adjoff = b->stack[--b->idx];
+
+			k = b->stack[--b->idx];
+			b->parent_key = (ushort*) (b->dest_begin + k);
+
+			n = b->stack[--b->idx];
+		}
+
+		r = b->stack[--b->idx];
+
+		rt = GOOFF(cpg,r);
+		kp = GOOFF(cpg,n);
 
 		if (ISPTR(kp)) {
 			ptr* p = (ptr*) kp;
@@ -92,12 +140,8 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, ushor
 				ptr* nptr = (ptr*) _cmt_alloc(b, sizeof(ptr));
 
 				nptr->ptr_id = PTR_ID;
-				nptr->koffset = 0;
-				nptr->offset = p->offset - adjoff;
+				nptr->offset = p->offset + adjoff;
 				nptr->pg = p->pg;
-
-				nptr->next = *parent;
-				*parent = b->lastkey;
 
 				kp = &EMPTY;
 			} else {
@@ -113,29 +157,24 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, ushor
 		// if not continue-key
 		if (rt->length != kp->offset) {
 			if (rt->length != 0) {
-				// create key
-				nk = (key*) _cmt_alloc(b, sizeof(key));
+				// create new key
+				nk = _cmt_alloc(b, sizeof(key));
 
-				nk->offset = rt->offset - adjoff;
-				nk->length = nk->sub = 0;
-
-				nk->next = *parent;
-				*parent = b->lastkey;
+				nk->offset = kp->offset + adjoff;
 			}
 		} else
 			adjoff += kp->offset;
 
-		memcpy(b->dest, KDATA(kp) + (adjoff >> 3), CEILBYTE(kp->length) - (adjoff >> 3));
-		b->dest += CEILBYTE(kp->length) - (adjoff >> 3);
+		_cmt_copy_key(b, kp, 0);
 
-		nk->length += kp->length - (adjoff & 0xFFF8);
+		nk->length += kp->length;
 
 		if ((k = kp->sub)) {
-			_cmt_push_key(b, b->lastkey);
+			_cmt_push_key(b, (char*) b->parent_key - b->dest_begin);
 			_cmt_push_key(b, adjoff);
 			_cmt_push_key(b, 0);
 
-			parent = &nk->sub;
+			b->parent_key = &nk->sub;
 
 			do {
 				_cmt_push_key(b, n);
@@ -143,21 +182,6 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, ushor
 				kp = GOOFF(cpg,k);
 			} while ((k = kp->next));
 		}
-
-		_cmt_pop_page(b);
-
-		n = b->stack[--b->idx];
-
-		if (n == 0) {
-			adjoff = b->stack[--b->idx];
-
-			k = b->stack[--b->idx];
-			parent = &GOKEY(b->dest_begin, k) ->sub;
-
-			n = b->stack[--b->idx];
-		}
-
-		r = b->stack[--b->idx];
 	}
 }
 
@@ -181,7 +205,7 @@ static void _cmt_cut_between(struct _cmt_base* const b, key* cut, ushort* link, 
 		b->size -= b->cut_size;
 	}
 
-	optimal_cut = cut->length - ((b->target - b->size - sizeof(key)) << 3);
+	optimal_cut = (int) cut->length - (int) ((b->target - b->size - sizeof(key)) << 3);
 
 	if (optimal_cut >= low) {
 
@@ -405,41 +429,15 @@ int cmt_commit_task(task* t) {
 	return 0;
 }
 
-void cle_panic(task* t) {
-
-}
-
-int main() {
-	task* t = tk_create_task(0, 0);
+void test_copy(task* t, page* dst, st_ptr src) {
 	struct _cmt_base base;
-	st_ptr root, p;
-	char buffer[1000];
 
 	base.t = t;
 	base.stack = 0;
 	base.idx_max = base.idx = 0;
-	base.target = 30;
-	base.dest_begin = buffer;
-	base.dest = buffer + sizeof(page);
+	base.target = dst->size;
+	base.dest_begin = (char*) dst;
+	base.dest = base.dest_begin + sizeof(page);
 
-	st_empty(t, &root);
-
-	p = root;
-	st_insert(t, &p, "12345", 6);
-	p = root;
-	st_insert(t, &p, "12346", 6);
-	p = root;
-	st_insert(t, &p, "12366", 6);
-	p = root;
-	st_insert(t, &p, "12666", 6);
-	p = root;
-	st_insert(t, &p, "12364", 6);
-
-	_cmt_copy_page(&base, root.pg, root.key, 0);
-
-	_cmt_measure(&base, root.pg, root.key);
-
-	printf("size %d\n", base.size);
-
-	return 0;
+	_cmt_copy_page(&base, src.pg, src.key, src.offset);
 }

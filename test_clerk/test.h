@@ -47,9 +47,13 @@ void test_compile_c();
 
 void test_instance_c();
 
+void test_copy(task* t, page* dst, st_ptr src);
+
 extern cle_pipe _test_pipe_stdout;
 
 st_ptr str(task* t, char* cs);
+
+uint add(task* t, st_ptr p, char* cs);
 
 st_ptr root(task* t);
 

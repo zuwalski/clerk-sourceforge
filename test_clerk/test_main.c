@@ -1005,6 +1005,47 @@ void test_tk_delta() {
 	tk_drop_task(t);
 }
 
+void test_commit() {
+    cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+    
+	//  new task
+	task* t = tk_create_task(psource, pdata);
+    st_ptr root,p;
+    
+    char buffer[1000];
+    page* pg = (page*) buffer;
+    
+    pg->id = 0;
+    pg->parent = 0;
+    pg->size = sizeof(buffer);
+    pg->used = sizeof(page);
+    pg->waste = 0;
+    
+    p.pg = pg;
+    p.key = sizeof(page);
+    p.offset = 0;
+
+	st_empty(t, &root);
+    
+    test_copy(t, pg, root);
+
+    add(t, root, "12345");
+    add(t, root, "12346");
+    add(t, root, "12366");
+    add(t, root, "12364");
+    add(t, root, "12666");
+    add(t, root, "123643");
+    
+    st_prt_page(&root);
+
+    test_copy(t, pg, root);
+    
+    st_prt_page(&p);
+
+	tk_drop_task(t);
+}
+
 /////////// basenames ////////////
 
 static st_ptr basenames;
@@ -1048,6 +1089,8 @@ int main(int argc, char* argv[]) {
 	test_struct_c();
 
 	test_struct_st();
+    
+    test_commit();
 
 	test_task_c_2();
 
