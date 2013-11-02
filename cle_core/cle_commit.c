@@ -15,7 +15,7 @@
  You should have received a copy of the GNU General Public License
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-#include <stdlib.h>
+
 #include <string.h>
 
 #include "cle_struct.h"
@@ -69,8 +69,9 @@ static key* _cmt_alloc(struct _cmt_base* const b, uint size) {
 }
 
 static void _cmt_copy_key(struct _cmt_base* const b, const key* k, const int adj) {
-	memcpy(b->dest, KDATA(k), CEILBYTE(k->length + adj));
-	b->dest += CEILBYTE(k->length + adj);
+	const uint cp_len = CEILBYTE(k->length - adj);
+	memcpy(b->dest, KDATA(k) + (adj >> 3), cp_len);
+	b->dest += cp_len;
 }
 
 static void _cmt_pop_page(struct _cmt_base* const b) {
@@ -80,22 +81,14 @@ static void _cmt_pop_page(struct _cmt_base* const b) {
 	}
 }
 
-static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short adjoff) {
-	const key* rt = GOKEY(cpg, k);
-	const key* kp;
+static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort r, ushort n, short adjoff) {
+	const key* kp, *rt = GOKEY(cpg, r);
 	key* nk;
 	const uint stop = b->idx;
-	ushort tmp = 0, r = k, n = rt->sub;
+	ushort tmp = 0;
 
-	// skip keys below cut
-	while (n != 0) {
-		kp = GOOFF(cpg,n);
-
-		if (kp->offset >= adjoff)
-			break;
-
-		n = kp->next;
-	}
+	if (adjoff == 0)
+		n = rt->sub;
 
 	// push root-linked keys
 	while (n != 0) {
@@ -109,9 +102,14 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short
 	b->parent_key = &tmp;
 	nk = _cmt_alloc(b, sizeof(key));
 
-	adjoff = (adjoff & 0xFFF8) * -1;
+	adjoff = (adjoff & 0xFFF8);
+
+	nk->length = rt->length - adjoff;
 
 	_cmt_copy_key(b, rt, adjoff);
+
+	adjoff *= -1;
+	b->parent_key = &nk->sub;
 
 	// tree copy rest of page-content
 	while (b->idx != stop) {
@@ -119,11 +117,11 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short
 
 		n = b->stack[--b->idx];
 
-		if (n == 0) {
+		while (n == 0) {
 			adjoff = b->stack[--b->idx];
 
-			k = b->stack[--b->idx];
-			b->parent_key = (ushort*) (b->dest_begin + k);
+			r = b->stack[--b->idx];
+			b->parent_key = (ushort*) (b->dest_begin + r);
 
 			n = b->stack[--b->idx];
 		}
@@ -147,7 +145,7 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short
 			} else {
 				_cmt_push_key(b, 0xFFFF);
 
-				((page*) p->pg)->parent = b->cpg;
+				((page*) p->pg)->parent = cpg;
 				cpg = p->pg;
 
 				kp = GOOFF(cpg, p->koffset);
@@ -162,30 +160,35 @@ static void _cmt_copy_page(struct _cmt_base* const b, page* cpg, ushort k, short
 
 				nk->offset = kp->offset + adjoff;
 			}
-		} else
+		} else {
 			adjoff += kp->offset;
+
+			if (kp->offset & 7)
+				b->dest--;
+		}
 
 		_cmt_copy_key(b, kp, 0);
 
 		nk->length += kp->length;
 
-		if ((k = kp->sub)) {
+		if ((r = kp->sub)) {
 			_cmt_push_key(b, (char*) b->parent_key - b->dest_begin);
 			_cmt_push_key(b, adjoff);
 			_cmt_push_key(b, 0);
 
 			b->parent_key = &nk->sub;
+			adjoff = 0;
 
 			do {
 				_cmt_push_key(b, n);
-				_cmt_push_key(b, k);
-				kp = GOOFF(cpg,k);
-			} while ((k = kp->next));
+				_cmt_push_key(b, r);
+				kp = GOOFF(cpg,r);
+			} while ((r = kp->next));
 		}
 	}
 }
 
-static void _cmt_set_cut(struct _cmt_base* const b, ushort* link, ushort offset, ushort key) {
+static void _cmt_set_cut(struct _cmt_base* const b, ushort key, ushort* link, ushort offset) {
 	b->cut.key = key;
 	b->cut.pg = b->cpg;
 	b->cut_link = link;
@@ -200,7 +203,7 @@ static void _cmt_cut_between(struct _cmt_base* const b, key* cut, ushort* link, 
 
 	if (b->size + sizeof(key) + ((cut->length - high) >> 3) > b->target) {
 		// execute last cut
-		_cmt_copy_page(b, b->cut.pg, b->cut.key, b->cut.offset);
+		_cmt_copy_page(b, b->cut.pg, b->cut.key, *b->cut_link, b->cut.offset);
 
 		b->size -= b->cut_size;
 	}
@@ -209,12 +212,12 @@ static void _cmt_cut_between(struct _cmt_base* const b, key* cut, ushort* link, 
 
 	if (optimal_cut >= low) {
 
-		_cmt_copy_page(b, b->cpg, k, optimal_cut);
+		_cmt_copy_page(b, b->cpg, k, *link, optimal_cut);
 
 		b->size = 0;
 	}
 
-	_cmt_set_cut(b, link, low, k);
+	_cmt_set_cut(b, k, link, low);
 }
 
 static void _cmt_cut_over(struct _cmt_base* const b, ushort cut_key, ushort cut_over_key) {
@@ -228,7 +231,7 @@ static void _cmt_cut_over(struct _cmt_base* const b, ushort cut_key, ushort cut_
 
 	} else if (b->size + sizeof(key) + CEILBYTE(cut_size) < b->target) {
 
-		_cmt_set_cut(b, &over->next, over->offset + 1, cut_key);
+		_cmt_set_cut(b, cut_key, &over->next, over->offset + 1);
 	} else
 		_cmt_cut_between(b, cut, &over->next, over->offset + 1);
 }
@@ -240,7 +243,7 @@ static void _cmt_cut_low(struct _cmt_base* const b, ushort cut_key) {
 	if (size_all < b->target) {
 		b->size = size_all;
 
-		_cmt_set_cut(b, &cut->sub, 0, cut_key);
+		_cmt_set_cut(b, cut_key, &cut->sub, 0);
 	} else {
 		_cmt_cut_between(b, cut, &cut->sub, 0);
 
@@ -414,12 +417,12 @@ int cmt_commit_task(task* t) {
 
 	// rebuild from root => next root
 	if (root) {
-		base.target = root->size - sizeof(key);
+		base.target = root->size - sizeof(page);
 		// start measure from root
 		_cmt_measure(&base, root, sizeof(page));
 
 		// copy "rest" to new root
-		_cmt_copy_page(&base, root, sizeof(page), 0);
+		_cmt_copy_page(&base, root, sizeof(page), 0, 0);
 	}
 
 	tk_mfree(t, base.stack);
@@ -439,5 +442,7 @@ void test_copy(task* t, page* dst, st_ptr src) {
 	base.dest_begin = (char*) dst;
 	base.dest = base.dest_begin + sizeof(page);
 
-	_cmt_copy_page(&base, src.pg, src.key, src.offset);
+	_cmt_copy_page(&base, src.pg, src.key, 0, 0);
+
+	dst->used = base.dest - base.dest_begin;
 }
