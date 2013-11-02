@@ -886,7 +886,7 @@ enum property_type cle_get_property_type_value(cle_instance inst, st_ptr prop) {
 /**
  * Translates all mem-refs to obj-refs.
  *
- * Referenced mem-obj get persisted and there references are traced and persisted if needed.
+ * Referenced mem-obj get persisted and their references are traced and persisted if needed.
  *
  * 0--1-------2--------|----3---4---3-----(5)--
  *	/OID/{Object-header}identity/content/content|header ... content

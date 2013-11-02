@@ -101,7 +101,7 @@ typedef struct {
 
 	unsigned int (*commit_push)(cle_obj_target_ctx);
 	unsigned int (*commit_pop)(cle_obj_target_ctx);
-	unsigned int (*commit_data)(cle_obj_target_ctx, cdat*, uint, uint);
+	unsigned int (*commit_data)(cle_obj_target_ctx, cdat, uint, uint);
 } cle_object_target;
 
 int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), void* ctx);
