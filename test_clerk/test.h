@@ -54,6 +54,7 @@ extern cle_pipe _test_pipe_stdout;
 st_ptr str(task* t, char* cs);
 
 uint add(task* t, st_ptr p, char* cs);
+uint rm(task* t, st_ptr p, char* cs);
 
 st_ptr root(task* t);
 

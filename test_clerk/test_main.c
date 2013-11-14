@@ -1011,7 +1011,8 @@ void test_commit() {
     
 	//  new task
 	task* t = tk_create_task(psource, pdata);
-    st_ptr root,p;
+    st_ptr root,p,p2,pe;
+    it_ptr it;
     
     char buffer[1000];
     page* pg = (page*) buffer;
@@ -1022,11 +1023,12 @@ void test_commit() {
     pg->used = sizeof(page);
     pg->waste = 0;
     
+	st_empty(t, &root);
+	st_empty(t, &pe);    // block - make root zero-length
+
     p.pg = pg;
     p.key = sizeof(page);
     p.offset = 0;
-
-	st_empty(t, &root);
     
     test_copy(t, pg, root);
 
@@ -1035,14 +1037,33 @@ void test_commit() {
     add(t, root, "12366");
     add(t, root, "12364");
     add(t, root, "12666");
-    add(t, root, "123643");
+    add(t, root, "1266767");
+    add(t, root, "1236433");
+    add(t, root, "1236432");
+    add(t, root, "12364331");
     
+    p2 = root;
+    st_move(t, &p2, (cdat)"1266767", 7);
+    
+    st_link(t, &p2, &pe);
+    
+    add(t, pe, "123");
+
     st_prt_page(&root);
 
     test_copy(t, pg, root);
     
     st_prt_page(&p);
-
+    
+    
+	it_create(t, &it, &root);
+    
+	while(it_next(t, 0, &it, 0)){
+        ASSERT(st_exist(t, &p, it.kdata, it.kused));
+    }
+    
+	it_dispose(t, &it);
+    
 	tk_drop_task(t);
 }
 

@@ -360,6 +360,10 @@ uint add(task* t, st_ptr p, char* cs){
     return st_insert(t, &p, (cdat)cs, (uint)strlen(cs));
 }
 
+uint rm(task* t, st_ptr p, char* cs){
+    return st_delete(t, &p, (cdat)cs, (uint)strlen(cs));
+}
+
 st_ptr root(task* t) {
 	st_ptr rt;
 	tk_root_ptr(t, &rt);
