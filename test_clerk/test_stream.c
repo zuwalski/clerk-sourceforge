@@ -122,7 +122,7 @@ void test_stream_c2() {
 
 	cle_new(inst, eventid, empty, 0);
 
-	tk_commit_task(t);
+	cmt_commit_task(t);
 
 	t = tk_create_task(&util_memory_pager, store);
 
