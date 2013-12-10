@@ -31,14 +31,14 @@ typedef struct page {
 } page;
 
 typedef struct cle_pagesource {
-	cle_pageid (*new_page)(cle_psrc_data, page*);
+	page* (*new_page)(cle_psrc_data);
 	page* (*read_page)(cle_psrc_data, cle_pageid);
 	page* (*root_page)(cle_psrc_data);
 	void (*write_page)(cle_psrc_data, cle_pageid, page*);
 	void (*remove_page)(cle_psrc_data, cle_pageid);
 	void (*unref_page)(cle_psrc_data, page*);
 	int (*pager_error)(cle_psrc_data);
-	int (*pager_commit)(cle_psrc_data);
+	int (*pager_commit)(cle_psrc_data, page*);
 	int (*pager_rollback)(cle_psrc_data);
 	int (*pager_close)(cle_psrc_data);
 	cle_psrc_data (*pager_clone)(cle_psrc_data);

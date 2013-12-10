@@ -1,6 +1,6 @@
 /* 
  Clerk application and storage engine.
- Copyright (C) 2008  Lars Szuwalski
+ Copyright (C) 2008-2013  Lars Szuwalski
 
  This program is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
@@ -49,7 +49,7 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 		while (curr < to && (d = *curr ^ *ckey++) == 0)
 			curr++;
 
-		i = (curr - rt->path) << 3;
+		i = (uint) ((curr - rt->path) << 3);
 		if (i > max) {
 			i -= 8;
 			curr--;
@@ -787,7 +787,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 	struct st_stream* snd = st_exist_stream(t, p1);
 
-	uint ret = st_map_st(t, p2, st_stream_data, st_stream_push, st_stream_pop, snd);
+	uint ret = st_map_st(t, p2, st_stream_data, st_stream_push, (uint(*)(void*))st_stream_pop, snd);
 
 	st_destroy_stream(snd);
 	return (ret == 0);
