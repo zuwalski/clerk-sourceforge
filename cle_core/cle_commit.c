@@ -18,6 +18,7 @@
 
 #include "cle_struct.h"
 #include <string.h>
+#include <assert.h>
 
 #define STACK_GROW 256
 
@@ -26,6 +27,9 @@ struct _cmt_stack {
     ushort* stack;
     uint idx;
     uint idx_max;
+    
+    // stats
+    uint pages;
 };
 
 struct _cmt_base_msr {
@@ -45,6 +49,7 @@ struct _cmt_base_copy {
     struct _cmt_stack* s;
 	char* dest;
 	char* dest_begin;
+    char* dest_max;
 	ushort* parent_key;
     page* pg;
 	ushort ptr_spot;
@@ -53,6 +58,7 @@ struct _cmt_base_copy {
 static const key EMPTY = { 0, 0, 0, 0 };
 
 #define ALIGN2(a) align2(a)
+#define valid_kptr(p) assert(((p) & 1) == 0 || (p) & 0x8000)
 
 static uint align2(uint a){
     return a + (a & 1);
@@ -76,18 +82,20 @@ static key* _cmt_alloc(struct _cmt_base_copy* const b, uint size) {
 	b->dest += (long long) b->dest & 1;
 	r = (key*) b->dest;
 
-	memset(r, 0, sizeof(key));
+	//memset(r, 0, sizeof(key));
 
-	r->next = *b->parent_key;
-	*b->parent_key = b->dest - b->dest_begin;
+	//r->next = *b->parent_key;
+	//*b->parent_key = b->dest - b->dest_begin;
 
 	b->dest += size;
 	return r;
 }
 
 static key* _cmt_root_key(struct _cmt_base_copy* const b, page* cpg, ushort r, ushort n, short adjoff) {
-	key* nk, *rt = GOKEY(cpg, r);
+	key* nk, *rt = GOOFF(cpg, r);
 	ushort tmp = 0;
+    
+    assert(ISPTR(rt) == 0);
 
     // does root-key contain space enough for the ptr-spot?
 	if (adjoff == 0){
@@ -97,7 +105,7 @@ static key* _cmt_root_key(struct _cmt_base_copy* const b, page* cpg, ushort r, u
             b->ptr_spot = r;
     }
     else if(CEILBYTE(rt->length - adjoff) > sizeof(ptr))
-        b->ptr_spot = r + sizeof(key) + CEILBYTE(adjoff);
+        b->ptr_spot = align2(r + sizeof(key) + CEILBYTE(adjoff));
 
 	// push root-linked keys
 	while (n != 0) {
@@ -111,13 +119,17 @@ static key* _cmt_root_key(struct _cmt_base_copy* const b, page* cpg, ushort r, u
 	b->parent_key = &tmp;
 	nk = _cmt_alloc(b, sizeof(key));
 	b->parent_key = &nk->sub;
+    
+    // round off
+    adjoff &= 0xFFF8;
 
-	nk->length = rt->length - adjoff;
+	//nk->length = rt->length - adjoff;
 
     // copy all of root key - or from adjoff
-	memcpy(b->dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
+	//memcpy(b->dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
 	b->dest += CEILBYTE(rt->length - adjoff);
 
+    assert(b->dest < b->dest_max);
 	return nk;
 }
 
@@ -126,7 +138,8 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 	const uint stop = s->idx;
 	key* nk = _cmt_root_key(b, cpg, r, n, adjoff);
 
-	adjoff *= -1;
+    // round off and prepare for offset-adjustment
+	adjoff = -(adjoff & 0xFFF8); // * -1;
 
 	// tree copy rest of page-content
 	while (s->idx != stop) {
@@ -160,6 +173,7 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
             b->ptr_spot = n;
         }
 
+    isptr:
         // handle pointers
 		if (ISPTR(kp)) {
 			ptr* p = (ptr*) kp;
@@ -168,11 +182,11 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 			if (p->koffset < 2) {
 				ptr* nptr = (ptr*) _cmt_alloc(b, sizeof(ptr));
 
-				nptr->ptr_id = PTR_ID;
+/*				nptr->ptr_id = PTR_ID;
 				nptr->offset = p->offset + adjoff;
                 nptr->koffset = p->koffset;
 				nptr->pg = p->pg;
-                
+  */
 				continue;
 			} else {
                 // memptr => push old page and continue on next
@@ -183,9 +197,11 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 
 				kp = GOOFF(cpg, p->koffset);
                 
-                // transfer offset
+                // transfer offsetƒ
                 kp->offset = p->offset;
                 n = p->koffset;
+                
+                if(ISPTR(kp)) goto isptr;
 			}
 		}
 
@@ -195,17 +211,19 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 				// create new key
 				nk = _cmt_alloc(b, sizeof(key));
 
-				nk->offset = kp->offset + adjoff;
+				//nk->offset = kp->offset + adjoff;
 			}
 		} else if (kp->offset & 7){
             b->dest--;
 		}
 
         // copy key content
-		memcpy(b->dest, KDATA(kp), CEILBYTE(kp->length));
+		//memcpy(b->dest, KDATA(kp), CEILBYTE(kp->length));
 		b->dest += CEILBYTE(kp->length);
 
-		nk->length += kp->length;
+        //assert(b->dest < b->dest_max);
+
+		//nk->length += kp->length;
 
         // if this key has subs => continues on those (depth-first)
 		if ((r = kp->sub)) {
@@ -219,6 +237,8 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
                 adjoff += kp->offset;
 
 			do {
+                assert(r < cpg->size || r & 0x8000);
+                
 				_cmt_push_key(s, n);
 				_cmt_push_key(s, r);
 				kp = GOOFF(cpg,r);
@@ -236,40 +256,57 @@ static void _cmt_setup_copy(struct _cmt_base_copy* cpy, struct _cmt_stack* s){
     
     cpy->dest_begin = (char*) cpy->pg;
     cpy->dest = cpy->dest_begin + sizeof(page);
+    cpy->dest_max = cpy->dest_begin + cpy->pg->size;
 	cpy->ptr_spot = 0;
     cpy->parent_key = 0;
+    
+    s->pages++;
 }
 
-static void _cmt_cut_and_copy_page(struct _cmt_stack* const s, page* cpg, ushort r, ushort* n, const short adjoff) {
+static uint _cmt_cut_and_copy_page(struct _cmt_stack* const s, page* cpg, ushort r, ushort* n, const short adjoff) {
     struct _cmt_base_copy cpy;
 	key* rk = GOOFF(cpg,r);
 	ptr* pt;
-
+    
+    assert(r < cpg->size || r & 0x8000);
+    assert(ISPTR(rk) == 0);
+    assert(adjoff <= rk->length);
+    
     _cmt_setup_copy(&cpy, s);
     // copy
-	_cmt_copy_page(&cpy, cpg, r, *n, adjoff & 0xFFF8);
-
+	_cmt_copy_page(&cpy, cpg, r, n == 0? 0 : *n, adjoff);
+    
     // cut-and-link ...
 	rk->length = adjoff;
-
-	if (cpy.ptr_spot == 0)
-		cpy.ptr_spot = _tk_alloc_ptr(s->t, TO_TASK_PAGE(cpg) );
-
-	pt = (ptr*) GOOFF(cpg, cpy.ptr_spot);
-	pt->ptr_id = PTR_ID;
-	pt->koffset = 1;	// magic marker: this links to a rebuilded paged
-	pt->offset = adjoff;
-	pt->next = 0;
-	pt->pg = cpy.pg->id;
     
-	// link to new ptr
-	*n = cpy.ptr_spot;
+    if (cpy.ptr_spot == 0)
+        cpy.ptr_spot = _tk_alloc_ptr(s->t, TO_TASK_PAGE(cpg) );
+    
+    pt = (ptr*) GOOFF(cpg, cpy.ptr_spot);
+    pt->ptr_id = PTR_ID;
+    pt->koffset = 1;	// magic marker: this links to a rebuilded paged
+    pt->offset = adjoff;
+    pt->next = 0;
+    pt->pg = cpy.pg;    // the pointer (to be updated when copied)
+    
+    // link to new ptr
+    if (n != 0)
+        *n = cpy.ptr_spot;
+    else if (cpy.ptr_spot != r){
+        rk->sub = cpy.ptr_spot;
+        rk->next = rk->length = rk->offset = 0;
+    }
+    
+    return cpy.pg->used;
 }
 
-static void _cmt_set_cut(struct _cmt_base_msr* const b, ushort key, ushort* link, ushort offset, uint size) {
+static void _cmt_set_cut(struct _cmt_base_msr* const b, ushort k, ushort* link, ushort offset, uint size) {
+    assert(ISPTR(GOOFF(b->cpg, k)) == 0);
+    assert(size < b->target);
+    
     if(b->cut_size <= size)
     {
-        b->cut.key = key;
+        b->cut.key = k;
         b->cut.pg = b->cpg;
         b->cut_link = link;
         b->cut_size = size;
@@ -280,48 +317,60 @@ static void _cmt_set_cut(struct _cmt_base_msr* const b, ushort key, ushort* link
 }
 
 static void _cmt_cut_between(struct _cmt_base_msr* const b, key* cut, ushort* link, const ushort low) {
-	const ushort high = (*link) ? GOOFF(b->cpg, *link)->offset : cut->length;
+	const ushort high_mark = (*link) ? GOOFF(b->cpg, *link)->offset : cut->length;
 	const ushort k = (char*) cut - (char*) b->cpg;
-	int optimal_cut;
-
-	if (b->size + sizeof(key) + ((cut->length - high) >> 3) > b->target) {
-		// execute last cut
-		_cmt_cut_and_copy_page(b->s, b->cut.pg, b->cut.key, b->cut_link, b->cut.offset);
-
+    
+    assert(b->size >= b->cut_size);
+    assert(ISPTR(cut) == 0);
+    
+    // overflow: execute last cut
+	if (b->size + sizeof(key) + CEILBYTE(cut->length - high_mark) > b->target) {
+		uint sz = _cmt_cut_and_copy_page(b->s, b->cut.pg, b->cut.key, b->cut_link, b->cut.offset);
+        
 		b->size -= b->cut_size;
+        b->cut_size = 0;
 	}
-
-	optimal_cut = (int) cut->length - (int) ((b->target - b->size - sizeof(key)) << 3);
-
-	if (optimal_cut >= low) {
-
-		_cmt_cut_and_copy_page(b->s, b->cpg, k, link, optimal_cut);
-
+    
+    // still overflow: cut now
+    if (b->size + sizeof(key) + CEILBYTE(cut->length - low) > b->target) {
+        const int bits_left = ((int)b->target - (int)b->size - sizeof(key)) * 8;
+        const int optimal_cut = (int) cut->length - bits_left;
+        
+		uint sz = _cmt_cut_and_copy_page(b->s, b->cpg, k, link, optimal_cut >= low ? optimal_cut : low);
+        
         b->size = 0;
-	}
-
-    b->cut_size = 0;
-	_cmt_set_cut(b, k, link, low, b->size);
+        b->cut_size = 0;
+    }
+    else
+        _cmt_set_cut(b, k, link, low, b->size + sizeof(key) + CEILBYTE(cut->length - low));
+    
+    if(b->cut_size > 0){
+        //printf("break");
+    }
 }
 
-// PRE: cut_key is never a ptr
 static void _cmt_cut_over(struct _cmt_base_msr* const b, ushort cut_key, key* over) {
 	key* cut = GOOFF(b->cpg, cut_key);
 	const uint cut_size = cut->length - over->offset;
     
+    assert(ISPTR(cut) == 0);
+    
     if(cut_size != 0){
-        if (align2(b->size) + sizeof(key) + CEILBYTE(cut_size) < b->target) {
+        const uint tsize = align2(b->size) + sizeof(key) + CEILBYTE(cut_size);
+        
+        if (tsize < b->target) {
             
-            _cmt_set_cut(b, cut_key, &over->next, over->offset + 1, align2(b->size) + sizeof(key) + CEILBYTE(cut_size));
+            _cmt_set_cut(b, cut_key, &over->next, over->offset + 1, tsize);
         } else
             _cmt_cut_between(b, cut, &over->next, over->offset + 1);
     }
 }
 
-// PRE: cut is never a ptr
 static uint _cmt_cut_low(struct _cmt_base_msr* const b, ushort cut_key, uint size) {
 	key* cut = GOOFF(b->cpg, cut_key);
-    const uint size_all = align2(size) + sizeof(key) + CEILBYTE(cut->length);
+    const uint size_all = size + sizeof(key) + CEILBYTE(cut->length);
+    
+    assert(ISPTR(cut) == 0);
     
     if (size_all < b->target) {
         _cmt_set_cut(b, cut_key, &cut->sub, 0, size_all);
@@ -330,51 +379,60 @@ static uint _cmt_cut_low(struct _cmt_base_msr* const b, ushort cut_key, uint siz
     } else {
         _cmt_cut_between(b, cut, &cut->sub, 0);
         
-        return ALIGN2(size) + sizeof(key) + CEILBYTE(cut->length);
+        return b->size + sizeof(key) + CEILBYTE(cut->length);
     }
 }
 
 static void _cmt_pop_ptr(struct _cmt_base_msr* const b) {
-	if (b->s->stack[b->s->idx - 1] == 0xFFFF) {
+	if (b->s->stack[b->s->idx - 1] == 0x7FFF) {
+        _cmt_set_cut(b, b->r, 0, 0, b->size);
+        
 		b->cpg = b->cpg->parent;
 		b->s->idx--;
         
         b->size = align2(b->size) + _cmt_pop_key(b->s);
+        if(b->size > b->target){
+            //printf("");
+        }
     }
 }
 
 // b-r never ptr -
 static int _cmt_pop(struct _cmt_base_msr* const b) {
-    _cmt_pop_ptr(b);
-
     while (b->s->idx) {
+        _cmt_pop_ptr(b);
+
         b->n = _cmt_pop_key(b->s);
         b->r = _cmt_pop_key(b->s);
         
+        valid_kptr(b->n);
+        valid_kptr(b->r);
+        
         // did we pop from branch?
         if (b->n == 0) {
+            b->size = _cmt_cut_low(b, b->r, align2(b->size));
             
-            b->size = _cmt_cut_low(b, b->r, align2(b->size) + _cmt_pop_key(b->s));
+            b->size += _cmt_pop_key(b->s);
         } else {
             key* kn = GOOFF(b->cpg, b->n);
             // measure cut on root over b->n->offset
             _cmt_cut_over(b, b->r, kn);
             
-            // b->n could be ptr -> must never turn root (b->r)
             if(ISPTR(kn)) {
-                ptr* pt = (ptr*) kn;
+                const ptr* pt = (ptr*) kn;
                 
                 if (pt->koffset < 2) {
                     b->size += sizeof(ptr);
                     continue;
                 } else {
+                    page* pg = (page*) pt->pg;
                     // mark page-change
                     _cmt_push_key(b->s, b->size);
-                    _cmt_push_key(b->s, 0xFFFF);
+                    _cmt_push_key(b->s, 0x7FFF);
+
+                    pg->parent = b->cpg;
+                    b->cpg = pg;
                     b->size = 0;
-                    
-                    ((page*) pt->pg)->parent = b->cpg;
-                    b->cpg = pt->pg;
                     
                     b->n = b->r = pt->koffset;
                 }
@@ -399,6 +457,8 @@ static void _cmt_measure(struct _cmt_stack* const s, page* cpg, uint n, ushort t
 	do {
         // PRE: kp is never a ptr
 		const key* kp = GOOFF(b.cpg,b.n);
+        
+        assert(ISPTR(kp) == 0);
 
 		if ((n = kp->sub)) {
 			_cmt_push_key(s, b.size);
@@ -506,7 +566,7 @@ int cmt_commit_task(task* t) {
 
 	stack.t = t;
 	stack.stack = 0;
-	stack.idx_max = stack.idx = 0;
+	stack.idx_max = stack.idx = stack.pages = 0;
 
 	// link up all w-pages back to root (and make them writable)
 	for (tp = t->wpages; tp != 0; tp = tp->next) {
@@ -534,7 +594,7 @@ int cmt_commit_task(task* t) {
 		_cmt_copy_page(&cpy, root, sizeof(page), 0, 0);
         
         // link old pages to new root
-        _cmt_update_all_linked_pages(cpy.pg);
+        //_cmt_update_all_linked_pages(cpy.pg);
 
         stat = t->ps->pager_commit(t->psrc_data, cpy.pg);
 	}
@@ -559,6 +619,7 @@ void test_copy(task* t, page* dst, st_ptr src) {
     cpy.ptr_spot = 0;
 	cpy.dest_begin = (char*) dst;
 	cpy.dest = cpy.dest_begin + sizeof(page);
+    cpy.dest_max = cpy.dest_begin + dst->size;
 
 	_cmt_copy_page(&cpy, src.pg, src.key, 0, 0);
 }

@@ -1151,13 +1151,14 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
+	test_task_c_2();
+
 	test_struct_c();
 
 	test_struct_st();
     
     test_commit();
 
-	test_task_c_2();
 
 	test_task_c_3();
 
