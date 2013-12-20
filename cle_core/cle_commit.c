@@ -30,6 +30,7 @@ struct _cmt_stack {
     
     // stats
     uint pages;
+    uint used;
 };
 
 struct _cmt_base_msr {
@@ -121,11 +122,14 @@ static key* _cmt_root_key(struct _cmt_base_copy* const b, page* cpg, ushort r, u
     
     // round off
     adjoff &= 0xFFF8;
-
-	//nk->length = rt->length - adjoff;
+    
+    assert(adjoff < rt->length);
+    assert(rt->length/8 < b->pg->size);
+    
+	nk->length = rt->length - adjoff;
 
     // copy all of root key - or from adjoff
-	//memcpy(b->dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
+	memcpy(b->dest, KDATA(rt) + (adjoff >> 3), CEILBYTE(rt->length - adjoff));
 	b->dest += CEILBYTE(rt->length - adjoff);
 
     assert(b->dest < b->dest_max);
@@ -163,6 +167,9 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 
         // consider next key kp linked from root rt
 		r = _cmt_pop_key(s);
+        
+        valid_kptr(r);
+        valid_kptr(n);
 
 		rt = GOOFF(cpg,r);
 		kp = GOOFF(cpg,n);
@@ -181,11 +188,10 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 			if (p->koffset < 2) {
 				ptr* nptr = (ptr*) _cmt_alloc(b, sizeof(ptr));
 
-/*				nptr->ptr_id = PTR_ID;
+				nptr->ptr_id = PTR_ID;
 				nptr->offset = p->offset + adjoff;
                 nptr->koffset = p->koffset;
 				nptr->pg = p->pg;
-  */
 				continue;
 			} else {
                 // memptr => push old page and continue on next
@@ -193,6 +199,8 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 
 				((page*) p->pg)->parent = cpg;
 				cpg = p->pg;
+                
+                assert(cpg->size == 1024);
 
 				kp = GOOFF(cpg, p->koffset);
                 
@@ -200,7 +208,8 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
                 kp->offset = p->offset;
                 n = p->koffset;
                 
-                if(ISPTR(kp)) goto isptr;
+                if(ISPTR(kp))
+                    goto isptr;
 			}
 		}
 
@@ -210,19 +219,24 @@ static void _cmt_copy_page(struct _cmt_base_copy* const b, page* cpg, ushort r, 
 				// create new key
 				nk = _cmt_alloc(b, sizeof(key));
 
-				//nk->offset = kp->offset + adjoff;
+				nk->offset = kp->offset + adjoff;
 			}
 		} else if (kp->offset & 7){
             b->dest--;
 		}
+        
+        assert(kp->length/8 < b->pg->size);
+        assert((char*)kp >= (char*)cpg && (char*) kp < (char*)cpg + cpg->used);
 
         // copy key content
-		//memcpy(b->dest, KDATA(kp), CEILBYTE(kp->length));
+		memcpy(b->dest, KDATA(kp), CEILBYTE(kp->length));
 		b->dest += CEILBYTE(kp->length);
 
         assert(b->dest < b->dest_max);
 
-		//nk->length += kp->length;
+		nk->length += kp->length;
+        
+        assert(ISPTR(kp) == 0);
 
         // if this key has subs => continues on those (depth-first)
 		if ((r = kp->sub)) {
@@ -258,8 +272,6 @@ static void _cmt_setup_copy(struct _cmt_base_copy* cpy, struct _cmt_stack* s){
     cpy->dest_max = cpy->dest_begin + cpy->pg->size;
 	cpy->ptr_spot = 0;
     cpy->parent_key = 0;
-    
-    s->pages++;
 }
 
 static uint _cmt_cut_and_copy_page(struct _cmt_stack* const s, page* cpg, ushort r, ushort* n, const short adjoff) {
@@ -281,6 +293,10 @@ static uint _cmt_cut_and_copy_page(struct _cmt_stack* const s, page* cpg, ushort
     if (cpy.ptr_spot == 0)
         cpy.ptr_spot = _tk_alloc_ptr(s->t, TO_TASK_PAGE(cpg) );
     
+    // link to new ptr
+    // ! before pt-set as *n might point into this (overwrite afterwards)
+    *n = cpy.ptr_spot;
+
     pt = (ptr*) GOOFF(cpg, cpy.ptr_spot);
     pt->ptr_id = PTR_ID;
     pt->koffset = 1;	// magic marker: this links to a rebuilded paged
@@ -288,9 +304,9 @@ static uint _cmt_cut_and_copy_page(struct _cmt_stack* const s, page* cpg, ushort
     pt->next = 0;
     pt->pg = cpy.pg;    // the pointer (to be updated when copied)
     
-    // link to new ptr
-    *n = cpy.ptr_spot;
-    
+    s->used += cpy.pg->used;
+    s->pages++;
+
     return cpy.pg->used;
 }
 
@@ -348,6 +364,8 @@ static int _cmt_cut_over(struct _cmt_base_msr* const b, ushort cut_key, key* ove
             pg->parent = b->cpg;
             b->cpg = pg;
             b->size = 0;
+            
+            assert(b->cpg->size == 1024);
             
             b->n = pt->koffset;
         } else {
@@ -519,7 +537,7 @@ int cmt_commit_task(task* t) {
 
 	stack.t = t;
 	stack.stack = 0;
-	stack.idx_max = stack.idx = stack.pages = 0;
+	stack.idx_max = stack.idx = stack.pages = stack.used = 0;
 
 	// link up all w-pages back to root (and make them writable)
 	for (tp = t->wpages; tp != 0; tp = tp->next) {
