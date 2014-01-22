@@ -368,62 +368,68 @@ void test_measure(task* t, st_ptr src) {
     _cmt_ms_worker(&work, src.pg, me, 0 , 0);
 }
 
-static page* _cmt_mark_and_linkx(struct _cmt_stack* b, page* cpg, page* find) {
-	page* org;
-	ptr* pt;
-	ushort k = sizeof(page);
-
-	b->idx = 0;
-
-	while (1) {
-		key* kp = GOOFF(cpg,k);
-
-		if (ISPTR(kp)) {
-			pt = (ptr*) kp;
-
-			if (pt->koffset == 0 && pt->pg == find->id)
-				break;
-		}
-
-		if (ISPTR(kp) == 0 && kp->sub != 0) {
-			// push content step
-			_cmt_push_key(b, k);
-			k = kp->sub;
-		} else if (kp->next != 0)
-			k = kp->next;
-		else {
-			// pop content step
-			do {
-				if (b->idx == 0)
-					return 0;	// link not found (deleted) => stop
-
-                k = _cmt_pop_key(b);
-				kp = GOOFF(cpg,k);
-				k = kp->next;
-			} while (k == 0);
-		}
-	}
-
-	// is it writable? Make sure
-	org = _tk_check_page(b->t, cpg);
-
-	if (org == org->id)
-		cpg = _tk_write_copy(b->t, cpg);
-	else
-		cpg = org;
-
-	pt = (ptr*) GOOFF(cpg,k);
-
-	pt->koffset = sizeof(page);
-	pt->pg = find;
-
-	// fix offset like mem-ptr
-	GOKEY(find,sizeof(page)) ->offset = pt->offset;
-
-	return org != org->id ? 0 : cpg;
+static ptr* _cmt_find_ptr(page* cpg, page* find, ushort koff) {
+    ushort stack[32];
+    uint idx = 0;
+    
+    while (1) {
+        key* k = GOKEY(cpg, koff);
+        
+        if (ISPTR(k)) {
+            ptr* pt = (ptr*) k;
+            if (pt->koffset == 0 && pt->pg == find->id)
+                return pt;
+        } else if (k->sub) {
+            if ((idx & 0xE0) == 0) {
+                stack[idx++] = k->sub;
+            } else {
+                ptr* pt = _cmt_find_ptr(cpg, find, k->sub);
+                if(pt)
+                    return pt;
+            }
+        }
+        
+        if ((koff = k->next) == 0) {
+            if (idx == 0)
+                break;
+            koff = stack[--idx];
+        }
+    }
+    return 0;
 }
 
-static page* _cmt_mark_and_link(page* cpg, page* find) {
+static page* _cmt_mark_and_link(task* t) {
+    task_page *end = 0;
+    page* root = 0;
+
+    while (t->wpages != end) {
+        task_page* tp, *first = t->wpages;
+        
+        for (tp = first; tp != end; tp = tp->next) {
+            page* parent = tp->pg.parent;
+            page* find = &tp->pg;
+            
+            if (parent) {
+                ptr* pt = _cmt_find_ptr(parent, find, sizeof(page));
+                if (pt) {
+                    // not yet writable?
+                    if (parent == parent->id) {
+                        parent = _tk_write_copy(t, parent);
+                    }
+                    pt->koffset = sizeof(page);
+                    pt->pg = find;
+                    
+                    // fix offset like mem-ptr
+                    GOKEY(find,sizeof(page))->offset = pt->offset;
+                }
+            } else
+                root = find;
+        }
+        
+        end = first;
+    }
+    
+    return root;
 }
 
 static void _cmt_update_all_linked_pages(const page* pg) {
@@ -452,24 +458,8 @@ static void _cmt_update_all_linked_pages(const page* pg) {
  * return 0 if ok - also if no changes was written.
  */
 int cmt_commit_task(task* t) {
-	task_page* tp;
-	page* root = 0;
     int stat = 0;
-
-	// link up all w-pages back to root (and make them writable)
-	for (tp = t->wpages; tp != 0; tp = tp->next) {
-		page *parent, *find = &tp->pg;
-
-		for (parent = tp->pg.parent; parent != 0; find = parent, parent = parent->parent) {
-			find = _cmt_mark_and_link(parent, find);
-			if (find == 0)
-				break;
-		}
-
-		// touched root?
-		if (find != 0)
-			root = find;
-	}
+	page* root = _cmt_mark_and_link(t);
 
 	// rebuild from root => new root
 	if (root) {
