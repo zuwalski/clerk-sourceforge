@@ -786,18 +786,18 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 
 int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 	struct st_stream* snd = st_exist_stream(t, p1);
-
-	uint ret = st_map_st(t, p2, st_stream_data, st_stream_push, (uint(*)(void*))st_stream_pop, snd);
-
+    
+	uint ret = st_map_st(t, p2, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
+    
 	st_destroy_stream(snd);
 	return (ret == 0);
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
 	struct st_stream* snd = st_merge_stream(t, to);
-
-	uint ret = st_map_st(t, from, st_stream_data, st_stream_push, st_stream_pop, snd);
-
+    
+	uint ret = st_map_st(t, from, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
+    
 	st_destroy_stream(snd);
 	return ret;
 }
@@ -822,6 +822,53 @@ struct _st_map_worker_struct {
 	task* t;
 };
 
+static uint _st_worker(struct _st_map_worker_struct* work, page* pg, key* me, key* nxt, uint offset, uint at) {
+    struct {
+        page* pg;
+        key* nxt;
+        uint at;
+    } mx[16];
+    uint ret = 0, idx = 0;
+    
+    while (1) {
+        const uint klen = ((nxt != 0 ? nxt->offset : me->length) >> 3) - offset;
+        if (klen != 0 && (ret = work->dat(work->ctx, KDATA(me) + offset, klen, at)))
+            break;
+        at += klen;
+        
+        if(nxt == 0) {
+            if (idx-- == 0)
+                break;
+            
+            pg = _tk_check_page(work->t, mx[idx].pg);
+            nxt = mx[idx].nxt;
+            at = mx[idx].at;
+        } else if (me->length != nxt->offset) {
+            if((ret = work->push(work->ctx))) break;
+            
+            if ((idx & 0xF0) == 0) {
+                mx[idx].nxt = nxt;
+                mx[idx].pg = pg;
+                mx[idx].at = at;
+                ++idx;
+                
+                offset = nxt->offset >> 3;
+                nxt = nxt->next? GOOFF(pg, nxt->next) : 0;
+                continue;
+            }
+            
+            if((ret = _st_worker(work, pg, me, nxt, offset, at))) break;
+        }
+        
+        if((ret = work->pop(work->ctx))) break;
+
+        me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt) : nxt;
+        nxt = me->sub? GOOFF(pg, me->sub) : 0;
+        offset = 0;
+    }
+    return ret;
+}
+
 static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me, key* nxt, uint offset, uint at) {
 	struct {
 		page* pg;
@@ -840,7 +887,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 		}
 
 		if (nxt == 0) {
-			_map_pop: if (idx-- == 0 || (ret = work->pop(work->ctx)))
+			_map_pop: if ((ret = work->pop(work->ctx)) || idx-- == 0)
 				break;
 
 			at = mx[idx].at;
