@@ -69,7 +69,23 @@ static page* mem_root_page(cle_psrc_data pd) {
 }
 
 static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
+	page* npg;
+	if (pg->used > pg->size) {
+		printf("not good");
+	}
+	if (id == &_dummy_root) {
+		struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
+        
+		md->root = (page*) mem_new_page(pd);
 
+		memcpy(md->root, pg, pg->used);
+		return;
+	} else {
+		npg = (page*) id;
+		memcpy(npg, pg, pg->used);
+	}
+	npg->id = id;
+	npg->parent = 0;
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id) {

@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "cle_struct.h"
+#include "../test_clerk/test.h"
 
 /* mem-manager */
 // TODO: call external allocator
@@ -104,7 +105,6 @@ static void _tk_release_page(task* t, task_page* wp) {
 
 }
 
-// TODO tag pointer as loaded - use bit 0 set to 1 when loaded.
 static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 	st_ptr root_ptr = t->pagemap;
 	page* pw;
@@ -112,9 +112,6 @@ static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
 	// have a writable copy of the page?
 	if (t->wpages == 0 || st_move(t, &root_ptr, (cdat) &pid, sizeof(pid))) {
 		pw = (page*) pid;
-
-		if (parent != 0 && pw->parent != parent)
-			pw->parent = parent;
 	}
 	// found: read address of page-copy
 	else if (st_get(t, &root_ptr, (char*) &pw, sizeof(pw)) != -1)
@@ -177,6 +174,17 @@ page* _tk_write_copy(task* t, page* pg) {
 key* _tk_get_ptr(task* t, page** pg, key* me) {
 	ptr* pt = (ptr*) me;
 	if (pt->koffset != 0) {
+        
+        // DEBUG
+        if(pt->koffset == 1){
+            st_ptr root;
+            root.pg = *pg;
+            root.key = sizeof(page);
+            root.offset = 0;
+            st_prt_page(&root);
+        }
+        
+        
 		*pg = (page*) pt->pg;
 		me = GOKEY(*pg,pt->koffset); /* points to a key - not an ovf-ptr */
 	} else {
@@ -188,31 +196,35 @@ key* _tk_get_ptr(task* t, page** pg, key* me) {
 }
 
 ushort _tk_alloc_ptr(task* t, task_page* pg) {
-	overflow* ovf = pg->ovf;
-	ushort nkoff;
+	ushort nkoff = pg->pg.used + (pg->pg.used & 1);
+    
+    // room on the page itself?
+    if (nkoff + sizeof(ptr) <= pg->pg.size) {
+        pg->pg.used = nkoff + sizeof(ptr);
+    } else {
+        overflow* ovf = pg->ovf;
 
-	if (ovf == 0) /* alloc overflow-block */
-	{
-		ovf = (overflow*) tk_malloc(t, OVERFLOW_GROW);
-
-		ovf->size = OVERFLOW_GROW;
-		ovf->used = 16;
-
-		pg->ovf = ovf;
-	} else if (ovf->used == ovf->size) /* resize overflow-block */
-	{
-		ovf->size += OVERFLOW_GROW;
-
-		ovf = (overflow*) tk_realloc(t, ovf, ovf->size);
-
-		pg->ovf = ovf;
-	}
-
-	/* make pointer */
-	nkoff = (ovf->used >> 4) | 0x8000;
-	ovf->used += 16;
-
-	pg->refcount++;
+        if (ovf == 0) /* alloc overflow-block */
+        {
+            ovf = (overflow*) tk_malloc(t, OVERFLOW_GROW);
+            
+            ovf->size = OVERFLOW_GROW;
+            ovf->used = 16;
+            
+            pg->ovf = ovf;
+        } else if (ovf->used == ovf->size) /* resize overflow-block */
+        {
+            ovf->size += OVERFLOW_GROW;
+            
+            ovf = (overflow*) tk_realloc(t, ovf, ovf->size);
+            
+            pg->ovf = ovf;
+        }
+        
+        /* make pointer */
+        nkoff = (ovf->used >> 4) | 0x8000;
+        ovf->used += 16;
+    }
 	return nkoff;
 }
 
@@ -245,7 +257,7 @@ void tk_root_ptr(task* t, st_ptr* pt) {
 	k = GOKEY(t->root.pg,t->root.key);
 	if (ISPTR(k)) {
 		k = _tk_get_ptr(t, &t->root.pg, k);
-		t->root.key = (ushort) ((char*) k - (char*) t->root.pg);
+		t->root.key = sizeof(page);
 	}
 
 	*pt = t->root;

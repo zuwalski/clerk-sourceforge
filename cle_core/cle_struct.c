@@ -128,7 +128,7 @@ static ptr* _st_page_overflow(struct _st_lkup_res* rt, uint size) {
 		_tk_stack_new(rt->t);
 
 	// init mem-pointer
-	pt = (ptr*) GOPTR(rt->pg,ptr_off);
+	pt = (ptr*) GOOFF(rt->pg,ptr_off);
 
 	pt->pg = &rt->t->stack->pg;
 	pt->koffset = rt->t->stack->pg.used + (rt->t->stack->pg.used & 1);

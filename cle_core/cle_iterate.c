@@ -63,8 +63,8 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 
 		while (curr < to && (d = *curr ^ *ckey++) == 0)
 			curr++;
-
-		i = (curr - rt->path) << 3;
+        
+		i = (uint) ((curr - rt->path) << 3);
 		if (i > max) {
 			i -= 8;
 			curr--;
