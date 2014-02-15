@@ -31,24 +31,27 @@ static FILE* f;
 static void print_struct(page* pg, const key* me, int ind, int meoff) {
 	while (1) {
 		int i;
-
+        
 		const char* path = KDATA(me);
 		int l = me->length;
 		int o = me->offset;
 		//int meoff = (int)((char*)me - (char*)pg->pg);
-
+        
 		for (i = 0; i < ind; i++)
 			fputs("..", f);
-
+        
 		if (ISPTR(me)) {
 			ptr* pt = (ptr*) me;
-
-			if (pt->koffset == 0) {
+            
+			if (pt->koffset < sizeof(page)) {
 				page* wrap;
 				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset, pt->pg,
 						meoff, pt->next);
-
-				if (ind < 20) {
+                
+                if (pt->koffset == 1){
+					puts(">> XXXXXX");
+                }
+				else if (ind < 0) {
 					wrap = pt->pg;
 					printf(" (%d)>>\n", wrap->used);
 					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2, sizeof(page));
@@ -57,40 +60,42 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
 			} else {
 				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset,
 						pt->pg, pt->koffset, meoff, pt->next);
-
-				print_struct((page*) pt->pg, GOKEY((page*) pt->pg,
-						pt->koffset), ind + 2, pt->koffset);
+                
+                if (ind < 4) {
+                    print_struct((page*) pt->pg, GOKEY((page*) pt->pg,
+                                                       pt->koffset), ind + 2, pt->koffset);
+                }
 			}
-		} else {
-			int i;
-
-			fprintf(f, "(%s%d/%d) %s (%d - s:%d n:%d) [", (o < l && *path & (0x80 >> (o & 7))) ? "+" : "-", o, l, "" /*path*/,
-					meoff, me->sub, me->next);
-
-			//printf("%s",path);
-			for (i = 0; i < (l + 7) >> 3; i++) {
-				if (i > 3) {
-					printf("...");
-					break;
-				}
-				printf(" %x", path[i]);
-			}
-
-			if (me->sub) {
-				fputs("] ->\n", f);
-				print_struct(pg, GOOFF(pg, me->sub), ind + 1, me->sub);
-			} else
-				fputs("]\n", f);
-		}
-
+        } else {
+                int i;
+                
+                fprintf(f, "(%s%d/%d) %s (%d - s:%d n:%d) [", (o < l && *path & (0x80 >> (o & 7))) ? "+" : "-", o, l, "" /*path*/,
+                        meoff, me->sub, me->next);
+                
+                //printf("%s",path);
+                for (i = 0; i < (l + 7) >> 3; i++) {
+                    if (i > 3) {
+                        printf("...");
+                        break;
+                    }
+                    printf(" %x", path[i]);
+                }
+                
+                if (me->sub) {
+                    fputs("] ->\n", f);
+                    print_struct(pg, GOOFF(pg, me->sub), ind + 1, me->sub);
+                } else
+                    fputs("]\n", f);
+            }
+        
 		if (!me->next)
 			break;
-
+        
 		//if(me == (key*)0x029b7edc)
 		//{
 		//	l = l;
 		//}
-
+        
 		meoff = me->next;
 		me = GOOFF(pg, me->next);
 	}
@@ -153,11 +158,13 @@ static int empty_keys;
 static int offset_zero;
 static int key_count;
 static int ptr_count;
+static int mem_used;
+static int mem_idle;
 
 static void calc_dist(page* pg, key* me, key* parent, int level) {
 	if (level >= 100)
 		return;
-
+    
 	while (1) {
 		key* pme;
 		int offset = me->offset;
@@ -200,6 +207,9 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
 				if (pw->used > pw->size) {
 					printf("p overflow ");
 				}
+
+                mem_used += pg->used;
+                mem_idle += pg->size - pg->used + pg->waste;
 
 				//printf("%p\n",pw);
 
@@ -261,6 +271,8 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 	offset_zero = 0;
 	key_count = 0;
 	ptr_count = 0;
+    mem_used = 0;
+    mem_idle = 0;
 
 	//puts("\n");
 	//st_prt_page(pt);
@@ -314,6 +326,8 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 		printf("ovf_pages: %d\n", ovf_pages);
 		printf("ovf_used: %d\n", ovf_used);
 		printf("ovf_free: %d\n", ovf_free);
+		printf("mem used: %d\n", mem_used);
+		printf("mem idld: %d\n", mem_idle);
 	}
 }
 

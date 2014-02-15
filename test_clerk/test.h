@@ -50,6 +50,7 @@ void test_compile_c();
 void test_instance_c();
 
 void test_copy(task* t, page* dst, st_ptr src);
+void test_measure(task* t, st_ptr src);
 
 extern cle_pipe _test_pipe_stdout;
 

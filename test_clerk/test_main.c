@@ -1,4 +1,4 @@
-/* 
+/*
  Clerk application and storage engine.
  Copyright (C) 2008  Lars Szuwalski
 
@@ -416,8 +416,6 @@ void test_iterate_c() {
 	// destroy
 	it_dispose(t, &it);
 
-	printf("pagecount %d, overflowsize %d, resize-count %d\n", page_size, overflow_size, resize_count);
-
 	tk_drop_task(t);
 }
 
@@ -552,7 +550,6 @@ void time_struct_c() {
 
 	printf("exsist (empty) %d items. Time %d\n", HIGH_ITERATION_COUNT, stop - start);
 
-	printf("pagecount %d, overflowsize %d, resize-count %d\n", page_size, overflow_size, resize_count);
 	tk_drop_task(t);
 }
 
@@ -697,16 +694,25 @@ void test_task_c_2() {
 
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		tmp = root;
-		if(i == 21){
-			printf("");
-		}
 		memcpy(keystore, (char* )&i, sizeof(int));
 		st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
 	}
 
 	stop = clock();
+    
+	printf("1-commit insert-time %lu\n", stop - start);
+    
+    root.pg = _tk_check_ptr(t, &root);
+    //st_prt_page(&root);
+	start = clock();
+	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
+		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
+	}
+	stop = clock();
+    
+	printf("PRE 1-commit Validate time %lu\n", stop - start);
 
-	printf("1-commit insert-time %d\n", stop - start);
+	//st_prt_distribution(&root, t);
 
 	start = clock();
 
@@ -714,14 +720,34 @@ void test_task_c_2() {
 
 	stop = clock();
 
-	printf("1-commit commit-time %d\n", stop - start);
+	printf("1-commit commit-time %lu\n", stop - start);
 
 	t = tk_create_task(psource, pdata);
 
 	// set pagesource-root
 	tk_root_ptr(t, &root);
-
+    
 	tk_ref_ptr(&root);
+    
+    //st_prt_page(&root);
+
+	start = clock();
+	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
+		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
+	}
+	stop = clock();
+    
+	printf("1-commit Validate time (1) %lu\n", stop - start);
+    
+	start = clock();
+	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
+		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
+	}
+	stop = clock();
+    
+	printf("1-commit Validate time (2) %lu\n", stop - start);
+
+	//st_prt_distribution(&root, t);
 
 	start = clock();
 
@@ -736,17 +762,7 @@ void test_task_c_2() {
 
 	stop = clock();
 
-	printf("1-commit Time validate (iterate) %d\n", stop - start);
-
-	start = clock();
-	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
-	}
-	stop = clock();
-
-	printf("1-commit Validate time %d\n", stop - start);
-
-	st_prt_distribution(&root, t);
+	printf("1-commit Time validate (iterate) %lu\n", stop - start);
 
 	tk_drop_task(t);
 	//cmt_commit_task(t);
@@ -756,9 +772,9 @@ void test_task_c_2() {
 
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		if(i == 10251){
-			i = 10251;
-		}
+        if (i == 4655) {
+            printf("ping");
+        }
 		//  new task
 		t = tk_create_task(psource, pdata);
 
@@ -774,7 +790,7 @@ void test_task_c_2() {
 	}
 	stop = clock();
 
-	printf("Multi-commit Time %d\n", stop - start);
+	printf("Multi-commit Time %lu\n", stop - start);
 
 	//  new task
 	t = tk_create_task(psource, pdata);
@@ -801,7 +817,7 @@ void test_task_c_2() {
 
 	stop = clock();
 
-	printf("Multi-commit Time validate (iterate) %d\n", stop - start);
+	printf("Multi-commit Time validate (iterate) %lu\n", stop - start);
 
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
@@ -809,7 +825,7 @@ void test_task_c_2() {
 	}
 	stop = clock();
 
-	printf("Multi-commit Time validate %d\n", stop - start);
+	printf("Multi-commit Time validate %lu\n", stop - start);
 
 	st_prt_distribution(&root, t);
 
@@ -1060,12 +1076,11 @@ void test_commit() {
     
     add(t, pe, "123");
 
-    //st_prt_page(&root);
+    st_prt_page(&root);
 
     test_copy(t, pg, root);
     
     st_prt_page(&p);
-    
     
 	it_create(t, &it, &root);
     
@@ -1074,6 +1089,8 @@ void test_commit() {
     }
     
 	it_dispose(t, &it);
+    
+    test_measure(t, root);
 
     cmt_commit_task(t);
     
@@ -1151,13 +1168,16 @@ static int _setup_base() {
 }
 
 int main(int argc, char* argv[]) {
+
 	test_task_c_2();
+
+    test_commit();
+
 
 	test_struct_c();
 
 	test_struct_st();
     
-    test_commit();
 
 
 	test_task_c_3();
